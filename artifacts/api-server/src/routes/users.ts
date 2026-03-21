@@ -62,6 +62,11 @@ router.put("/users/:id", requireRole("super_admin"), async (req: Request, res: R
   if (isActive !== undefined) updateData.isActive = isActive;
   if (password) updateData.passwordHash = await bcrypt.hash(password, 12);
 
+  if (Object.keys(updateData).length === 0) {
+    res.status(400).json({ error: "No fields to update" });
+    return;
+  }
+
   const [updated] = await db.update(usersTable).set(updateData).where(eq(usersTable.id, id)).returning();
   if (!updated) {
     res.status(404).json({ error: "User not found" });

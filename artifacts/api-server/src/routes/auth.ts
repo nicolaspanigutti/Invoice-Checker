@@ -33,6 +33,13 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     return;
   }
 
+  await new Promise<void>((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+
   req.session.userId = user.id;
   req.session.userRole = user.role;
 
@@ -69,6 +76,10 @@ router.get("/auth/me", async (req: Request, res: Response) => {
     req.session.destroy(() => {});
     res.status(401).json({ error: "Not authenticated" });
     return;
+  }
+
+  if (user.role !== req.session.userRole) {
+    req.session.userRole = user.role;
   }
 
   res.json({

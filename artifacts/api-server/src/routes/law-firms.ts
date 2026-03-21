@@ -117,6 +117,11 @@ router.put("/law-firms/:id", requireRole("super_admin", "legal_ops"), async (req
   if (notes !== undefined) updateData.notes = notes;
   if (isActive !== undefined) updateData.isActive = isActive;
 
+  if (Object.keys(updateData).length === 0) {
+    res.status(400).json({ error: "No fields to update" });
+    return;
+  }
+
   const [updated] = await db.update(lawFirmsTable).set(updateData).where(eq(lawFirmsTable.id, id)).returning();
   if (!updated) {
     res.status(404).json({ error: "Law firm not found" });
@@ -128,6 +133,10 @@ router.put("/law-firms/:id", requireRole("super_admin", "legal_ops"), async (req
 
 router.get("/law-firms/:id/terms", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
   const terms = await db.select().from(firmTermsTable).where(eq(firmTermsTable.lawFirmId, id));
   res.json(terms.map(termToResponse));
 });
