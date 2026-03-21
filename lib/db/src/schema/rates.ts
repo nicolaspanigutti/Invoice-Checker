@@ -7,7 +7,7 @@ export const panelBaselineDocumentsTable = pgTable("panel_baseline_documents", {
   id: serial("id").primaryKey(),
   documentKind: text("document_kind", { enum: ["rates", "terms_conditions"] }).notNull(),
   versionLabel: text("version_label").notNull(),
-  fileName: text("file_name").notNull(),
+  fileName: text("file_name"),
   storagePath: text("storage_path"),
   rawText: text("raw_text"),
   extractedJson: text("extracted_json"),

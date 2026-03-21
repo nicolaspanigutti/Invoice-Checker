@@ -5,8 +5,10 @@ import {
   useCreateUser,
   useUpdateUser,
   getListUsersQueryKey,
+  type AuthUser,
+  type CreateUserMutationError,
+  type UpdateUserMutationError,
 } from "@workspace/api-client-react";
-import type { AuthUser } from "@workspace/api-client-react";
 import { Users, Plus, Search, X, Pencil, Shield, UserCheck, UserX } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -55,7 +57,7 @@ function UserModal({ user, onClose }: { user?: AuthUser; onClose: () => void }) 
           toast({ title: "User updated." });
           onClose();
         },
-        onError: (err: any) => toast({ variant: "destructive", title: "Error", description: err?.data?.error || "Failed to update user." })
+        onError: (err: UpdateUserMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to update user." })
       });
     } else {
       createMutation.mutate({ data: {
@@ -69,7 +71,7 @@ function UserModal({ user, onClose }: { user?: AuthUser; onClose: () => void }) 
           toast({ title: "User created.", description: `${form.displayName} can now sign in.` });
           onClose();
         },
-        onError: (err: any) => toast({ variant: "destructive", title: "Error", description: err?.data?.error || "Failed to create user." })
+        onError: (err: CreateUserMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to create user." })
       });
     }
   };
@@ -97,7 +99,7 @@ function UserModal({ user, onClose }: { user?: AuthUser; onClose: () => void }) 
           )}
           <div>
             <label className="block text-sm font-semibold text-foreground mb-1.5">Role *</label>
-            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as any }))} className={inputClass}>
+            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as "super_admin" | "legal_ops" | "internal_lawyer" }))} className={inputClass}>
               <option value="super_admin">Super Admin</option>
               <option value="legal_ops">Legal Ops</option>
               <option value="internal_lawyer">Internal Lawyer</option>

@@ -40,7 +40,7 @@ function termToResponse(term: typeof firmTermsTable.$inferSelect) {
   };
 }
 
-router.get("/law-firms", requireAuth, async (req: Request, res: Response) => {
+router.get("/law-firms", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
   const includeInactive = req.query.includeInactive === "true";
   const firms = await db
     .select()
@@ -75,7 +75,7 @@ router.post("/law-firms", requireRole("super_admin", "legal_ops"), async (req: R
   res.status(201).json(firmToResponse(firm));
 });
 
-router.get("/law-firms/:id", requireAuth, async (req: Request, res: Response) => {
+router.get("/law-firms/:id", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid ID" });
@@ -126,7 +126,7 @@ router.put("/law-firms/:id", requireRole("super_admin", "legal_ops"), async (req
   res.json(firmToResponse(updated));
 });
 
-router.get("/law-firms/:id/terms", requireAuth, async (req: Request, res: Response) => {
+router.get("/law-firms/:id/terms", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   const terms = await db.select().from(firmTermsTable).where(eq(firmTermsTable.lawFirmId, id));
   res.json(terms.map(termToResponse));

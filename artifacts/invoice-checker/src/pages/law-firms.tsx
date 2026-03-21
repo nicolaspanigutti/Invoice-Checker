@@ -6,8 +6,10 @@ import {
   useUpdateLawFirm,
   useGetLawFirm,
   getListLawFirmsQueryKey,
+  type LawFirmDetail,
+  type CreateLawFirmMutationError,
+  type UpdateLawFirmMutationError,
 } from "@workspace/api-client-react";
-import type { LawFirmDetail } from "@workspace/api-client-react";
 import {
   Building2, Plus, Search, ChevronRight,
   CheckCircle, Globe, Briefcase, X, Pencil, Save
@@ -139,7 +141,7 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
         toast({ title: "Law firm added", description: `${form.name} has been created.` });
         onClose();
       },
-      onError: (err: any) => toast({ variant: "destructive", title: "Error", description: err?.data?.error || "Failed to create firm." })
+      onError: (err: CreateLawFirmMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to create firm." })
     });
   };
 
@@ -193,7 +195,7 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
         toast({ title: "Changes saved." });
         setEditing(false);
       },
-      onError: (err: any) => toast({ variant: "destructive", title: "Error", description: err?.data?.error || "Failed to update." })
+      onError: (err: UpdateLawFirmMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to update." })
     });
   };
 

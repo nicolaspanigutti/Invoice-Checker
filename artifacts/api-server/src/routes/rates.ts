@@ -33,7 +33,7 @@ function rateToResponse(rate: typeof panelRatesTable.$inferSelect) {
   };
 }
 
-router.get("/panel-baseline-documents", requireAuth, async (req: Request, res: Response) => {
+router.get("/panel-baseline-documents", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
   const docs = await db
     .select()
     .from(panelBaselineDocumentsTable)
@@ -77,7 +77,7 @@ router.post("/panel-baseline-documents", requireRole("super_admin", "legal_ops")
   res.status(201).json(docToResponse(doc));
 });
 
-router.get("/panel-rates", requireAuth, async (req: Request, res: Response) => {
+router.get("/panel-rates", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
   const { documentId, firmName, jurisdiction } = req.query;
 
   let query = db.select().from(panelRatesTable).$dynamic();

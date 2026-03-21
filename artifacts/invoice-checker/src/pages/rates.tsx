@@ -6,8 +6,11 @@ import {
   useCreatePanelBaselineDocument,
   getListPanelBaselineDocumentsQueryKey,
   getListPanelRatesQueryKey,
+  type PanelBaselineDocument,
+  type PanelRate,
+  type CreatePanelRateItem,
+  type CreatePanelBaselineDocumentMutationError,
 } from "@workspace/api-client-react";
-import type { PanelBaselineDocument, PanelRate, CreatePanelRateItem } from "@workspace/api-client-react";
 import { DollarSign, Plus, Search, X, FileText, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -69,7 +72,7 @@ function AddRatesDocumentModal({ onClose }: { onClose: () => void }) {
         toast({ title: "Rates document created", description: `${versionLabel} with ${validRows.length} rate rows.` });
         onClose();
       },
-      onError: (err: any) => toast({ variant: "destructive", title: "Error", description: err?.data?.error || "Failed to create document." })
+      onError: (err: CreatePanelBaselineDocumentMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to create document." })
     });
   };
 
