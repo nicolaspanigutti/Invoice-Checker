@@ -164,8 +164,16 @@ router.get("/panel-rates/lookup", requireRole("super_admin", "legal_ops"), async
   }
 
   const [rate] = await db
-    .select()
+    .select({ rate: panelRatesTable })
     .from(panelRatesTable)
+    .innerJoin(
+      panelBaselineDocumentsTable,
+      and(
+        eq(panelRatesTable.baselineDocumentId, panelBaselineDocumentsTable.id),
+        eq(panelBaselineDocumentsTable.verificationStatus, "active"),
+        eq(panelBaselineDocumentsTable.documentKind, "rates")
+      )
+    )
     .where(
       and(
         ilike(panelRatesTable.lawFirmName, lawFirmName as string),
@@ -179,7 +187,8 @@ router.get("/panel-rates/lookup", requireRole("super_admin", "legal_ops"), async
     .orderBy(sql`${panelRatesTable.validFrom} desc`)
     .limit(1);
 
-  res.json({ found: !!rate, rate: rate ? rateToResponse(rate) : null });
+  const rateRow = rate?.rate ?? null;
+  res.json({ found: !!rateRow, rate: rateRow ? rateToResponse(rateRow) : null });
 });
 
 export default router;
