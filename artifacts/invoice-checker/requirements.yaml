@@ -1,0 +1,11 @@
+packages:
+  "framer-motion": "For smooth page transitions and interactive animations"
+  "react-hook-form": "For robust login form state management"
+  "@hookform/resolvers": "For Zod form validation integration"
+
+images: []
+
+notes:
+  - Auth is handled via session cookies, no token storage needed.
+  - Using generated React Query hooks from @workspace/api-client-react.
+  - Unauthenticated users will be redirected to /login via the ProtectedRoute wrapper.

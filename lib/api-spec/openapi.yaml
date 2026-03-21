@@ -3,13 +3,21 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Invoice Checker API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: lawFirms
+    description: Law firm management
+  - name: rates
+    description: Panel rates management
+  - name: users
+    description: User management
 paths:
   /healthz:
     get:
@@ -24,6 +32,350 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      description: Authenticate with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      description: End the current session
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      description: Returns the currently authenticated user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /law-firms:
+    get:
+      operationId: listLawFirms
+      tags: [lawFirms]
+      summary: List law firms
+      description: Returns all law firms
+      parameters:
+        - name: includeInactive
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of law firms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LawFirm"
+    post:
+      operationId: createLawFirm
+      tags: [lawFirms]
+      summary: Create law firm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLawFirmRequest"
+      responses:
+        "201":
+          description: Law firm created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LawFirm"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /law-firms/{id}:
+    get:
+      operationId: getLawFirm
+      tags: [lawFirms]
+      summary: Get law firm
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Law firm
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LawFirmDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateLawFirm
+      tags: [lawFirms]
+      summary: Update law firm
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLawFirmRequest"
+      responses:
+        "200":
+          description: Updated law firm
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LawFirm"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /law-firms/{id}/terms:
+    get:
+      operationId: getLawFirmTerms
+      tags: [lawFirms]
+      summary: Get firm terms
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Firm terms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FirmTerm"
+    put:
+      operationId: upsertLawFirmTerms
+      tags: [lawFirms]
+      summary: Upsert firm terms
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                terms:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/UpsertTermItem"
+              required:
+                - terms
+      responses:
+        "200":
+          description: Updated terms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FirmTerm"
+
+  /panel-baseline-documents:
+    get:
+      operationId: listPanelBaselineDocuments
+      tags: [rates]
+      summary: List panel baseline documents
+      responses:
+        "200":
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PanelBaselineDocument"
+    post:
+      operationId: createPanelBaselineDocument
+      tags: [rates]
+      summary: Create panel baseline document with rates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePanelBaselineDocumentRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PanelBaselineDocument"
+
+  /panel-rates:
+    get:
+      operationId: listPanelRates
+      tags: [rates]
+      summary: List panel rates
+      parameters:
+        - name: documentId
+          in: query
+          schema:
+            type: integer
+        - name: firmName
+          in: query
+          schema:
+            type: string
+        - name: jurisdiction
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of rates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PanelRate"
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List users
+      description: Super admin only
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuthUser"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create user
+      description: Super admin only
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/{id}:
+    put:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user
+      description: Super admin only
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +386,375 @@ components:
       required:
         - status
 
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, legal_ops, internal_lawyer]
+        isActive:
+          type: boolean
+      required:
+        - id
+        - email
+        - displayName
+        - role
+        - isActive
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    LawFirm:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        firmType:
+          type: string
+          enum: [panel, non_panel]
+        jurisdictions:
+          type: array
+          items:
+            type: string
+        practiceAreas:
+          type: array
+          items:
+            type: string
+        contactName:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+        relationshipPartner:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - firmType
+        - jurisdictions
+        - practiceAreas
+        - isActive
+        - createdAt
+        - updatedAt
+
+    LawFirmDetail:
+      allOf:
+        - $ref: "#/components/schemas/LawFirm"
+        - type: object
+          properties:
+            terms:
+              type: array
+              items:
+                $ref: "#/components/schemas/FirmTerm"
+          required:
+            - terms
+
+    CreateLawFirmRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        firmType:
+          type: string
+          enum: [panel, non_panel]
+        jurisdictions:
+          type: array
+          items:
+            type: string
+        practiceAreas:
+          type: array
+          items:
+            type: string
+        contactName:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+        relationshipPartner:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required:
+        - name
+        - firmType
+
+    UpdateLawFirmRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        firmType:
+          type: string
+          enum: [panel, non_panel]
+        jurisdictions:
+          type: array
+          items:
+            type: string
+        practiceAreas:
+          type: array
+          items:
+            type: string
+        contactName:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+        relationshipPartner:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+
+    FirmTerm:
+      type: object
+      properties:
+        id:
+          type: integer
+        lawFirmId:
+          type: integer
+        termKey:
+          type: string
+        termValue:
+          description: JSON value (string, number, boolean, array, or object)
+        sourceType:
+          type: string
+          enum: [manual, ai_extracted]
+        verificationStatus:
+          type: string
+          enum: [draft, verified]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - lawFirmId
+        - termKey
+        - sourceType
+        - verificationStatus
+        - createdAt
+        - updatedAt
+
+    UpsertTermItem:
+      type: object
+      properties:
+        termKey:
+          type: string
+        termValue:
+          description: JSON value
+        verificationStatus:
+          type: string
+          enum: [draft, verified]
+      required:
+        - termKey
+
+    PanelBaselineDocument:
+      type: object
+      properties:
+        id:
+          type: integer
+        documentKind:
+          type: string
+          enum: [rates, tc]
+        versionLabel:
+          type: string
+        fileName:
+          type: string
+          nullable: true
+        verificationStatus:
+          type: string
+          enum: [draft, active, superseded]
+        uploadedById:
+          type: integer
+        activatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - documentKind
+        - versionLabel
+        - verificationStatus
+        - uploadedById
+        - createdAt
+
+    CreatePanelBaselineDocumentRequest:
+      type: object
+      properties:
+        documentKind:
+          type: string
+          enum: [rates, tc]
+        versionLabel:
+          type: string
+        fileName:
+          type: string
+          nullable: true
+        rates:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreatePanelRateItem"
+      required:
+        - documentKind
+        - versionLabel
+
+    PanelRate:
+      type: object
+      properties:
+        id:
+          type: integer
+        baselineDocumentId:
+          type: integer
+        lawFirmName:
+          type: string
+        jurisdiction:
+          type: string
+        roleCode:
+          type: string
+        roleLabel:
+          type: string
+        currency:
+          type: string
+        maxRate:
+          type: string
+        validFrom:
+          type: string
+          nullable: true
+        validTo:
+          type: string
+          nullable: true
+      required:
+        - id
+        - baselineDocumentId
+        - lawFirmName
+        - jurisdiction
+        - roleCode
+        - roleLabel
+        - currency
+        - maxRate
+
+    CreatePanelRateItem:
+      type: object
+      properties:
+        lawFirmName:
+          type: string
+        jurisdiction:
+          type: string
+        roleCode:
+          type: string
+        roleLabel:
+          type: string
+        currency:
+          type: string
+        maxRate:
+          type: string
+        validFrom:
+          type: string
+          nullable: true
+        validTo:
+          type: string
+          nullable: true
+      required:
+        - lawFirmName
+        - jurisdiction
+        - roleCode
+        - roleLabel
+        - currency
+        - maxRate
+
+    CreateUserRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, legal_ops, internal_lawyer]
+      required:
+        - displayName
+        - email
+        - password
+        - role
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, legal_ops, internal_lawyer]
+        isActive:
+          type: boolean
+        password:
+          type: string
+          nullable: true

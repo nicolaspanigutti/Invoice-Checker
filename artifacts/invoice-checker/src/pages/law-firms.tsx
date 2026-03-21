@@ -1,0 +1,416 @@
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListLawFirms,
+  useCreateLawFirm,
+  useUpdateLawFirm,
+  useGetLawFirm,
+  getListLawFirmsQueryKey,
+} from "@workspace/api-client-react";
+import type { LawFirmDetail } from "@workspace/api-client-react";
+import {
+  Building2, Plus, Search, ChevronRight,
+  CheckCircle, Globe, Briefcase, X, Pencil, Save
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+
+const TERM_LABELS: Record<string, string> = {
+  billing_type_default: "Default Billing Type",
+  discount_type: "Discount Type",
+  discount_payment_type: "Discount Payment Method",
+  discount_thresholds_json: "Volume Discount Thresholds",
+  max_daily_hours_per_timekeeper: "Max Daily Hours (per timekeeper)",
+  getting_up_to_speed_billable: "Getting Up to Speed Billable?",
+  payment_terms_days: "Payment Terms (days)",
+  travel_policy: "Travel Policy",
+  expense_policy_json: "Expense Policy",
+  third_party_services_require_approval: "Third-party Services Require Approval?",
+  contract_start_date: "Contract Start Date",
+  contract_end_date: "Contract End Date",
+  best_friend_firms_json: "Best Friend Firms",
+};
+
+function formatTermValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.join(", ");
+  return JSON.stringify(value);
+}
+
+function Badge({ children, variant = "default" }: { children: React.ReactNode; variant?: "default" | "success" | "warning" | "muted" | "panel" | "non-panel" }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold", {
+      "bg-primary/10 text-primary": variant === "default",
+      "bg-emerald-100 text-emerald-700": variant === "success",
+      "bg-amber-100 text-amber-700": variant === "warning",
+      "bg-muted text-muted-foreground": variant === "muted",
+      "bg-blue-100 text-blue-700": variant === "panel",
+      "bg-orange-100 text-orange-700": variant === "non-panel",
+    })}>
+      {children}
+    </span>
+  );
+}
+
+type FormData = {
+  name: string; firmType: string; contactName: string; contactEmail: string;
+  contactPhone: string; relationshipPartner: string; notes: string;
+  jurisdictions: string; practiceAreas: string;
+};
+
+function FirmFormFields({ data, onChange }: { data: FormData; onChange: (field: string, value: string) => void }) {
+  const inputClass = "w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all text-sm";
+
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <div className="col-span-2">
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Firm Name *</label>
+        <input className={inputClass} value={data.name} onChange={e => onChange("name", e.target.value)} placeholder="e.g. Harrington & Belmont LLP" />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Firm Type *</label>
+        <select className={inputClass} value={data.firmType} onChange={e => onChange("firmType", e.target.value)}>
+          <option value="panel">Panel</option>
+          <option value="non_panel">Non-Panel</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Relationship Partner</label>
+        <input className={inputClass} value={data.relationshipPartner} onChange={e => onChange("relationshipPartner", e.target.value)} placeholder="e.g. Alexandra Morgan" />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Contact Name</label>
+        <input className={inputClass} value={data.contactName} onChange={e => onChange("contactName", e.target.value)} placeholder="e.g. Oliver Harrington" />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Contact Email</label>
+        <input className={inputClass} value={data.contactEmail} onChange={e => onChange("contactEmail", e.target.value)} placeholder="e.g. o.h@firm.com" type="email" />
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Contact Phone</label>
+        <input className={inputClass} value={data.contactPhone} onChange={e => onChange("contactPhone", e.target.value)} placeholder="e.g. +44 20 7000 0001" />
+      </div>
+      <div className="col-span-2">
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Jurisdictions <span className="text-muted-foreground font-normal">(comma-separated)</span></label>
+        <input className={inputClass} value={data.jurisdictions} onChange={e => onChange("jurisdictions", e.target.value)} placeholder="e.g. England & Wales, Spain" />
+      </div>
+      <div className="col-span-2">
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Practice Areas <span className="text-muted-foreground font-normal">(comma-separated)</span></label>
+        <input className={inputClass} value={data.practiceAreas} onChange={e => onChange("practiceAreas", e.target.value)} placeholder="e.g. M&A, Finance, Regulatory" />
+      </div>
+      <div className="col-span-2">
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Notes</label>
+        <textarea className={cn(inputClass, "h-20 resize-none")} value={data.notes} onChange={e => onChange("notes", e.target.value)} placeholder="Internal notes about this firm..." />
+      </div>
+    </div>
+  );
+}
+
+const emptyForm: FormData = { name: "", firmType: "panel", contactName: "", contactEmail: "", contactPhone: "", relationshipPartner: "", notes: "", jurisdictions: "", practiceAreas: "" };
+
+function parseForm(form: FormData) {
+  return {
+    name: form.name,
+    firmType: form.firmType as "panel" | "non_panel",
+    contactName: form.contactName || null,
+    contactEmail: form.contactEmail || null,
+    contactPhone: form.contactPhone || null,
+    relationshipPartner: form.relationshipPartner || null,
+    notes: form.notes || null,
+    jurisdictions: form.jurisdictions ? form.jurisdictions.split(",").map(s => s.trim()).filter(Boolean) : [],
+    practiceAreas: form.practiceAreas ? form.practiceAreas.split(",").map(s => s.trim()).filter(Boolean) : [],
+  };
+}
+
+function CreateFirmModal({ onClose }: { onClose: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const createMutation = useCreateLawFirm();
+  const [form, setForm] = useState<FormData>(emptyForm);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name) { toast({ variant: "destructive", title: "Firm name is required." }); return; }
+    createMutation.mutate({ data: parseForm(form) }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+        toast({ title: "Law firm added", description: `${form.name} has been created.` });
+        onClose();
+      },
+      onError: (err: any) => toast({ variant: "destructive", title: "Error", description: err?.data?.error || "Failed to create firm." })
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-6 border-b border-border sticky top-0 bg-card z-10">
+          <h2 className="text-xl font-display font-bold text-foreground">Add Law Firm</h2>
+          <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <FirmFormFields data={form} onChange={(f, v) => setForm(prev => ({ ...prev, [f]: v }))} />
+          <div className="flex gap-3 justify-end pt-2">
+            <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted transition-colors text-sm font-medium">Cancel</button>
+            <button type="submit" disabled={createMutation.isPending} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-70 transition-colors flex items-center gap-2">
+              {createMutation.isPending ? "Adding..." : <><Plus className="w-4 h-4" />Add Firm</>}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => void }) {
+  const { data: firm, isLoading } = useGetLawFirm(firmId, { query: { queryKey: ["law-firms", firmId] } });
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const updateMutation = useUpdateLawFirm();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<FormData>(emptyForm);
+
+  const handleStartEdit = () => {
+    if (!firm) return;
+    setForm({
+      name: firm.name, firmType: firm.firmType,
+      contactName: firm.contactName ?? "", contactEmail: firm.contactEmail ?? "",
+      contactPhone: firm.contactPhone ?? "", relationshipPartner: firm.relationshipPartner ?? "",
+      notes: firm.notes ?? "", jurisdictions: firm.jurisdictions.join(", "),
+      practiceAreas: firm.practiceAreas.join(", "),
+    });
+    setEditing(true);
+  };
+
+  const handleSave = () => {
+    updateMutation.mutate({ id: firmId, data: parseForm(form) }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["law-firms", firmId] });
+        toast({ title: "Changes saved." });
+        setEditing(false);
+      },
+      onError: (err: any) => toast({ variant: "destructive", title: "Error", description: err?.data?.error || "Failed to update." })
+    });
+  };
+
+  const handleToggleActive = () => {
+    if (!firm) return;
+    updateMutation.mutate({ id: firmId, data: { isActive: !firm.isActive } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: ["law-firms", firmId] });
+        toast({ title: firm.isActive ? "Firm deactivated." : "Firm reactivated." });
+      }
+    });
+  };
+
+  if (isLoading || !firm) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-start justify-end">
+        <div className="absolute inset-0 bg-black/20" onClick={onClose} />
+        <div className="relative w-full lg:w-[520px] h-full bg-card border-l border-border flex items-center justify-center">
+          <div className="text-primary text-2xl animate-spin">⟳</div>
+        </div>
+      </div>
+    );
+  }
+
+  const typedFirm = firm as LawFirmDetail;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-end">
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full lg:w-[520px] h-full bg-card border-l border-border overflow-y-auto animate-in slide-in-from-right duration-300 shadow-2xl">
+        <div className="flex items-center justify-between p-6 border-b border-border sticky top-0 bg-card z-10">
+          <div>
+            <h2 className="text-lg font-display font-bold text-foreground">{firm.name}</h2>
+            <div className="flex gap-2 mt-1">
+              <Badge variant={firm.firmType === "panel" ? "panel" : "non-panel"}>{firm.firmType === "panel" ? "Panel" : "Non-Panel"}</Badge>
+              <Badge variant={firm.isActive ? "success" : "muted"}>{firm.isActive ? "Active" : "Inactive"}</Badge>
+            </div>
+          </div>
+          <div className="flex gap-1">
+            {!editing && <button onClick={handleStartEdit} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><Pencil className="w-4 h-4" /></button>}
+            <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {editing ? (
+            <>
+              <FirmFormFields data={form} onChange={(f, v) => setForm(prev => ({ ...prev, [f]: v }))} />
+              <div className="flex gap-3">
+                <button onClick={() => setEditing(false)} className="flex-1 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted text-sm font-medium">Cancel</button>
+                <button onClick={handleSave} disabled={updateMutation.isPending} className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-70 flex items-center justify-center gap-2">
+                  <Save className="w-4 h-4" />Save Changes
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {firm.jurisdictions.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1"><Globe className="w-3 h-3" />Jurisdictions</p>
+                  <div className="flex flex-wrap gap-1.5">{firm.jurisdictions.map(j => <Badge key={j}>{j}</Badge>)}</div>
+                </div>
+              )}
+              {firm.practiceAreas.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1"><Briefcase className="w-3 h-3" />Practice Areas</p>
+                  <div className="flex flex-wrap gap-1.5">{firm.practiceAreas.map(a => <Badge key={a} variant="muted">{a}</Badge>)}</div>
+                </div>
+              )}
+              {(firm.contactName || firm.relationshipPartner) && (
+                <div className="grid grid-cols-2 gap-4">
+                  {firm.contactName && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Contact</p>
+                      <p className="text-sm text-foreground">{firm.contactName}</p>
+                      {firm.contactEmail && <p className="text-xs text-muted-foreground">{firm.contactEmail}</p>}
+                      {firm.contactPhone && <p className="text-xs text-muted-foreground">{firm.contactPhone}</p>}
+                    </div>
+                  )}
+                  {firm.relationshipPartner && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Relationship Partner</p>
+                      <p className="text-sm text-foreground">{firm.relationshipPartner}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {firm.notes && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Notes</p>
+                  <p className="text-sm text-foreground/80 leading-relaxed">{firm.notes}</p>
+                </div>
+              )}
+              {typedFirm.terms && typedFirm.terms.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center justify-between">
+                    Commercial Terms
+                    <Badge variant={typedFirm.terms.some(t => t.verificationStatus === "verified") ? "success" : "warning"}>
+                      {typedFirm.terms.filter(t => t.verificationStatus === "verified").length}/{typedFirm.terms.length} Verified
+                    </Badge>
+                  </h3>
+                  <div className="space-y-2 bg-muted/30 rounded-2xl p-4">
+                    {typedFirm.terms.map(term => (
+                      <div key={term.id} className="flex items-start justify-between gap-4 text-sm">
+                        <span className="text-muted-foreground min-w-0 flex-1">{TERM_LABELS[term.termKey] ?? term.termKey}</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-foreground text-right text-xs max-w-[160px] truncate">{formatTermValue(term.termValue)}</span>
+                          {term.verificationStatus === "verified"
+                            ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                            : <div className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 flex-shrink-0" />}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button
+                onClick={handleToggleActive}
+                disabled={updateMutation.isPending}
+                className={cn(
+                  "w-full py-2.5 rounded-xl text-sm font-semibold transition-colors border",
+                  firm.isActive ? "border-destructive/30 text-destructive hover:bg-destructive/5" : "border-emerald-500/30 text-emerald-600 hover:bg-emerald-50"
+                )}
+              >
+                {firm.isActive ? "Deactivate Firm" : "Reactivate Firm"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LawFirms() {
+  const [search, setSearch] = useState("");
+  const [filterType, setFilterType] = useState<"all" | "panel" | "non_panel">("all");
+  const [showInactive, setShowInactive] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
+  const { data: firms = [], isLoading } = useListLawFirms(
+    { includeInactive: showInactive },
+    { query: { queryKey: getListLawFirmsQueryKey({ includeInactive: showInactive }) } }
+  );
+
+  const filtered = firms.filter(f => {
+    if (filterType !== "all" && f.firmType !== filterType) return false;
+    if (search && !f.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-display font-bold tracking-tight text-foreground">Law Firms</h1>
+          <p className="text-muted-foreground mt-1">Manage panel and non-panel law firm relationships.</p>
+        </div>
+        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-md shadow-primary/20 hover:bg-primary/90 transition-colors">
+          <Plus className="w-4 h-4" />Add Law Firm
+        </button>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search firms..." className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 text-sm" />
+        </div>
+        <div className="flex gap-2">
+          {(["all", "panel", "non_panel"] as const).map(t => (
+            <button key={t} onClick={() => setFilterType(t)} className={cn("px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors", filterType === t ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground hover:bg-muted")}>
+              {t === "all" ? "All" : t === "panel" ? "Panel" : "Non-Panel"}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer px-3">
+          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
+          Show inactive
+        </label>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-20"><div className="animate-spin text-primary text-3xl">⟳</div></div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-3xl border border-border bg-card p-12 flex flex-col items-center text-center">
+          <Building2 className="w-12 h-12 text-muted-foreground/30 mb-4" />
+          <h3 className="text-lg font-display font-bold text-foreground">No firms found</h3>
+          <p className="text-muted-foreground mt-1 text-sm">Adjust filters or add a new firm.</p>
+        </div>
+      ) : (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
+          {filtered.map(firm => (
+            <div key={firm.id} onClick={() => setSelectedId(firm.id)} className="flex items-center gap-4 p-4 hover:bg-muted/30 cursor-pointer transition-colors group">
+              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", firm.firmType === "panel" ? "bg-blue-100 text-blue-600" : "bg-orange-100 text-orange-600")}>
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-foreground truncate">{firm.name}</p>
+                  {!firm.isActive && <Badge variant="muted">Inactive</Badge>}
+                </div>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <Badge variant={firm.firmType === "panel" ? "panel" : "non-panel"}>{firm.firmType === "panel" ? "Panel" : "Non-Panel"}</Badge>
+                  {firm.jurisdictions.slice(0, 2).map(j => <span key={j} className="text-xs text-muted-foreground">{j}</span>)}
+                  {firm.jurisdictions.length > 2 && <span className="text-xs text-muted-foreground">+{firm.jurisdictions.length - 2} more</span>}
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showCreate && <CreateFirmModal onClose={() => setShowCreate(false)} />}
+      {selectedId !== null && <FirmDetailPanel firmId={selectedId} onClose={() => setSelectedId(null)} />}
+    </div>
+  );
+}
