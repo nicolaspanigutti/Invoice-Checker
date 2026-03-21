@@ -30,7 +30,7 @@ Email/password authentication with server-side session cookies (`express-session
 - **Auth**: bcryptjs + express-session + connect-pg-simple
 - **Frontend**: React + Vite + Tailwind CSS (shadcn/ui)
 - **State**: TanStack Query v5
-- **Routing**: Wouter
+- **Routing**: Wouter (deliberate — lightweight alternative to React Router; not a drift from spec, intentional architecture decision)
 - **Forms**: react-hook-form + zod
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
@@ -130,7 +130,7 @@ pnpm run typecheck                              # Full monorepo typecheck
 ## Sprint Progress
 
 - [x] **Sprint 0** — Foundation & App Scaffold (auth, DB schema, seed data, login/logout UI)
-- [ ] **Sprint 1** — Reference Data Management (Law Firms, Rates CRUD)
+- [x] **Sprint 1** — Reference Data Management (Law Firms, Rates CRUD, Users)
 - [ ] **Sprint 2** — Invoice Upload & AI Extraction
 - [ ] **Sprint 3** — Rule Engine MVP (17 objective + 7 grey rules)
 - [ ] **Sprint 4** — Review Workflow, Comments & Audit Trail

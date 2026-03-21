@@ -83,7 +83,14 @@ router.get("/panel-rates", requireRole("super_admin", "legal_ops"), async (req: 
   let query = db.select().from(panelRatesTable).$dynamic();
 
   const conditions = [];
-  if (documentId) conditions.push(eq(panelRatesTable.baselineDocumentId, parseInt(documentId as string)));
+  if (documentId) {
+    const parsedDocId = parseInt(documentId as string, 10);
+    if (isNaN(parsedDocId)) {
+      res.status(400).json({ error: "Invalid documentId" });
+      return;
+    }
+    conditions.push(eq(panelRatesTable.baselineDocumentId, parsedDocId));
+  }
   if (firmName) conditions.push(ilike(panelRatesTable.lawFirmName, `%${firmName}%`));
   if (jurisdiction) conditions.push(ilike(panelRatesTable.jurisdiction, `%${jurisdiction}%`));
 
