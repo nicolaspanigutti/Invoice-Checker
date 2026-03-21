@@ -7,7 +7,11 @@ import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
+const isProduction = process.env.NODE_ENV === "production";
+
 const app: Express = express();
+
+app.set("trust proxy", 1);
 
 const PgSession = connectPgSimple(session);
 
@@ -30,6 +34,10 @@ app.use(
     },
   }),
 );
+
+if (isProduction && !process.env.ALLOWED_ORIGINS) {
+  throw new Error("ALLOWED_ORIGINS environment variable must be set in production");
+}
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
@@ -67,7 +75,7 @@ app.use(
       createTableIfMissing: false,
     }),
     secret: process.env.SESSION_SECRET ?? (() => {
-      if (process.env.NODE_ENV === "production") {
+      if (isProduction) {
         throw new Error("SESSION_SECRET environment variable must be set in production");
       }
       return "invoice-checker-dev-secret-do-not-use-in-prod";
@@ -78,7 +86,7 @@ app.use(
       maxAge: 7 * 24 * 60 * 60 * 1000,
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
     },
   }),
 );
