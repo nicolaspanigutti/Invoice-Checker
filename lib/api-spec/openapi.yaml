@@ -287,6 +287,13 @@ paths:
       operationId: updatePanelBaselineDocumentStatus
       tags: [rates]
       summary: Update document status (verify, activate, archive)
+      description: |
+        Allowed status transitions:
+        - draft → verified, archived
+        - verified → active, archived
+        - active → archived
+        - archived → (none)
+        Activating a document atomically archives any other active document of the same documentKind.
       parameters:
         - name: id
           in: path
@@ -307,13 +314,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/PanelBaselineDocument"
         "400":
-          description: Invalid status transition
+          description: Bad request (invalid status value)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Illegal status transition for the current document state
           content:
             application/json:
               schema:

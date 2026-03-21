@@ -86,6 +86,13 @@ router.post("/panel-baseline-documents", requireRole("super_admin", "legal_ops")
   res.status(201).json(docToResponse(doc));
 });
 
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  draft: ["verified", "archived"],
+  verified: ["active", "archived"],
+  active: ["archived"],
+  archived: [],
+};
+
 router.patch("/panel-baseline-documents/:id/status", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (isNaN(id)) {
@@ -105,27 +112,39 @@ router.patch("/panel-baseline-documents/:id/status", requireRole("super_admin", 
     return;
   }
 
-  const updateValues: Partial<typeof panelBaselineDocumentsTable.$inferInsert> = { verificationStatus: status };
-
-  if (status === "active") {
-    await db
-      .update(panelBaselineDocumentsTable)
-      .set({ verificationStatus: "archived" })
-      .where(
-        and(
-          eq(panelBaselineDocumentsTable.documentKind, doc.documentKind),
-          eq(panelBaselineDocumentsTable.verificationStatus, "active"),
-          sql`${panelBaselineDocumentsTable.id} != ${id}`
-        )
-      );
-    updateValues.activatedAt = new Date();
+  const allowed = ALLOWED_TRANSITIONS[doc.verificationStatus] ?? [];
+  if (!allowed.includes(status)) {
+    res.status(422).json({
+      error: `Cannot transition from '${doc.verificationStatus}' to '${status}'. Allowed transitions: ${allowed.length ? allowed.join(", ") : "none"}`
+    });
+    return;
   }
 
-  const [updated] = await db
-    .update(panelBaselineDocumentsTable)
-    .set(updateValues)
-    .where(eq(panelBaselineDocumentsTable.id, id))
-    .returning();
+  const updated = await db.transaction(async (tx) => {
+    const updateValues: Partial<typeof panelBaselineDocumentsTable.$inferInsert> = { verificationStatus: status };
+
+    if (status === "active") {
+      await tx
+        .update(panelBaselineDocumentsTable)
+        .set({ verificationStatus: "archived" })
+        .where(
+          and(
+            eq(panelBaselineDocumentsTable.documentKind, doc.documentKind),
+            eq(panelBaselineDocumentsTable.verificationStatus, "active"),
+            sql`${panelBaselineDocumentsTable.id} != ${id}`
+          )
+        );
+      updateValues.activatedAt = new Date();
+    }
+
+    const [updated] = await tx
+      .update(panelBaselineDocumentsTable)
+      .set(updateValues)
+      .where(eq(panelBaselineDocumentsTable.id, id))
+      .returning();
+
+    return updated;
+  });
 
   res.json(docToResponse(updated));
 });
