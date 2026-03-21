@@ -618,7 +618,7 @@ components:
           type: integer
         documentKind:
           type: string
-          enum: [rates, tc]
+          enum: [rates, terms_conditions]
         versionLabel:
           type: string
         fileName:
@@ -626,7 +626,7 @@ components:
           nullable: true
         verificationStatus:
           type: string
-          enum: [draft, active, superseded]
+          enum: [draft, verified, active, archived]
         uploadedById:
           type: integer
         activatedAt:
@@ -649,7 +649,7 @@ components:
       properties:
         documentKind:
           type: string
-          enum: [rates, tc]
+          enum: [rates, terms_conditions]
         versionLabel:
           type: string
         fileName:

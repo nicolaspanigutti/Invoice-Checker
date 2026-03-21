@@ -155,7 +155,7 @@ export type PanelBaselineDocumentDocumentKind =
 
 export const PanelBaselineDocumentDocumentKind = {
   rates: "rates",
-  tc: "tc",
+  terms_conditions: "terms_conditions",
 } as const;
 
 export type PanelBaselineDocumentVerificationStatus =
@@ -163,8 +163,9 @@ export type PanelBaselineDocumentVerificationStatus =
 
 export const PanelBaselineDocumentVerificationStatus = {
   draft: "draft",
+  verified: "verified",
   active: "active",
-  superseded: "superseded",
+  archived: "archived",
 } as const;
 
 export interface PanelBaselineDocument {
@@ -183,7 +184,7 @@ export type CreatePanelBaselineDocumentRequestDocumentKind =
 
 export const CreatePanelBaselineDocumentRequestDocumentKind = {
   rates: "rates",
-  tc: "tc",
+  terms_conditions: "terms_conditions",
 } as const;
 
 export interface CreatePanelRateItem {

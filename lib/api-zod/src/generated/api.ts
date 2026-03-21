@@ -232,10 +232,10 @@ export const UpsertLawFirmTermsResponse = zod.array(
  */
 export const ListPanelBaselineDocumentsResponseItem = zod.object({
   id: zod.number(),
-  documentKind: zod.enum(["rates", "tc"]),
+  documentKind: zod.enum(["rates", "terms_conditions"]),
   versionLabel: zod.string(),
   fileName: zod.string().nullish(),
-  verificationStatus: zod.enum(["draft", "active", "superseded"]),
+  verificationStatus: zod.enum(["draft", "verified", "active", "archived"]),
   uploadedById: zod.number(),
   activatedAt: zod.date().nullish(),
   createdAt: zod.date(),
@@ -248,7 +248,7 @@ export const ListPanelBaselineDocumentsResponse = zod.array(
  * @summary Create panel baseline document with rates
  */
 export const CreatePanelBaselineDocumentBody = zod.object({
-  documentKind: zod.enum(["rates", "tc"]),
+  documentKind: zod.enum(["rates", "terms_conditions"]),
   versionLabel: zod.string(),
   fileName: zod.string().nullish(),
   rates: zod

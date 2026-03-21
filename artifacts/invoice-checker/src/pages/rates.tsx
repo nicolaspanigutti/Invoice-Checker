@@ -15,13 +15,16 @@ import { DollarSign, Plus, Search, X, FileText, ChevronDown, ChevronUp, Trash2 }
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-function Badge({ children, variant = "default" }: { children: React.ReactNode; variant?: "default" | "active" | "draft" | "superseded" }) {
+type BadgeVariant = "default" | "draft" | "verified" | "active" | "archived";
+
+function Badge({ children, variant = "default" }: { children: React.ReactNode; variant?: BadgeVariant }) {
   return (
     <span className={cn("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold", {
       "bg-primary/10 text-primary": variant === "default",
-      "bg-emerald-100 text-emerald-700": variant === "active",
       "bg-amber-100 text-amber-700": variant === "draft",
-      "bg-muted text-muted-foreground": variant === "superseded",
+      "bg-blue-100 text-blue-700": variant === "verified",
+      "bg-emerald-100 text-emerald-700": variant === "active",
+      "bg-muted text-muted-foreground": variant === "archived",
     })}>
       {children}
     </span>
@@ -252,7 +255,7 @@ export default function Rates() {
                 className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-2", selectedDocId === doc.id ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground hover:bg-muted")}
               >
                 {doc.versionLabel}
-                <Badge variant={doc.verificationStatus as any}>{doc.verificationStatus}</Badge>
+                <Badge variant={doc.verificationStatus}>{doc.verificationStatus}</Badge>
               </button>
             ))}
           </div>
