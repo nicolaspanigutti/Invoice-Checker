@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Shield, Loader2, Lock, Mail } from "lucide-react";
-import { useLogin, getGetMeQueryKey } from "@workspace/api-client-react";
+import { useLogin, getGetMeQueryKey, type LoginMutationError } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
@@ -32,11 +32,12 @@ export default function Login() {
         toast({ title: "Welcome back", description: `Successfully logged in as ${user.displayName}.` });
         setLocation("/");
       },
-      onError: (error: any) => {
+      onError: (error: LoginMutationError) => {
+        const msg = (error.data as { error?: string } | null)?.error;
         toast({ 
           variant: "destructive", 
           title: "Login failed", 
-          description: error?.data?.error || "Invalid credentials. Please try again." 
+          description: msg || "Invalid credentials. Please try again." 
         });
       }
     });

@@ -1,9 +1,13 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, lawFirmsTable, firmTermsTable } from "@workspace/db";
-import { eq, and, or } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middleware/auth";
 
 const router: IRouter = Router();
+
+function parseId(param: string | string[]): number {
+  return parseInt(Array.isArray(param) ? param[0] : param, 10);
+}
 
 function firmToResponse(firm: typeof lawFirmsTable.$inferSelect) {
   return {
@@ -72,7 +76,7 @@ router.post("/law-firms", requireRole("super_admin", "legal_ops"), async (req: R
 });
 
 router.get("/law-firms/:id", requireAuth, async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id);
+  const id = parseId(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid ID" });
     return;
@@ -93,7 +97,7 @@ router.get("/law-firms/:id", requireAuth, async (req: Request, res: Response) =>
 });
 
 router.put("/law-firms/:id", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id);
+  const id = parseId(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid ID" });
     return;
@@ -123,13 +127,13 @@ router.put("/law-firms/:id", requireRole("super_admin", "legal_ops"), async (req
 });
 
 router.get("/law-firms/:id/terms", requireAuth, async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id);
+  const id = parseId(req.params.id);
   const terms = await db.select().from(firmTermsTable).where(eq(firmTermsTable.lawFirmId, id));
   res.json(terms.map(termToResponse));
 });
 
 router.put("/law-firms/:id/terms", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id);
+  const id = parseId(req.params.id);
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid ID" });
     return;

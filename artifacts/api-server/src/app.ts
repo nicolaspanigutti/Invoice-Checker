@@ -48,13 +48,19 @@ app.use(
       tableName: "user_sessions",
       createTableIfMissing: false,
     }),
-    secret: process.env.SESSION_SECRET || "invoice-checker-dev-secret-change-in-prod",
+    secret: process.env.SESSION_SECRET ?? (() => {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("SESSION_SECRET environment variable must be set in production");
+      }
+      return "invoice-checker-dev-secret-do-not-use-in-prod";
+    })(),
     resave: false,
     saveUninitialized: false,
     cookie: {
       maxAge: 7 * 24 * 60 * 60 * 1000,
       httpOnly: true,
       sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
     },
   }),
 );

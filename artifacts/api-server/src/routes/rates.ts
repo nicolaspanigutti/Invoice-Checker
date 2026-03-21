@@ -60,16 +60,16 @@ router.post("/panel-baseline-documents", requireRole("super_admin", "legal_ops")
 
   if (Array.isArray(rates) && rates.length > 0) {
     await db.insert(panelRatesTable).values(
-      rates.map((r: any) => ({
+      rates.map((r: { lawFirmName: string; jurisdiction: string; roleCode: string; roleLabel: string; currency: string; maxRate: number | string; validFrom?: string; validTo?: string }) => ({
         baselineDocumentId: doc.id,
         lawFirmName: r.lawFirmName,
         jurisdiction: r.jurisdiction,
         roleCode: r.roleCode,
         roleLabel: r.roleLabel,
         currency: r.currency,
-        maxRate: r.maxRate,
-        validFrom: r.validFrom ?? null,
-        validTo: r.validTo ?? null,
+        maxRate: String(r.maxRate),
+        validFrom: r.validFrom ?? new Date().toISOString().split("T")[0],
+        validTo: r.validTo ?? undefined,
       }))
     );
   }

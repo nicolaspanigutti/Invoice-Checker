@@ -24,4 +24,4 @@ export const userSessionsTable = pgTable("user_sessions", {
 export const insertUserSchema = createInsertSchema(usersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof usersTable.$inferSelect;
-export type Session = typeof sessionsTable.$inferSelect;
+export type UserSession = typeof userSessionsTable.$inferSelect;
