@@ -4,29 +4,39 @@ import {
   useListPanelBaselineDocuments,
   useListPanelRates,
   useCreatePanelBaselineDocument,
+  useUpdatePanelBaselineDocumentStatus,
   getListPanelBaselineDocumentsQueryKey,
   getListPanelRatesQueryKey,
   type PanelBaselineDocument,
   type PanelRate,
   type CreatePanelRateItem,
   type CreatePanelBaselineDocumentMutationError,
+  type UpdatePanelBaselineDocumentStatusMutationError,
 } from "@workspace/api-client-react";
-import { DollarSign, Plus, Search, X, FileText, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import {
+  DollarSign, Plus, Search, X, FileText, Trash2,
+  ShieldCheck, Archive, CheckCircle2, Clock, AlertCircle,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-type BadgeVariant = "default" | "draft" | "verified" | "active" | "archived";
+type DocStatus = "draft" | "verified" | "active" | "archived";
 
-function Badge({ children, variant = "default" }: { children: React.ReactNode; variant?: BadgeVariant }) {
+type BadgeVariant = "default" | DocStatus;
+
+function StatusBadge({ status }: { status: DocStatus }) {
   return (
-    <span className={cn("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold", {
-      "bg-primary/10 text-primary": variant === "default",
-      "bg-amber-100 text-amber-700": variant === "draft",
-      "bg-blue-100 text-blue-700": variant === "verified",
-      "bg-emerald-100 text-emerald-700": variant === "active",
-      "bg-muted text-muted-foreground": variant === "archived",
+    <span className={cn("inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold", {
+      "bg-amber-100 text-amber-700": status === "draft",
+      "bg-blue-100 text-blue-700": status === "verified",
+      "bg-emerald-100 text-emerald-700": status === "active",
+      "bg-muted text-muted-foreground": status === "archived",
     })}>
-      {children}
+      {status === "draft" && <Clock className="w-3 h-3" />}
+      {status === "verified" && <ShieldCheck className="w-3 h-3" />}
+      {status === "active" && <CheckCircle2 className="w-3 h-3" />}
+      {status === "archived" && <Archive className="w-3 h-3" />}
+      {status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
   );
 }
@@ -72,7 +82,7 @@ function AddRatesDocumentModal({ onClose }: { onClose: () => void }) {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListPanelBaselineDocumentsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListPanelRatesQueryKey() });
-        toast({ title: "Rates document created", description: `${versionLabel} with ${validRows.length} rate rows.` });
+        toast({ title: "Rates document created", description: `${versionLabel} with ${validRows.length} rate rows saved as Draft.` });
         onClose();
       },
       onError: (err: CreatePanelBaselineDocumentMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to create document." })
@@ -154,6 +164,170 @@ function AddRatesDocumentModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function AddTCDocumentModal({ onClose }: { onClose: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const createMutation = useCreatePanelBaselineDocument();
+  const [versionLabel, setVersionLabel] = useState("");
+  const [fileName, setFileName] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!versionLabel) { toast({ variant: "destructive", title: "Version label is required." }); return; }
+    createMutation.mutate({ data: {
+      documentKind: "terms_conditions",
+      versionLabel,
+      fileName: fileName || null,
+    }}, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListPanelBaselineDocumentsQueryKey() });
+        toast({ title: "Panel T&C document created", description: `${versionLabel} saved as Draft. Verify and activate when ready.` });
+        onClose();
+      },
+      onError: (err: CreatePanelBaselineDocumentMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to create document." })
+    });
+  };
+
+  const inputClass = "w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary text-sm";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-3xl shadow-2xl w-full max-w-lg animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between p-6 border-b border-border">
+          <h2 className="text-xl font-display font-bold text-foreground">Add Panel T&C Document</h2>
+          <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <p className="text-sm text-muted-foreground">Register a Panel Terms &amp; Conditions document version. Once verified, you can activate it — activating a version will automatically archive the current active version.</p>
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-1.5">Version Label *</label>
+            <input value={versionLabel} onChange={e => setVersionLabel(e.target.value)} placeholder="e.g. Panel T&C 2025 v2.0" className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-1.5">Source File Name</label>
+            <input value={fileName} onChange={e => setFileName(e.target.value)} placeholder="e.g. Panel_TC_2025_v2.pdf" className={inputClass} />
+          </div>
+          <div className="flex gap-3 justify-end pt-2">
+            <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted text-sm font-medium">Cancel</button>
+            <button type="submit" disabled={createMutation.isPending} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-70 flex items-center gap-2">
+              {createMutation.isPending ? "Saving..." : <><Plus className="w-4 h-4" />Create Document</>}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function DocumentStatusActions({ doc, onUpdate }: { doc: PanelBaselineDocument; onUpdate: () => void }) {
+  const { toast } = useToast();
+  const updateStatus = useUpdatePanelBaselineDocumentStatus();
+
+  const change = (status: DocStatus) => {
+    updateStatus.mutate({ id: doc.id, data: { status } }, {
+      onSuccess: () => {
+        toast({ title: `Document ${status === "active" ? "activated" : status}.`, description: status === "active" ? "Previous active version has been archived." : undefined });
+        onUpdate();
+      },
+      onError: (err: UpdatePanelBaselineDocumentStatusMutationError) =>
+        toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to update status." })
+    });
+  };
+
+  const isPending = updateStatus.isPending;
+
+  return (
+    <div className="flex flex-wrap gap-2 mt-3">
+      {doc.verificationStatus === "draft" && (
+        <button onClick={() => change("verified")} disabled={isPending} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-60 flex items-center gap-1.5 transition-colors">
+          <ShieldCheck className="w-3.5 h-3.5" />Verify
+        </button>
+      )}
+      {(doc.verificationStatus === "verified" || doc.verificationStatus === "draft") && (
+        <button onClick={() => change("active")} disabled={isPending} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 flex items-center gap-1.5 transition-colors">
+          <CheckCircle2 className="w-3.5 h-3.5" />Activate
+        </button>
+      )}
+      {doc.verificationStatus === "active" && (
+        <button onClick={() => change("archived")} disabled={isPending} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-muted text-muted-foreground hover:bg-muted disabled:opacity-60 flex items-center gap-1.5 transition-colors">
+          <Archive className="w-3.5 h-3.5" />Archive
+        </button>
+      )}
+      {doc.verificationStatus === "archived" && (
+        <button onClick={() => change("active")} disabled={isPending} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 flex items-center gap-1.5 transition-colors">
+          <CheckCircle2 className="w-3.5 h-3.5" />Re-activate
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PanelTCSection() {
+  const queryClient = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const { data: docs = [], isLoading } = useListPanelBaselineDocuments(
+    { documentKind: "terms_conditions" },
+    { query: { queryKey: getListPanelBaselineDocumentsQueryKey({ documentKind: "terms_conditions" }) } }
+  );
+
+  const activeDoc = docs.find(d => d.verificationStatus === "active");
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListPanelBaselineDocumentsQueryKey() });
+
+  return (
+    <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between p-5 border-b border-border">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-emerald-600" />
+          <h2 className="text-sm font-semibold text-foreground">Panel Terms &amp; Conditions</h2>
+          {activeDoc && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+              <CheckCircle2 className="w-3 h-3" />Active: {activeDoc.versionLabel}
+            </span>
+          )}
+        </div>
+        <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
+          <Plus className="w-3.5 h-3.5" />Add Version
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
+      ) : docs.length === 0 ? (
+        <div className="p-8 flex flex-col items-center text-center">
+          <AlertCircle className="w-8 h-8 text-muted-foreground/30 mb-2" />
+          <p className="text-sm text-muted-foreground">No Panel T&C documents yet.</p>
+          <p className="text-xs text-muted-foreground mt-1">Add a version, verify it, and activate it to use in invoice analysis.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-border">
+          {docs.map(doc => (
+            <div key={doc.id} className="p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-sm font-semibold text-foreground">{doc.versionLabel}</p>
+                    <StatusBadge status={doc.verificationStatus as DocStatus} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {doc.fileName && <span>{doc.fileName} · </span>}
+                    Added {new Date(doc.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    {doc.activatedAt && <span> · Activated {new Date(doc.activatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>}
+                  </p>
+                </div>
+              </div>
+              <DocumentStatusActions doc={doc} onUpdate={invalidate} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showCreate && <AddTCDocumentModal onClose={() => setShowCreate(false)} />}
+    </div>
+  );
+}
+
 function RatesTable({ documentId, firmFilter, jurisdictionFilter }: { documentId?: number; firmFilter: string; jurisdictionFilter: string }) {
   const { data: rates = [], isLoading } = useListPanelRates(
     { documentId, firmName: firmFilter || undefined, jurisdiction: jurisdictionFilter || undefined },
@@ -212,52 +386,65 @@ function RatesTable({ documentId, firmFilter, jurisdictionFilter }: { documentId
   );
 }
 
-export default function Rates() {
+function RatesDocumentsSection() {
+  const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [selectedDocId, setSelectedDocId] = useState<number | undefined>(undefined);
   const [firmFilter, setFirmFilter] = useState("");
   const [jurisdictionFilter, setJurisdictionFilter] = useState("");
 
-  const { data: documents = [], isLoading: docsLoading } = useListPanelBaselineDocuments({
-    query: { queryKey: getListPanelBaselineDocumentsQueryKey() }
-  });
+  const { data: documents = [], isLoading: docsLoading } = useListPanelBaselineDocuments(
+    { documentKind: "rates" },
+    { query: { queryKey: getListPanelBaselineDocumentsQueryKey({ documentKind: "rates" }) } }
+  );
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListPanelBaselineDocumentsQueryKey() });
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-display font-bold tracking-tight text-foreground">Rates</h1>
-          <p className="text-muted-foreground mt-1">Panel rate schedules used by the rule engine for rate compliance checks.</p>
-        </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-md shadow-primary/20 hover:bg-primary/90 transition-colors">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-display font-semibold text-foreground flex items-center gap-2">
+          <DollarSign className="w-5 h-5 text-muted-foreground" />Panel Rate Schedules
+        </h2>
+        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-sm hover:bg-primary/90 transition-colors">
           <Plus className="w-4 h-4" />Add Rates Document
         </button>
       </div>
 
       <div className="bg-card border border-border rounded-2xl p-5">
-        <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" />Rate Documents</h2>
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2"><FileText className="w-3.5 h-3.5" />Documents</h3>
         {docsLoading ? (
           <div className="text-center py-4 text-muted-foreground text-sm">Loading...</div>
         ) : documents.length === 0 ? (
           <div className="text-center py-6 text-muted-foreground text-sm">No rate documents yet. Add one above.</div>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setSelectedDocId(undefined)}
-              className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-colors", selectedDocId === undefined ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground hover:bg-muted")}
-            >
-              All Documents
-            </button>
-            {documents.map((doc: PanelBaselineDocument) => (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
               <button
-                key={doc.id}
-                onClick={() => setSelectedDocId(doc.id)}
-                className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-2", selectedDocId === doc.id ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground hover:bg-muted")}
+                onClick={() => setSelectedDocId(undefined)}
+                className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-colors", selectedDocId === undefined ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground hover:bg-muted")}
               >
-                {doc.versionLabel}
-                <Badge variant={doc.verificationStatus}>{doc.verificationStatus}</Badge>
+                All Documents
               </button>
-            ))}
+              {documents.map((doc: PanelBaselineDocument) => (
+                <button
+                  key={doc.id}
+                  onClick={() => setSelectedDocId(doc.id)}
+                  className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-2", selectedDocId === doc.id ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground hover:bg-muted")}
+                >
+                  {doc.versionLabel}
+                  <StatusBadge status={doc.verificationStatus as DocStatus} />
+                </button>
+              ))}
+            </div>
+            {selectedDocId !== undefined && (
+              <div className="pt-2">
+                <DocumentStatusActions
+                  doc={documents.find(d => d.id === selectedDocId)!}
+                  onUpdate={invalidate}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -276,6 +463,36 @@ export default function Rates() {
       <RatesTable documentId={selectedDocId} firmFilter={firmFilter} jurisdictionFilter={jurisdictionFilter} />
 
       {showCreate && <AddRatesDocumentModal onClose={() => setShowCreate(false)} />}
+    </div>
+  );
+}
+
+export default function Rates() {
+  const [tab, setTab] = useState<"rates" | "tc">("rates");
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div>
+        <h1 className="text-4xl font-display font-bold tracking-tight text-foreground">Rates &amp; Panel T&amp;C</h1>
+        <p className="text-muted-foreground mt-1">Manage panel rate schedules and Panel Terms &amp; Conditions documents.</p>
+      </div>
+
+      <div className="flex gap-1 p-1 bg-muted rounded-xl w-fit">
+        <button
+          onClick={() => setTab("rates")}
+          className={cn("px-5 py-2 rounded-lg text-sm font-semibold transition-colors", tab === "rates" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+        >
+          Rate Schedules
+        </button>
+        <button
+          onClick={() => setTab("tc")}
+          className={cn("px-5 py-2 rounded-lg text-sm font-semibold transition-colors", tab === "tc" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+        >
+          Panel T&amp;C
+        </button>
+      </div>
+
+      {tab === "rates" ? <RatesDocumentsSection /> : <PanelTCSection />}
     </div>
   );
 }

@@ -250,6 +250,25 @@ export interface UpdateUserRequest {
   password?: string | null;
 }
 
+export type UpdateDocumentStatusRequestStatus =
+  (typeof UpdateDocumentStatusRequestStatus)[keyof typeof UpdateDocumentStatusRequestStatus];
+
+export const UpdateDocumentStatusRequestStatus = {
+  draft: "draft",
+  verified: "verified",
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface UpdateDocumentStatusRequest {
+  status: UpdateDocumentStatusRequestStatus;
+}
+
+export interface PanelRateLookupResult {
+  rate?: PanelRate | null;
+  found: boolean;
+}
+
 export type ListLawFirmsParams = {
   includeInactive?: boolean;
 };
@@ -258,8 +277,28 @@ export type UpsertLawFirmTermsBody = {
   terms: UpsertTermItem[];
 };
 
+export type ListPanelBaselineDocumentsParams = {
+  documentKind?: ListPanelBaselineDocumentsDocumentKind;
+};
+
+export type ListPanelBaselineDocumentsDocumentKind =
+  (typeof ListPanelBaselineDocumentsDocumentKind)[keyof typeof ListPanelBaselineDocumentsDocumentKind];
+
+export const ListPanelBaselineDocumentsDocumentKind = {
+  rates: "rates",
+  terms_conditions: "terms_conditions",
+} as const;
+
 export type ListPanelRatesParams = {
   documentId?: number;
   firmName?: string;
   jurisdiction?: string;
+};
+
+export type LookupPanelRateParams = {
+  lawFirmName: string;
+  jurisdiction: string;
+  roleCode: string;
+  currency: string;
+  invoiceDate: string;
 };

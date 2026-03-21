@@ -249,6 +249,12 @@ paths:
       operationId: listPanelBaselineDocuments
       tags: [rates]
       summary: List panel baseline documents
+      parameters:
+        - name: documentKind
+          in: query
+          schema:
+            type: string
+            enum: [rates, terms_conditions]
       responses:
         "200":
           description: List of documents
@@ -261,7 +267,7 @@ paths:
     post:
       operationId: createPanelBaselineDocument
       tags: [rates]
-      summary: Create panel baseline document with rates
+      summary: Create panel baseline document with optional rates
       requestBody:
         required: true
         content:
@@ -275,6 +281,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PanelBaselineDocument"
+
+  /panel-baseline-documents/{id}/status:
+    patch:
+      operationId: updatePanelBaselineDocumentStatus
+      tags: [rates]
+      summary: Update document status (verify, activate, archive)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDocumentStatusRequest"
+      responses:
+        "200":
+          description: Updated document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PanelBaselineDocument"
+        "400":
+          description: Invalid status transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /panel-rates:
     get:
@@ -303,6 +346,45 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PanelRate"
+
+  /panel-rates/lookup:
+    get:
+      operationId: lookupPanelRate
+      tags: [rates]
+      summary: Look up the active max rate for a given firm, jurisdiction, role, and currency
+      parameters:
+        - name: lawFirmName
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: jurisdiction
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: roleCode
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: currency
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: invoiceDate
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matching rate or null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PanelRateLookupResult"
 
   /users:
     get:
@@ -758,3 +840,23 @@ components:
         password:
           type: string
           nullable: true
+
+    UpdateDocumentStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [draft, verified, active, archived]
+      required:
+        - status
+
+    PanelRateLookupResult:
+      type: object
+      properties:
+        rate:
+          $ref: "#/components/schemas/PanelRate"
+          nullable: true
+        found:
+          type: boolean
+      required:
+        - found

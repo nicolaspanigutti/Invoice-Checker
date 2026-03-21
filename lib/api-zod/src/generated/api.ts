@@ -230,6 +230,10 @@ export const UpsertLawFirmTermsResponse = zod.array(
 /**
  * @summary List panel baseline documents
  */
+export const ListPanelBaselineDocumentsQueryParams = zod.object({
+  documentKind: zod.enum(["rates", "terms_conditions"]).optional(),
+});
+
 export const ListPanelBaselineDocumentsResponseItem = zod.object({
   id: zod.number(),
   documentKind: zod.enum(["rates", "terms_conditions"]),
@@ -245,7 +249,7 @@ export const ListPanelBaselineDocumentsResponse = zod.array(
 );
 
 /**
- * @summary Create panel baseline document with rates
+ * @summary Create panel baseline document with optional rates
  */
 export const CreatePanelBaselineDocumentBody = zod.object({
   documentKind: zod.enum(["rates", "terms_conditions"]),
@@ -265,6 +269,28 @@ export const CreatePanelBaselineDocumentBody = zod.object({
       }),
     )
     .optional(),
+});
+
+/**
+ * @summary Update document status (verify, activate, archive)
+ */
+export const UpdatePanelBaselineDocumentStatusParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdatePanelBaselineDocumentStatusBody = zod.object({
+  status: zod.enum(["draft", "verified", "active", "archived"]),
+});
+
+export const UpdatePanelBaselineDocumentStatusResponse = zod.object({
+  id: zod.number(),
+  documentKind: zod.enum(["rates", "terms_conditions"]),
+  versionLabel: zod.string(),
+  fileName: zod.string().nullish(),
+  verificationStatus: zod.enum(["draft", "verified", "active", "archived"]),
+  uploadedById: zod.number(),
+  activatedAt: zod.date().nullish(),
+  createdAt: zod.date(),
 });
 
 /**
@@ -289,6 +315,35 @@ export const ListPanelRatesResponseItem = zod.object({
   validTo: zod.string().nullish(),
 });
 export const ListPanelRatesResponse = zod.array(ListPanelRatesResponseItem);
+
+/**
+ * @summary Look up the active max rate for a given firm, jurisdiction, role, and currency
+ */
+export const LookupPanelRateQueryParams = zod.object({
+  lawFirmName: zod.coerce.string(),
+  jurisdiction: zod.coerce.string(),
+  roleCode: zod.coerce.string(),
+  currency: zod.coerce.string(),
+  invoiceDate: zod.coerce.string(),
+});
+
+export const LookupPanelRateResponse = zod.object({
+  rate: zod
+    .object({
+      id: zod.number(),
+      baselineDocumentId: zod.number(),
+      lawFirmName: zod.string(),
+      jurisdiction: zod.string(),
+      roleCode: zod.string(),
+      roleLabel: zod.string(),
+      currency: zod.string(),
+      maxRate: zod.string(),
+      validFrom: zod.string().nullish(),
+      validTo: zod.string().nullish(),
+    })
+    .nullish(),
+  found: zod.boolean(),
+});
 
 /**
  * Super admin only

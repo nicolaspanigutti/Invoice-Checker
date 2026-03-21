@@ -1,9 +1,13 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, panelBaselineDocumentsTable, panelRatesTable, usersTable } from "@workspace/db";
-import { eq, and, ilike, sql } from "drizzle-orm";
+import { db, panelBaselineDocumentsTable, panelRatesTable } from "@workspace/db";
+import { eq, and, ilike, sql, lte, or, isNull } from "drizzle-orm";
 import { requireRole } from "../middleware/auth";
 
 const router: IRouter = Router();
+
+function parseId(param: string | string[]): number {
+  return parseInt(Array.isArray(param) ? param[0] : param, 10);
+}
 
 function docToResponse(doc: typeof panelBaselineDocumentsTable.$inferSelect) {
   return {
@@ -34,10 +38,15 @@ function rateToResponse(rate: typeof panelRatesTable.$inferSelect) {
 }
 
 router.get("/panel-baseline-documents", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
-  const docs = await db
-    .select()
-    .from(panelBaselineDocumentsTable)
-    .orderBy(sql`${panelBaselineDocumentsTable.createdAt} desc`);
+  const { documentKind } = req.query;
+
+  let query = db.select().from(panelBaselineDocumentsTable).$dynamic();
+
+  if (documentKind) {
+    query = query.where(eq(panelBaselineDocumentsTable.documentKind, documentKind as "rates" | "terms_conditions"));
+  }
+
+  const docs = await query.orderBy(sql`${panelBaselineDocumentsTable.createdAt} desc`);
   res.json(docs.map(docToResponse));
 });
 
@@ -53,12 +62,12 @@ router.post("/panel-baseline-documents", requireRole("super_admin", "legal_ops")
     documentKind,
     versionLabel,
     fileName: fileName ?? null,
-    verificationStatus: "active",
+    verificationStatus: "draft",
     uploadedById: req.session.userId!,
-    activatedAt: new Date(),
+    activatedAt: null,
   }).returning();
 
-  if (Array.isArray(rates) && rates.length > 0) {
+  if (documentKind === "rates" && Array.isArray(rates) && rates.length > 0) {
     await db.insert(panelRatesTable).values(
       rates.map((r: { lawFirmName: string; jurisdiction: string; roleCode: string; roleLabel: string; currency: string; maxRate: number | string; validFrom?: string; validTo?: string }) => ({
         baselineDocumentId: doc.id,
@@ -75,6 +84,50 @@ router.post("/panel-baseline-documents", requireRole("super_admin", "legal_ops")
   }
 
   res.status(201).json(docToResponse(doc));
+});
+
+router.patch("/panel-baseline-documents/:id/status", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
+
+  const { status } = req.body;
+  if (!status || !["draft", "verified", "active", "archived"].includes(status)) {
+    res.status(400).json({ error: "status must be one of: draft, verified, active, archived" });
+    return;
+  }
+
+  const [doc] = await db.select().from(panelBaselineDocumentsTable).where(eq(panelBaselineDocumentsTable.id, id)).limit(1);
+  if (!doc) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
+
+  const updateValues: Partial<typeof panelBaselineDocumentsTable.$inferInsert> = { verificationStatus: status };
+
+  if (status === "active") {
+    await db
+      .update(panelBaselineDocumentsTable)
+      .set({ verificationStatus: "archived" })
+      .where(
+        and(
+          eq(panelBaselineDocumentsTable.documentKind, doc.documentKind),
+          eq(panelBaselineDocumentsTable.verificationStatus, "active"),
+          sql`${panelBaselineDocumentsTable.id} != ${id}`
+        )
+      );
+    updateValues.activatedAt = new Date();
+  }
+
+  const [updated] = await db
+    .update(panelBaselineDocumentsTable)
+    .set(updateValues)
+    .where(eq(panelBaselineDocumentsTable.id, id))
+    .returning();
+
+  res.json(docToResponse(updated));
 });
 
 router.get("/panel-rates", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
@@ -100,6 +153,33 @@ router.get("/panel-rates", requireRole("super_admin", "legal_ops"), async (req: 
 
   const rates = await query.orderBy(panelRatesTable.lawFirmName, panelRatesTable.jurisdiction, panelRatesTable.roleCode);
   res.json(rates.map(rateToResponse));
+});
+
+router.get("/panel-rates/lookup", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
+  const { lawFirmName, jurisdiction, roleCode, currency, invoiceDate } = req.query;
+
+  if (!lawFirmName || !jurisdiction || !roleCode || !currency || !invoiceDate) {
+    res.status(400).json({ error: "lawFirmName, jurisdiction, roleCode, currency, and invoiceDate are all required" });
+    return;
+  }
+
+  const [rate] = await db
+    .select()
+    .from(panelRatesTable)
+    .where(
+      and(
+        ilike(panelRatesTable.lawFirmName, lawFirmName as string),
+        ilike(panelRatesTable.jurisdiction, jurisdiction as string),
+        ilike(panelRatesTable.roleCode, roleCode as string),
+        eq(panelRatesTable.currency, currency as string),
+        lte(panelRatesTable.validFrom, invoiceDate as string),
+        or(isNull(panelRatesTable.validTo), sql`${panelRatesTable.validTo} >= ${invoiceDate}`)
+      )
+    )
+    .orderBy(sql`${panelRatesTable.validFrom} desc`)
+    .limit(1);
+
+  res.json({ found: !!rate, rate: rate ? rateToResponse(rate) : null });
 });
 
 export default router;

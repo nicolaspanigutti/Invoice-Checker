@@ -27,11 +27,15 @@ import type {
   LawFirm,
   LawFirmDetail,
   ListLawFirmsParams,
+  ListPanelBaselineDocumentsParams,
   ListPanelRatesParams,
   LoginRequest,
+  LookupPanelRateParams,
   MessageResponse,
   PanelBaselineDocument,
   PanelRate,
+  PanelRateLookupResult,
+  UpdateDocumentStatusRequest,
   UpdateLawFirmRequest,
   UpdateUserRequest,
   UpsertLawFirmTermsBody,
@@ -887,15 +891,30 @@ export const useUpsertLawFirmTerms = <
 /**
  * @summary List panel baseline documents
  */
-export const getListPanelBaselineDocumentsUrl = () => {
-  return `/api/panel-baseline-documents`;
+export const getListPanelBaselineDocumentsUrl = (
+  params?: ListPanelBaselineDocumentsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/panel-baseline-documents?${stringifiedParams}`
+    : `/api/panel-baseline-documents`;
 };
 
 export const listPanelBaselineDocuments = async (
+  params?: ListPanelBaselineDocumentsParams,
   options?: RequestInit,
 ): Promise<PanelBaselineDocument[]> => {
   return customFetch<PanelBaselineDocument[]>(
-    getListPanelBaselineDocumentsUrl(),
+    getListPanelBaselineDocumentsUrl(params),
     {
       ...options,
       method: "GET",
@@ -903,29 +922,38 @@ export const listPanelBaselineDocuments = async (
   );
 };
 
-export const getListPanelBaselineDocumentsQueryKey = () => {
-  return [`/api/panel-baseline-documents`] as const;
+export const getListPanelBaselineDocumentsQueryKey = (
+  params?: ListPanelBaselineDocumentsParams,
+) => {
+  return [
+    `/api/panel-baseline-documents`,
+    ...(params ? [params] : []),
+  ] as const;
 };
 
 export const getListPanelBaselineDocumentsQueryOptions = <
   TData = Awaited<ReturnType<typeof listPanelBaselineDocuments>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listPanelBaselineDocuments>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListPanelBaselineDocumentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPanelBaselineDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
-    queryOptions?.queryKey ?? getListPanelBaselineDocumentsQueryKey();
+    queryOptions?.queryKey ?? getListPanelBaselineDocumentsQueryKey(params);
 
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof listPanelBaselineDocuments>>
-  > = ({ signal }) => listPanelBaselineDocuments({ signal, ...requestOptions });
+  > = ({ signal }) =>
+    listPanelBaselineDocuments(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listPanelBaselineDocuments>>,
@@ -946,15 +974,21 @@ export type ListPanelBaselineDocumentsQueryError = ErrorType<unknown>;
 export function useListPanelBaselineDocuments<
   TData = Awaited<ReturnType<typeof listPanelBaselineDocuments>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listPanelBaselineDocuments>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListPanelBaselineDocumentsQueryOptions(options);
+>(
+  params?: ListPanelBaselineDocumentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPanelBaselineDocuments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPanelBaselineDocumentsQueryOptions(
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -964,7 +998,7 @@ export function useListPanelBaselineDocuments<
 }
 
 /**
- * @summary Create panel baseline document with rates
+ * @summary Create panel baseline document with optional rates
  */
 export const getCreatePanelBaselineDocumentUrl = () => {
   return `/api/panel-baseline-documents`;
@@ -1031,7 +1065,7 @@ export type CreatePanelBaselineDocumentMutationBody =
 export type CreatePanelBaselineDocumentMutationError = ErrorType<unknown>;
 
 /**
- * @summary Create panel baseline document with rates
+ * @summary Create panel baseline document with optional rates
  */
 export const useCreatePanelBaselineDocument = <
   TError = ErrorType<unknown>,
@@ -1051,6 +1085,100 @@ export const useCreatePanelBaselineDocument = <
   TContext
 > => {
   return useMutation(getCreatePanelBaselineDocumentMutationOptions(options));
+};
+
+/**
+ * @summary Update document status (verify, activate, archive)
+ */
+export const getUpdatePanelBaselineDocumentStatusUrl = (id: number) => {
+  return `/api/panel-baseline-documents/${id}/status`;
+};
+
+export const updatePanelBaselineDocumentStatus = async (
+  id: number,
+  updateDocumentStatusRequest: UpdateDocumentStatusRequest,
+  options?: RequestInit,
+): Promise<PanelBaselineDocument> => {
+  return customFetch<PanelBaselineDocument>(
+    getUpdatePanelBaselineDocumentStatusUrl(id),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateDocumentStatusRequest),
+    },
+  );
+};
+
+export const getUpdatePanelBaselineDocumentStatusMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePanelBaselineDocumentStatus>>,
+    TError,
+    { id: number; data: BodyType<UpdateDocumentStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePanelBaselineDocumentStatus>>,
+  TError,
+  { id: number; data: BodyType<UpdateDocumentStatusRequest> },
+  TContext
+> => {
+  const mutationKey = ["updatePanelBaselineDocumentStatus"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePanelBaselineDocumentStatus>>,
+    { id: number; data: BodyType<UpdateDocumentStatusRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updatePanelBaselineDocumentStatus(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePanelBaselineDocumentStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePanelBaselineDocumentStatus>>
+>;
+export type UpdatePanelBaselineDocumentStatusMutationBody =
+  BodyType<UpdateDocumentStatusRequest>;
+export type UpdatePanelBaselineDocumentStatusMutationError =
+  ErrorType<ErrorResponse>;
+
+/**
+ * @summary Update document status (verify, activate, archive)
+ */
+export const useUpdatePanelBaselineDocumentStatus = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePanelBaselineDocumentStatus>>,
+    TError,
+    { id: number; data: BodyType<UpdateDocumentStatusRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePanelBaselineDocumentStatus>>,
+  TError,
+  { id: number; data: BodyType<UpdateDocumentStatusRequest> },
+  TContext
+> => {
+  return useMutation(
+    getUpdatePanelBaselineDocumentStatusMutationOptions(options),
+  );
 };
 
 /**
@@ -1139,6 +1267,100 @@ export function useListPanelRates<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListPanelRatesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Look up the active max rate for a given firm, jurisdiction, role, and currency
+ */
+export const getLookupPanelRateUrl = (params: LookupPanelRateParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/panel-rates/lookup?${stringifiedParams}`
+    : `/api/panel-rates/lookup`;
+};
+
+export const lookupPanelRate = async (
+  params: LookupPanelRateParams,
+  options?: RequestInit,
+): Promise<PanelRateLookupResult> => {
+  return customFetch<PanelRateLookupResult>(getLookupPanelRateUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getLookupPanelRateQueryKey = (params?: LookupPanelRateParams) => {
+  return [`/api/panel-rates/lookup`, ...(params ? [params] : [])] as const;
+};
+
+export const getLookupPanelRateQueryOptions = <
+  TData = Awaited<ReturnType<typeof lookupPanelRate>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupPanelRateParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof lookupPanelRate>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLookupPanelRateQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof lookupPanelRate>>> = ({
+    signal,
+  }) => lookupPanelRate(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof lookupPanelRate>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LookupPanelRateQueryResult = NonNullable<
+  Awaited<ReturnType<typeof lookupPanelRate>>
+>;
+export type LookupPanelRateQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Look up the active max rate for a given firm, jurisdiction, role, and currency
+ */
+
+export function useLookupPanelRate<
+  TData = Awaited<ReturnType<typeof lookupPanelRate>>,
+  TError = ErrorType<unknown>,
+>(
+  params: LookupPanelRateParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof lookupPanelRate>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLookupPanelRateQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
