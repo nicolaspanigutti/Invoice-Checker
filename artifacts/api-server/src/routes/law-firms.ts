@@ -162,6 +162,22 @@ router.put("/law-firms/:id", requireRole("super_admin", "legal_ops"), async (req
   res.json(firmToResponse(updated));
 });
 
+router.delete("/law-firms/:id", requireRole("super_admin"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
+  const existing = await db.select({ id: lawFirmsTable.id }).from(lawFirmsTable).where(eq(lawFirmsTable.id, id));
+  if (!existing.length) {
+    res.status(404).json({ error: "Law firm not found" });
+    return;
+  }
+  await db.delete(firmTermsTable).where(eq(firmTermsTable.lawFirmId, id));
+  await db.delete(lawFirmsTable).where(eq(lawFirmsTable.id, id));
+  res.status(204).end();
+});
+
 router.get("/law-firms/:id/terms", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (isNaN(id)) {

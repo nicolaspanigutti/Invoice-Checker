@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   useListLawFirms,
   useCreateLawFirm,
@@ -12,13 +12,14 @@ import {
   useCreatePanelBaselineDocument,
   getListLawFirmsQueryKey,
   getListPanelBaselineDocumentsQueryKey,
+  useGetMe,
   type LawFirmDetail,
   type CreateLawFirmMutationError,
   type UpdateLawFirmMutationError,
 } from "@workspace/api-client-react";
 import {
   Building2, Plus, Search, ChevronRight,
-  CheckCircle, Globe, Briefcase, X, Pencil, Save,
+  CheckCircle, Globe, Briefcase, X, Pencil, Save, Trash2, AlertTriangle,
   Upload, FileText, Sparkles, CheckCircle2, Clock, Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -666,11 +667,30 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
   const queryClient = useQueryClient();
   const updateMutation = useUpdateLawFirm();
   const upsertTerms = useUpsertLawFirmTerms();
+  const { data: me } = useGetMe();
+  const isSuperAdmin = (me as { role?: string } | undefined)?.role === "super_admin";
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<FormData>(emptyForm);
   const [showTcUpload, setShowTcUpload] = useState(false);
   const [verifyingTermKey, setVerifyingTermKey] = useState<string | null>(null);
   const [verifyingAll, setVerifyingAll] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/law-firms/${firmId}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? "Failed to delete law firm");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+      toast({ title: "Law firm deleted." });
+      onClose();
+    },
+    onError: (err: Error) => toast({ variant: "destructive", title: "Error", description: err.message }),
+  });
 
   const handleStartEdit = () => {
     if (!firm) return;
@@ -783,10 +803,42 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
             </div>
           </div>
           <div className="flex gap-1">
-            {!editing && <button onClick={handleStartEdit} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><Pencil className="w-4 h-4" /></button>}
+            {!editing && !confirmingDelete && (
+              <button onClick={handleStartEdit} title="Edit firm" className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><Pencil className="w-4 h-4" /></button>
+            )}
+            {isSuperAdmin && !editing && !confirmingDelete && (
+              <button onClick={() => setConfirmingDelete(true)} title="Delete firm" className="p-2 rounded-xl text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
+            )}
             <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
           </div>
         </div>
+
+        {/* Confirm delete banner */}
+        {confirmingDelete && (
+          <div className="mx-6 mt-0 mb-0 flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
+            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-red-700">Delete this law firm?</p>
+              <p className="text-xs text-red-600 mt-0.5">This will permanently delete the firm and all its commercial terms. Invoices linked to this firm will not be deleted but will lose their firm reference. This action cannot be undone.</p>
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  className="flex-1 py-1.5 rounded-lg border border-red-300 text-red-700 text-xs font-medium hover:bg-red-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => deleteMutation.mutate()}
+                  disabled={deleteMutation.isPending}
+                  className="flex-1 py-1.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  {deleteMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                  Delete permanently
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="p-6 space-y-6">
           {editing ? (
