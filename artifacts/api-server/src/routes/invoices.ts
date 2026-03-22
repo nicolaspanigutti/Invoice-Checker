@@ -563,10 +563,15 @@ router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), asyn
 
   const actorId = req.session.userId!;
 
-  const [existingInvoice] = await db.select({ id: invoicesTable.id, invoiceStatus: invoicesTable.invoiceStatus })
+  const [existingInvoice] = await db.select({ id: invoicesTable.id, invoiceStatus: invoicesTable.invoiceStatus, currentAnalysisRunId: invoicesTable.currentAnalysisRunId })
     .from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
   if (!existingInvoice) {
     res.status(404).json({ error: "Invoice not found." });
+    return;
+  }
+
+  if (!existingInvoice.currentAnalysisRunId) {
+    res.status(409).json({ error: "Invoice has not been analysed yet. Use the analyse endpoint to run the first analysis." });
     return;
   }
 

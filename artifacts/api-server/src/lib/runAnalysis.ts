@@ -255,6 +255,18 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
       await db.update(issuesTable)
         .set({ issueStatus: "no_longer_applicable" })
         .where(inArray(issuesTable.id, staleIssueIds));
+      const staleIssues = oldIssues.filter(iss => staleIssueIds.includes(iss.id));
+      for (const staleIssue of staleIssues) {
+        await db.insert(auditEventsTable).values({
+          entityType: "issue",
+          entityId: staleIssue.id,
+          eventType: "issue_auto_resolved",
+          actorId: startedById,
+          beforeJson: { issueStatus: staleIssue.issueStatus, analysisRunId: immediatelyPreviousRunId },
+          afterJson: { issueStatus: "no_longer_applicable", resolvedByRunId: run.id, reason: "Rule no longer fires in latest analysis" },
+          reason: "Automatic resolution: issue did not fire in the re-run analysis",
+        });
+      }
     }
   }
 
