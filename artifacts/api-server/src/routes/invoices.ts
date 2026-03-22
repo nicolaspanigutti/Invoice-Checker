@@ -558,8 +558,35 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
 router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (!reason) {
+    res.status(400).json({ error: "A re-run reason is required." });
+    return;
+  }
+
   const actorId = req.session.userId!;
-  const reason = (req.body?.reason as string | undefined) ?? "Manual re-run triggered by user";
+
+  const [existingInvoice] = await db.select({ id: invoicesTable.id, invoiceStatus: invoicesTable.invoiceStatus })
+    .from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
+  if (!existingInvoice) {
+    res.status(404).json({ error: "Invoice not found." });
+    return;
+  }
+
+  const oldStatus = existingInvoice.invoiceStatus;
+  if (oldStatus !== "in_review") {
+    await db.update(invoicesTable).set({ invoiceStatus: "in_review" }).where(eq(invoicesTable.id, id));
+    await db.insert(auditEventsTable).values({
+      entityType: "invoice",
+      entityId: id,
+      eventType: "state_change",
+      actorId,
+      beforeJson: { status: oldStatus },
+      afterJson: { status: "in_review" },
+      reason: `Re-run initiated: ${reason}`,
+    });
+  }
 
   await db.insert(auditEventsTable).values({
     entityType: "invoice",
@@ -571,7 +598,7 @@ router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), asyn
   });
 
   try {
-    const result = await runAnalysis(id, actorId, "rerun");
+    const result = await runAnalysis(id, actorId, reason);
     if (result.status === "gate_failed") {
       await db.insert(auditEventsTable).values({
         entityType: "invoice",

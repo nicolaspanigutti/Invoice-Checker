@@ -241,6 +241,16 @@ export const RULES_REGISTRY: RuleDefinition[] = [
     hasConfig: false,
   },
   {
+    code: "TIMEKEEPER_NOT_APPROVED",
+    displayName: "Timekeeper Not Approved",
+    ruleType: "objective",
+    severity: "error",
+    scope: "invoice_item",
+    routeToRole: "legal_ops",
+    description: "A timekeeper billed on this invoice has not been pre-approved for the matter roster or was not included in the approved staffing plan submitted with the Engagement Letter.",
+    hasConfig: false,
+  },
+  {
     code: "MEETING_OVERSTAFFING",
     displayName: "Meeting Overstaffing",
     ruleType: "configurable",

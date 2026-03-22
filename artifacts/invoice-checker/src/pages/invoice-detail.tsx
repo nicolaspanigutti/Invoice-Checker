@@ -627,6 +627,7 @@ export default function InvoiceDetail() {
   const [showAllLinesModal, setShowAllLinesModal] = useState(false);
   const [rerunOpen, setRerunOpen] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
+  const [rerunReason, setRerunReason] = useState("");
 
   const { data: invoice, isLoading } = useGetInvoice(id);
   const { data: documents } = useListInvoiceDocuments(id);
@@ -698,10 +699,12 @@ export default function InvoiceDetail() {
   const canRerun = hasExistingAnalysis && (userRole === "super_admin" || userRole === "legal_ops");
 
   const handleRerun = async () => {
+    if (!rerunReason.trim()) return;
     setIsRerunning(true);
     try {
-      const result: AnalysisRunResult = await rerunAnalysis.mutateAsync({ id, data: { reason: "Manual re-run from invoice detail" } });
+      const result: AnalysisRunResult = await rerunAnalysis.mutateAsync({ id, data: { reason: rerunReason.trim() } });
       setRerunOpen(false);
+      setRerunReason("");
       setAnalysisRan(true);
       const issueCount = result.issueCount ?? 0;
       const outcome = result.outcome ?? null;
@@ -725,22 +728,33 @@ export default function InvoiceDetail() {
       <EmailDraftModal invoiceId={id} open={emailDraftOpen} onClose={() => setEmailDraftOpen(false)} />
 
       {/* Re-run Dialog */}
-      <Dialog open={rerunOpen} onOpenChange={setRerunOpen}>
+      <Dialog open={rerunOpen} onOpenChange={(open) => { setRerunOpen(open); if (!open) setRerunReason(""); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Re-run Compliance Analysis</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
               This will run the full compliance check again using the <strong>current rule activation state</strong>. Existing open issues will be marked as superseded and new issues will be generated.
             </p>
             <p className="text-sm text-muted-foreground">
               Use this after deactivating rules or changing configuration thresholds to see updated results.
             </p>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Re-run reason <span className="text-destructive">*</span></label>
+              <textarea
+                className="w-full min-h-[72px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                placeholder="e.g. Rule DAILY_HOURS_EXCEEDED was deactivated after firm clarification"
+                value={rerunReason}
+                onChange={e => setRerunReason(e.target.value)}
+                disabled={isRerunning}
+              />
+              {!rerunReason.trim() && <p className="text-xs text-muted-foreground">Required — will be recorded in the audit trail.</p>}
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRerunOpen(false)} disabled={isRerunning}>Cancel</Button>
-            <Button onClick={handleRerun} disabled={isRerunning} className="gap-2">
+            <Button variant="outline" onClick={() => { setRerunOpen(false); setRerunReason(""); }} disabled={isRerunning}>Cancel</Button>
+            <Button onClick={handleRerun} disabled={isRerunning || !rerunReason.trim()} className="gap-2">
               {isRerunning && <Loader2 className="h-4 w-4 animate-spin" />}
               {isRerunning ? "Running…" : "Re-run Analysis"}
             </Button>
