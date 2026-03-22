@@ -431,13 +431,16 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
   if (extracted.applicableLaw && !invoice.applicableLaw) updates.applicableLaw = extracted.applicableLaw;
 
   const prevStatus = invoice.invoiceStatus;
+  let statusDidChange = false;
   if (Object.keys(updates).length > 0) {
     updates.invoiceStatus = "in_review";
     await db.update(invoicesTable).set(updates).where(eq(invoicesTable.id, id));
+    statusDidChange = prevStatus !== "in_review";
   } else if (invoice.invoiceStatus === "extracting_data") {
     await db.update(invoicesTable).set({ invoiceStatus: "in_review" }).where(eq(invoicesTable.id, id));
+    statusDidChange = true;
   }
-  if (prevStatus !== "in_review") {
+  if (statusDidChange) {
     await db.insert(auditEventsTable).values({
       entityType: "invoice",
       entityId: id,
@@ -809,8 +812,12 @@ router.post("/invoices/:id/comments", requireRole("super_admin", "legal_ops", "i
     invoiceItemId?: number;
   };
 
+  const VALID_COMMENT_SCOPES = new Set(["general", "issue", "line_item"]);
   if (!content?.trim()) { res.status(400).json({ error: "content is required" }); return; }
-  if (!commentScope) { res.status(400).json({ error: "commentScope is required" }); return; }
+  if (!commentScope || !VALID_COMMENT_SCOPES.has(commentScope)) {
+    res.status(400).json({ error: `commentScope must be one of: ${[...VALID_COMMENT_SCOPES].join(", ")}` });
+    return;
+  }
 
   const [invoice] = await db.select({ id: invoicesTable.id }).from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
   if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }

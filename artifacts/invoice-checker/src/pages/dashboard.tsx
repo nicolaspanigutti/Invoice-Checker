@@ -47,8 +47,8 @@ export default function Dashboard() {
   const disputed = invoices.filter(i => (i.invoiceStatus as string) === "pending_law_firm").length;
 
   const recent = [...invoices]
-    .sort((a, b) => new Date(b.invoiceDate ?? 0).getTime() - new Date(a.invoiceDate ?? 0).getTime())
-    .slice(0, 6);
+    .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
+    .slice(0, 5);
 
   const statusCounts = invoices.reduce<Record<string, number>>((acc, inv) => {
     acc[inv.invoiceStatus] = (acc[inv.invoiceStatus] ?? 0) + 1;
