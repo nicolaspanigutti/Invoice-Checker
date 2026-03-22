@@ -338,6 +338,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/PanelBaselineDocument"
 
+  /panel-baseline-documents/extract-rates:
+    post:
+      operationId: extractRatesFromFile
+      tags: [rates]
+      summary: Extract rate rows from an uploaded file using AI (PDF, Excel, CSV)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [storagePath]
+              properties:
+                storagePath:
+                  type: string
+                mimeType:
+                  type: string
+      responses:
+        "200":
+          description: Extracted rate rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  extracted:
+                    type: integer
+                  rates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ExtractedRateRow"
+        "422":
+          description: Could not extract text from file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /panel-baseline-documents/{id}/status:
     patch:
       operationId: updatePanelBaselineDocumentStatus
@@ -1933,6 +1971,35 @@ components:
         - maxRate
 
     CreatePanelRateItem:
+      type: object
+      properties:
+        lawFirmName:
+          type: string
+        jurisdiction:
+          type: string
+        roleCode:
+          type: string
+        roleLabel:
+          type: string
+        currency:
+          type: string
+        maxRate:
+          type: string
+        validFrom:
+          type: string
+          nullable: true
+        validTo:
+          type: string
+          nullable: true
+      required:
+        - lawFirmName
+        - jurisdiction
+        - roleCode
+        - roleLabel
+        - currency
+        - maxRate
+
+    ExtractedRateRow:
       type: object
       properties:
         lawFirmName:

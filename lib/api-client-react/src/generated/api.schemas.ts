@@ -497,6 +497,17 @@ export interface PanelRate {
   validTo?: string | null;
 }
 
+export interface ExtractedRateRow {
+  lawFirmName: string;
+  jurisdiction: string;
+  roleCode: string;
+  roleLabel: string;
+  currency: string;
+  maxRate: string;
+  validFrom?: string | null;
+  validTo?: string | null;
+}
+
 export type CreateUserRequestRole =
   (typeof CreateUserRequestRole)[keyof typeof CreateUserRequestRole];
 
@@ -853,6 +864,16 @@ export const ListPanelBaselineDocumentsDocumentKind = {
   rates: "rates",
   terms_conditions: "terms_conditions",
 } as const;
+
+export type ExtractRatesFromFileBody = {
+  storagePath: string;
+  mimeType?: string;
+};
+
+export type ExtractRatesFromFile200 = {
+  extracted?: number;
+  rates?: ExtractedRateRow[];
+};
 
 export type ListPanelRatesParams = {
   documentId?: number;

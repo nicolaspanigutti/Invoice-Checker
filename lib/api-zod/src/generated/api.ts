@@ -305,6 +305,32 @@ export const CreatePanelBaselineDocumentBody = zod.object({
 });
 
 /**
+ * @summary Extract rate rows from an uploaded file using AI (PDF, Excel, CSV)
+ */
+export const ExtractRatesFromFileBody = zod.object({
+  storagePath: zod.string(),
+  mimeType: zod.string().optional(),
+});
+
+export const ExtractRatesFromFileResponse = zod.object({
+  extracted: zod.number().optional(),
+  rates: zod
+    .array(
+      zod.object({
+        lawFirmName: zod.string(),
+        jurisdiction: zod.string(),
+        roleCode: zod.string(),
+        roleLabel: zod.string(),
+        currency: zod.string(),
+        maxRate: zod.string(),
+        validFrom: zod.string().nullish(),
+        validTo: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+});
+
+/**
  * Allowed status transitions:
 - draft → verified, archived
 - verified → active, archived

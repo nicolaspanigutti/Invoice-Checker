@@ -30,7 +30,8 @@
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.18.0",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

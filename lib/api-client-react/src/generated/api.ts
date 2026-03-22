@@ -33,6 +33,8 @@ import type {
   ErrorResponse,
   ExtractLawFirmTermsFromTc200,
   ExtractLawFirmTermsFromTcBody,
+  ExtractRatesFromFile200,
+  ExtractRatesFromFileBody,
   ExtractionResult,
   FirmTerm,
   HealthStatus,
@@ -1204,6 +1206,93 @@ export const useCreatePanelBaselineDocument = <
   TContext
 > => {
   return useMutation(getCreatePanelBaselineDocumentMutationOptions(options));
+};
+
+/**
+ * @summary Extract rate rows from an uploaded file using AI (PDF, Excel, CSV)
+ */
+export const getExtractRatesFromFileUrl = () => {
+  return `/api/panel-baseline-documents/extract-rates`;
+};
+
+export const extractRatesFromFile = async (
+  extractRatesFromFileBody: ExtractRatesFromFileBody,
+  options?: RequestInit,
+): Promise<ExtractRatesFromFile200> => {
+  return customFetch<ExtractRatesFromFile200>(getExtractRatesFromFileUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(extractRatesFromFileBody),
+  });
+};
+
+export const getExtractRatesFromFileMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractRatesFromFile>>,
+    TError,
+    { data: BodyType<ExtractRatesFromFileBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extractRatesFromFile>>,
+  TError,
+  { data: BodyType<ExtractRatesFromFileBody> },
+  TContext
+> => {
+  const mutationKey = ["extractRatesFromFile"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extractRatesFromFile>>,
+    { data: BodyType<ExtractRatesFromFileBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return extractRatesFromFile(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtractRatesFromFileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extractRatesFromFile>>
+>;
+export type ExtractRatesFromFileMutationBody =
+  BodyType<ExtractRatesFromFileBody>;
+export type ExtractRatesFromFileMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Extract rate rows from an uploaded file using AI (PDF, Excel, CSV)
+ */
+export const useExtractRatesFromFile = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractRatesFromFile>>,
+    TError,
+    { data: BodyType<ExtractRatesFromFileBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof extractRatesFromFile>>,
+  TError,
+  { data: BodyType<ExtractRatesFromFileBody> },
+  TContext
+> => {
+  return useMutation(getExtractRatesFromFileMutationOptions(options));
 };
 
 /**

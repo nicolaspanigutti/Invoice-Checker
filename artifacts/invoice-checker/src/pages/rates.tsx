@@ -1,21 +1,24 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListPanelBaselineDocuments,
   useListPanelRates,
   useCreatePanelBaselineDocument,
   useUpdatePanelBaselineDocumentStatus,
+  useExtractRatesFromFile,
+  useRequestUploadUrl,
   getListPanelBaselineDocumentsQueryKey,
   getListPanelRatesQueryKey,
   type PanelBaselineDocument,
   type PanelRate,
-  type CreatePanelRateItem,
+  type ExtractedRateRow,
   type CreatePanelBaselineDocumentMutationError,
   type UpdatePanelBaselineDocumentStatusMutationError,
 } from "@workspace/api-client-react";
 import {
   DollarSign, Plus, Search, X, FileText, Trash2,
   ShieldCheck, Archive, CheckCircle2, Clock, AlertCircle,
+  Upload, Sparkles, Pencil, Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -41,33 +44,119 @@ function StatusBadge({ status }: { status: DocStatus }) {
   );
 }
 
-const emptyRateRow = (): Omit<CreatePanelRateItem, "validFrom" | "validTo"> & { validFrom: string; validTo: string } => ({
-  lawFirmName: "", jurisdiction: "", roleCode: "", roleLabel: "", currency: "EUR", maxRate: "", validFrom: "", validTo: ""
-});
+type RateRow = ExtractedRateRow & { _editing?: boolean };
+
+const CURRENCIES = ["GBP", "EUR", "USD", "CHF", "SEK", "NOK", "DKK"];
+
+function ReviewTable({ rows, onUpdate, onRemove, onAdd }: {
+  rows: RateRow[];
+  onUpdate: (idx: number, field: keyof RateRow, value: string) => void;
+  onRemove: (idx: number) => void;
+  onAdd: () => void;
+}) {
+  const cellInput = "w-full px-2 py-1 rounded border border-border bg-background text-foreground focus:outline-none focus:border-primary text-xs";
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs min-w-[900px]">
+        <thead>
+          <tr className="border-b border-border bg-muted/30">
+            {["Law Firm", "Jurisdiction", "Role Code", "Role Label", "Currency", "Max Rate (£/h)", "Valid From", "Valid To", ""].map(h => (
+              <th key={h} className="text-left py-2 px-2 font-semibold text-muted-foreground whitespace-nowrap first:pl-4">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/50">
+          {rows.map((row, i) => (
+            <tr key={i} className="hover:bg-muted/20">
+              <td className="py-1 px-1 pl-3"><input value={row.lawFirmName} onChange={e => onUpdate(i, "lawFirmName", e.target.value)} className={cellInput} /></td>
+              <td className="py-1 px-1"><input value={row.jurisdiction} onChange={e => onUpdate(i, "jurisdiction", e.target.value)} className={cellInput} /></td>
+              <td className="py-1 px-1"><input value={row.roleCode} onChange={e => onUpdate(i, "roleCode", e.target.value)} className={cellInput} /></td>
+              <td className="py-1 px-1"><input value={row.roleLabel} onChange={e => onUpdate(i, "roleLabel", e.target.value)} className={cellInput} /></td>
+              <td className="py-1 px-1">
+                <select value={row.currency} onChange={e => onUpdate(i, "currency", e.target.value)} className={cellInput}>
+                  {CURRENCIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </td>
+              <td className="py-1 px-1"><input value={row.maxRate} onChange={e => onUpdate(i, "maxRate", e.target.value)} className={cellInput} type="number" step="0.01" min="0" /></td>
+              <td className="py-1 px-1"><input value={row.validFrom ?? ""} onChange={e => onUpdate(i, "validFrom", e.target.value)} className={cellInput} type="date" /></td>
+              <td className="py-1 px-1"><input value={row.validTo ?? ""} onChange={e => onUpdate(i, "validTo", e.target.value)} className={cellInput} type="date" /></td>
+              <td className="py-1 px-1">
+                <button type="button" onClick={() => onRemove(i)} className="p-1 rounded text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button type="button" onClick={onAdd} className="mt-2 ml-3 flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors">
+        <Plus className="w-3.5 h-3.5" />Add row manually
+      </button>
+    </div>
+  );
+}
 
 function AddRatesDocumentModal({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const createMutation = useCreatePanelBaselineDocument();
+  const extractMutation = useExtractRatesFromFile();
+  const requestUploadUrl = useRequestUploadUrl();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [step, setStep] = useState<"upload" | "review">("upload");
   const [versionLabel, setVersionLabel] = useState("");
-  const [fileName, setFileName] = useState("");
-  const [rows, setRows] = useState([emptyRateRow()]);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [rows, setRows] = useState<RateRow[]>([]);
 
-  const inputClass = "w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary text-xs";
+  const ACCEPTED = ["application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel", "text/csv", "text/plain"];
 
-  const updateRow = (idx: number, field: string, value: string) =>
-    setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
-  const addRow = () => setRows(prev => [...prev, emptyRateRow()]);
-  const removeRow = (idx: number) => setRows(prev => prev.filter((_, i) => i !== idx));
+  const handleFiles = useCallback((files: FileList | null) => {
+    if (!files?.length) return;
+    const file = files[0];
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const ok = ACCEPTED.includes(file.type) || ["pdf", "xlsx", "xls", "csv", "txt"].includes(ext);
+    if (!ok) { toast({ variant: "destructive", title: "Unsupported file", description: "Please upload a PDF, Excel (.xlsx), or CSV file." }); return; }
+    setSelectedFile(file);
+  }, [toast]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!versionLabel) { toast({ variant: "destructive", title: "Version label is required." }); return; }
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false);
+    handleFiles(e.dataTransfer.files);
+  }, [handleFiles]);
+
+  const handleExtract = async () => {
+    if (!versionLabel.trim()) { toast({ variant: "destructive", title: "Version label required.", description: "Please enter a label before extracting." }); return; }
+    if (!selectedFile) { toast({ variant: "destructive", title: "No file selected.", description: "Please upload a rates file first." }); return; }
+    setExtracting(true);
+    try {
+      const urlData = await requestUploadUrl.mutateAsync({ data: { name: selectedFile.name, size: selectedFile.size, contentType: selectedFile.type || "application/octet-stream" } });
+      await fetch(urlData.uploadURL, { method: "PUT", body: selectedFile, headers: { "Content-Type": selectedFile.type || "application/octet-stream" } });
+      const result = await extractMutation.mutateAsync({ data: { storagePath: urlData.objectPath, mimeType: selectedFile.type || undefined } });
+      const extracted = (result as { rates?: ExtractedRateRow[] }).rates ?? [];
+      if (extracted.length === 0) {
+        toast({ variant: "destructive", title: "No rates found", description: "AI could not identify any rate rows in this file. Try a different file or check the format." });
+        return;
+      }
+      setRows(extracted.map(r => ({ ...r, validFrom: r.validFrom ?? null, validTo: r.validTo ?? null })));
+      setStep("review");
+      toast({ title: `${extracted.length} rate rows extracted`, description: "Review and edit below, then save." });
+    } catch (err) {
+      const msg = (err as { data?: { error?: string } })?.data?.error ?? "Extraction failed. Please try again.";
+      toast({ variant: "destructive", title: "Extraction failed", description: msg });
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleSave = () => {
     const validRows = rows.filter(r => r.lawFirmName && r.jurisdiction && r.roleCode && r.currency && r.maxRate);
+    if (validRows.length === 0) { toast({ variant: "destructive", title: "No valid rate rows." }); return; }
     createMutation.mutate({ data: {
       documentKind: "rates",
       versionLabel,
-      fileName: fileName || null,
+      fileName: selectedFile?.name ?? null,
       rates: validRows.map(r => ({
         lawFirmName: r.lawFirmName,
         jurisdiction: r.jurisdiction,
@@ -82,83 +171,134 @@ function AddRatesDocumentModal({ onClose }: { onClose: () => void }) {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListPanelBaselineDocumentsQueryKey() });
         queryClient.invalidateQueries({ queryKey: getListPanelRatesQueryKey() });
-        toast({ title: "Rates document created", description: `${versionLabel} with ${validRows.length} rate rows saved as Draft.` });
+        toast({ title: "Rates document saved as Draft", description: `${versionLabel} · ${validRows.length} rate rows. Verify and activate when ready.` });
         onClose();
       },
-      onError: (err: CreatePanelBaselineDocumentMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to create document." })
+      onError: (err: CreatePanelBaselineDocumentMutationError) =>
+        toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to save document." })
     });
   };
 
+  const updateRow = (idx: number, field: keyof RateRow, value: string) =>
+    setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  const removeRow = (idx: number) => setRows(prev => prev.filter((_, i) => i !== idx));
+  const addRow = () => setRows(prev => [...prev, { lawFirmName: "", jurisdiction: "", roleCode: "", roleLabel: "", currency: "GBP", maxRate: "", validFrom: null, validTo: null }]);
+
+  const inputClass = "w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary text-sm";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="text-xl font-display font-bold text-foreground">Add Panel Rates Document</h2>
-          <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={step === "upload" ? onClose : undefined} />
+      <div className="relative bg-card border border-border rounded-3xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-200">
+
+        <div className="flex items-center justify-between p-6 border-b border-border flex-shrink-0">
+          <div>
+            <h2 className="text-xl font-display font-bold text-foreground">
+              {step === "upload" ? "Upload Rates Document" : "Review Extracted Rates"}
+            </h2>
+            {step === "review" && (
+              <p className="text-sm text-muted-foreground mt-0.5">
+                <span className="text-emerald-600 font-medium">✓ {rows.length} rows extracted.</span> Edit any values, then save as draft.
+              </p>
+            )}
+          </div>
+          {step === "upload" && (
+            <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
+          )}
         </div>
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-6 border-b border-border grid grid-cols-2 gap-4">
+
+        {step === "upload" ? (
+          <div className="p-6 space-y-5 flex-1 overflow-y-auto">
             <div>
               <label className="block text-sm font-semibold text-foreground mb-1.5">Version Label *</label>
-              <input value={versionLabel} onChange={e => setVersionLabel(e.target.value)} placeholder="e.g. Panel Rates 2025 v1.0" className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary text-sm" />
+              <input value={versionLabel} onChange={e => setVersionLabel(e.target.value)} placeholder="e.g. Panel Rates 2025 v1.0" className={inputClass} />
             </div>
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-1.5">Source File Name</label>
-              <input value={fileName} onChange={e => setFileName(e.target.value)} placeholder="e.g. Panel_Rates_2025_v1.pdf" className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary text-sm" />
-            </div>
-          </div>
 
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-foreground">Rate Rows</h3>
-              <button type="button" onClick={addRow} className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors">
-                <Plus className="w-3.5 h-3.5" />Add Row
+            <div>
+              <label className="block text-sm font-semibold text-foreground mb-2">Rates File *</label>
+              <div
+                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={cn(
+                  "border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all",
+                  dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/30",
+                  selectedFile ? "border-primary/50 bg-primary/5" : ""
+                )}
+              >
+                <input ref={fileInputRef} type="file" accept=".pdf,.xlsx,.xls,.csv,.txt" className="hidden" onChange={e => handleFiles(e.target.files)} />
+                {selectedFile ? (
+                  <div className="flex items-center justify-center gap-4">
+                    <FileText className="w-10 h-10 text-primary flex-shrink-0" />
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-foreground">{selectedFile.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{(selectedFile.size / 1024).toFixed(0)} KB · {selectedFile.type || "document"}</p>
+                    </div>
+                    <button type="button" onClick={e => { e.stopPropagation(); setSelectedFile(null); }} className="ml-4 text-muted-foreground hover:text-foreground flex-shrink-0"><X className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <Upload className="w-10 h-10 text-muted-foreground/50" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Drop your rates file here</p>
+                      <p className="text-xs text-muted-foreground mt-1">PDF · Excel (.xlsx / .xls) · CSV · TXT</p>
+                    </div>
+                    <span className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors">Browse files</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-muted/30 rounded-xl p-4 text-xs text-muted-foreground space-y-1">
+              <p className="font-semibold text-foreground text-xs">What AI extracts:</p>
+              <p>Law firm name · Jurisdiction · Role code & label · Currency · Hourly rate · Validity period</p>
+              <p className="mt-1">Supports rate schedule PDFs, Excel spreadsheets with rate tables, and CSV exports from billing systems.</p>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-1">
+              <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted text-sm font-medium">Cancel</button>
+              <button
+                type="button"
+                onClick={handleExtract}
+                disabled={!selectedFile || !versionLabel.trim() || extracting}
+                className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2"
+              >
+                {extracting ? (
+                  <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />Extracting rates…</>
+                ) : (
+                  <><Sparkles className="w-4 h-4" />Extract Rates</>
+                )}
               </button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border">
-                    {["Law Firm Name", "Jurisdiction", "Role Code", "Role Label", "Currency", "Max Rate (hourly)", "Valid From", "Valid To", ""].map(h => (
-                      <th key={h} className="text-left py-2 px-2 font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {rows.map((row, i) => (
-                    <tr key={i}>
-                      <td className="py-1.5 px-1"><input value={row.lawFirmName} onChange={e => updateRow(i, "lawFirmName", e.target.value)} placeholder="Firm name" className={inputClass} /></td>
-                      <td className="py-1.5 px-1"><input value={row.jurisdiction} onChange={e => updateRow(i, "jurisdiction", e.target.value)} placeholder="England & Wales" className={inputClass} /></td>
-                      <td className="py-1.5 px-1"><input value={row.roleCode} onChange={e => updateRow(i, "roleCode", e.target.value)} placeholder="Partner" className={inputClass} /></td>
-                      <td className="py-1.5 px-1"><input value={row.roleLabel} onChange={e => updateRow(i, "roleLabel", e.target.value)} placeholder="Partner" className={inputClass} /></td>
-                      <td className="py-1.5 px-1">
-                        <select value={row.currency} onChange={e => updateRow(i, "currency", e.target.value)} className={inputClass}>
-                          {["EUR", "GBP", "USD", "CHF", "SEK", "NOK", "DKK"].map(c => <option key={c}>{c}</option>)}
-                        </select>
-                      </td>
-                      <td className="py-1.5 px-1"><input value={row.maxRate} onChange={e => updateRow(i, "maxRate", e.target.value)} placeholder="850.00" className={inputClass} type="number" step="0.01" min="0" /></td>
-                      <td className="py-1.5 px-1"><input value={row.validFrom} onChange={e => updateRow(i, "validFrom", e.target.value)} className={inputClass} type="date" /></td>
-                      <td className="py-1.5 px-1"><input value={row.validTo} onChange={e => updateRow(i, "validTo", e.target.value)} className={inputClass} type="date" /></td>
-                      <td className="py-1.5 px-1">
-                        <button type="button" onClick={() => removeRow(i)} className="p-1 rounded-lg text-muted-foreground hover:text-destructive transition-colors">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          </div>
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto p-6">
+              <ReviewTable rows={rows} onUpdate={updateRow} onRemove={removeRow} onAdd={addRow} />
             </div>
-          </div>
-
-          <div className="p-6 border-t border-border flex gap-3 justify-end">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted text-sm font-medium">Cancel</button>
-            <button type="submit" disabled={createMutation.isPending} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-70 flex items-center gap-2">
-              {createMutation.isPending ? "Saving..." : <><Plus className="w-4 h-4" />Save Document</>}
-            </button>
-          </div>
-        </form>
+            <div className="p-6 border-t border-border flex items-center justify-between flex-shrink-0">
+              <button type="button" onClick={() => setStep("upload")} className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                <Pencil className="w-3.5 h-3.5" />Change file
+              </button>
+              <div className="flex gap-3">
+                <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted text-sm font-medium">Cancel</button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={createMutation.isPending || rows.length === 0}
+                  className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-60 flex items-center gap-2 transition-colors"
+                >
+                  {createMutation.isPending ? (
+                    <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />Saving…</>
+                  ) : (
+                    <><Check className="w-4 h-4" />Save as Draft</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

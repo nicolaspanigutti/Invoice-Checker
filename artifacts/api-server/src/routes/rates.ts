@@ -2,6 +2,11 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db, panelBaselineDocumentsTable, panelRatesTable } from "@workspace/db";
 import { eq, and, ilike, sql, lte, or, isNull } from "drizzle-orm";
 import { requireRole } from "../middleware/auth";
+import { ObjectStorageService } from "../lib/objectStorage";
+import { extractTextFromBuffer } from "../lib/extractText";
+import { extractRatesFromText, extractTextFromExcel, extractTextFromCsv } from "../lib/extractRates";
+
+const objectStorage = new ObjectStorageService();
 
 const router: IRouter = Router();
 
@@ -208,6 +213,45 @@ router.get("/panel-rates/lookup", requireRole("super_admin", "legal_ops"), async
 
   const rateRow = rate?.rate ?? null;
   res.json({ found: !!rateRow, rate: rateRow ? rateToResponse(rateRow) : null });
+});
+
+router.post("/panel-baseline-documents/extract-rates", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
+  const { storagePath, mimeType } = req.body as { storagePath?: string; mimeType?: string };
+  if (!storagePath) { res.status(400).json({ error: "storagePath is required" }); return; }
+
+  let fileBuffer: Buffer;
+  try {
+    const file = await objectStorage.getObjectEntityFile(storagePath);
+    const fileResponse = await objectStorage.downloadObject(file);
+    const ab = await fileResponse.arrayBuffer();
+    fileBuffer = Buffer.from(ab);
+  } catch {
+    res.status(422).json({ error: "Failed to download the file from storage. Please re-upload." });
+    return;
+  }
+
+  const mime = (mimeType ?? "application/octet-stream").toLowerCase();
+  let rawText = "";
+
+  if (mime === "text/csv" || mime === "text/plain" || storagePath.endsWith(".csv")) {
+    rawText = await extractTextFromCsv(fileBuffer);
+  } else if (
+    mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mime === "application/vnd.ms-excel" ||
+    storagePath.endsWith(".xlsx") || storagePath.endsWith(".xls")
+  ) {
+    rawText = await extractTextFromExcel(fileBuffer);
+  } else {
+    rawText = await extractTextFromBuffer(fileBuffer, mime);
+  }
+
+  if (!rawText.trim()) {
+    res.status(422).json({ error: "Could not extract readable text from this file. Please upload a PDF, DOCX, Excel, or CSV file." });
+    return;
+  }
+
+  const rates = await extractRatesFromText(rawText);
+  res.json({ extracted: rates.length, rates });
 });
 
 export default router;
