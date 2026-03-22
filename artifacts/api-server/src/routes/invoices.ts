@@ -464,12 +464,6 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
   const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
   if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
 
-  const completeness = await checkCompleteness(id);
-  if (!completeness.canRunAnalysis) {
-    res.status(422).json({ error: `Cannot run analysis: ${completeness.blockingIssues.map(i => i.message).join("; ")}` });
-    return;
-  }
-
   try {
     const result = await runAnalysis(id, req.session.userId!);
     res.json({
