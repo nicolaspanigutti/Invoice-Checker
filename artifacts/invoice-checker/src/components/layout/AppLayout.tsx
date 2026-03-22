@@ -1,13 +1,39 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn, formatRole } from "@/lib/utils";
 import { AuthUser } from "@workspace/api-client-react";
 import { useLogout } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { 
-  LayoutDashboard, FileText, Building2, DollarSign, 
-  Shield, Users, LogOut, Menu, X 
+import {
+  LayoutDashboard, FileText, Building2, DollarSign,
+  Shield, Users, LogOut, Menu, X
 } from "lucide-react";
-import { useState } from "react";
+
+function InvoiceCheckerLogo({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 40 40"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      {/* Crown */}
+      <path
+        d="M10 18L14 12L20 16L26 12L30 18H10Z"
+        fill="currentColor"
+        strokeLinejoin="round"
+      />
+      {/* Crown base bar */}
+      <rect x="10" y="17.5" width="20" height="3" rx="1" fill="currentColor" />
+      {/* Document body */}
+      <rect x="12" y="22" width="16" height="13" rx="1.5" fill="currentColor" opacity="0.9" />
+      {/* Document lines */}
+      <rect x="15" y="25" width="10" height="1.5" rx="0.75" fill="white" opacity="0.85" />
+      <rect x="15" y="28" width="10" height="1.5" rx="0.75" fill="white" opacity="0.85" />
+      <rect x="15" y="31" width="6" height="1.5" rx="0.75" fill="white" opacity="0.85" />
+    </svg>
+  );
+}
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -50,8 +76,8 @@ export function AppLayout({ children, user }: AppLayoutProps) {
   const SidebarContent = () => (
     <>
       <div className="flex items-center gap-3 px-6 py-8">
-        <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/25">
-          <Shield className="w-6 h-6 text-primary-foreground" />
+        <div className="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center shadow-lg">
+          <InvoiceCheckerLogo className="w-7 h-7 text-white" />
         </div>
         <span className="text-xl font-bold font-display tracking-tight text-sidebar-foreground">
           Invoice Checker
@@ -62,14 +88,14 @@ export function AppLayout({ children, user }: AppLayoutProps) {
         {navItems.filter(item => item.roles.includes(user.role)).map((item) => {
           const isActive = location === item.href;
           return (
-            <Link 
-              key={item.href} 
+            <Link
+              key={item.href}
               href={item.href}
               onClick={() => setIsMobileMenuOpen(false)}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-200",
-                isActive 
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-black/10" 
+                isActive
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-black/10"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               )}
             >
@@ -92,7 +118,7 @@ export function AppLayout({ children, user }: AppLayoutProps) {
               </span>
             </div>
           </div>
-          <button 
+          <button
             onClick={handleLogout}
             disabled={logoutMutation.isPending}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-sidebar-border/50 text-sidebar-foreground/80 hover:bg-destructive hover:text-destructive-foreground transition-colors duration-200 text-sm font-medium disabled:opacity-50"
@@ -130,7 +156,7 @@ export function AppLayout({ children, user }: AppLayoutProps) {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="h-20 lg:hidden flex items-center px-6 border-b bg-card/50 backdrop-blur-md sticky top-0 z-40">
-          <button 
+          <button
             onClick={() => setIsMobileMenuOpen(true)}
             className="p-2 -ml-2 text-foreground/70 hover:text-foreground"
           >

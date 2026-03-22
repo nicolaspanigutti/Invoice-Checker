@@ -17,15 +17,20 @@ type LoginForm = z.infer<typeof loginSchema>;
 function CrownDocumentIcon() {
   return (
     <div className="w-28 h-28 bg-white rounded-3xl flex items-center justify-center shadow-2xl">
-      <svg viewBox="0 0 80 80" className="w-20 h-20" fill="none">
-        <path d="M20 30 Q20 20 30 20 L50 20 Q60 20 60 30 L60 62 Q60 68 54 68 L26 68 Q20 68 20 62 Z" fill="#EC0000" opacity="0.12"/>
-        <path d="M20 30 Q20 20 30 20 L50 20 Q60 20 60 30 L60 62 Q60 68 54 68 L26 68 Q20 68 20 62 Z" stroke="#EC0000" strokeWidth="2.5" fill="none"/>
-        <line x1="29" y1="38" x2="51" y2="38" stroke="#EC0000" strokeWidth="2.5" strokeLinecap="round"/>
-        <line x1="29" y1="46" x2="51" y2="46" stroke="#EC0000" strokeWidth="2.5" strokeLinecap="round"/>
-        <line x1="29" y1="54" x2="43" y2="54" stroke="#EC0000" strokeWidth="2.5" strokeLinecap="round"/>
-        <path d="M30 20 L30 14 M40 20 L40 12 M50 20 L50 14" stroke="#EC0000" strokeWidth="2.5" strokeLinecap="round"/>
-        <circle cx="40" cy="10" r="3" fill="#EC0000"/>
-        <path d="M33 14 L37 10 M43 10 L47 14" stroke="#EC0000" strokeWidth="2" strokeLinecap="round"/>
+      <svg viewBox="0 0 80 80" className="w-20 h-20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* Crown */}
+        <path
+          d="M20 36L28 24L40 32L52 24L60 36H20Z"
+          fill="#EC0000"
+        />
+        {/* Crown base bar */}
+        <rect x="20" y="35" width="40" height="6" rx="2" fill="#EC0000" />
+        {/* Document body */}
+        <rect x="24" y="43" width="32" height="26" rx="3" fill="#EC0000" opacity="0.9" />
+        {/* Document lines */}
+        <rect x="30" y="50" width="20" height="3" rx="1.5" fill="white" opacity="0.9" />
+        <rect x="30" y="57" width="20" height="3" rx="1.5" fill="white" opacity="0.9" />
+        <rect x="30" y="64" width="12" height="3" rx="1.5" fill="white" opacity="0.9" />
       </svg>
     </div>
   );
