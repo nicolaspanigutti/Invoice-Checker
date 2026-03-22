@@ -339,18 +339,29 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
     }
   }
 
-  const expensePolicy = getTerm(firmTerms, "expense_policy_json") as Record<string, { cap?: number; allowed?: boolean }> | null;
-  const authorisedTypes = expensePolicy ? Object.keys(expensePolicy) : [];
+  // Expense policy can be stored as:
+  //   { allowed: string[], not_allowed: string[], caps: Record<string,number> }  (new format)
+  //   { [expType]: { cap?: number, allowed?: boolean } }                          (old flat format)
+  const rawExpensePolicy = getTerm(firmTerms, "expense_policy_json") as Record<string, unknown> | null;
+  const expAllowedList: string[] = Array.isArray(rawExpensePolicy?.allowed) ? (rawExpensePolicy!.allowed as string[]) : [];
+  const expNotAllowedList: string[] = Array.isArray(rawExpensePolicy?.not_allowed) ? (rawExpensePolicy!.not_allowed as string[]) : [];
+
+  const expenseTypeInList = (expType: string, list: string[]) =>
+    list.some(entry => entry.toLowerCase().includes(expType) || expType.includes(entry.toLowerCase().split(/[\s(,]/)[0]));
 
   for (const item of items) {
     if (!item.isExpenseLine) continue;
-    const expType = (item.expenseType ?? "").toLowerCase();
+    const expType = (item.expenseType ?? "").toLowerCase().trim();
     const amount = n(item.amount);
 
-    if (!expType || authorisedTypes.length === 0) continue;
+    if (!expType) continue;
 
-    const found = authorisedTypes.find(t => expType.includes(t.toLowerCase()));
-    if (!found && isRuleActive("UNAUTHORIZED_EXPENSE_TYPE")) {
+    const isExplicitlyAllowed   = expAllowedList.length > 0 && expenseTypeInList(expType, expAllowedList);
+    const isExplicitlyForbidden = expNotAllowedList.length > 0 && expenseTypeInList(expType, expNotAllowedList);
+
+    if (!isExplicitlyForbidden && expAllowedList.length === 0 && expNotAllowedList.length === 0) {
+      // No policy defined — skip expense type check entirely
+    } else if (isExplicitlyForbidden && isRuleActive("UNAUTHORIZED_EXPENSE_TYPE")) {
       issues.push({
         invoiceId,
         analysisRunId: runId,
@@ -361,20 +372,49 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
         evaluatorType: "deterministic",
         issueStatus: "open",
         routeToRole: "legal_ops",
-        explanationText: `Line ${item.lineNo} records an expense of type "${item.expenseType}" for ${invoice.currency} ${amount.toFixed(2)}. This expense type was not found in the list of authorised expenses under Panel T&C. Non-reimbursable items include: secretarial time, photocopying, telephone charges, meals (outside approved travel), and third-party professional services without prior written approval.`,
+        explanationText: `Line ${item.lineNo} records an expense of type "${item.expenseType}" for ${invoice.currency} ${amount.toFixed(2)}. This expense type is explicitly listed as non-reimbursable under Panel T&C.`,
         evidenceJson: {
           line_no: item.lineNo,
           expense_type: item.expenseType,
           amount,
           description: item.description,
           source_document: "Panel T&C",
-          authorised_types_in_source: authorisedTypes,
+          not_allowed_list: expNotAllowedList,
         },
         suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
         recoverableAmount: amount.toFixed(2),
         recoveryGroupKey: `unauth_expense_${item.lineNo}`,
       });
-    } else if (found && expensePolicy![found]?.cap !== undefined && isRuleActive("EXPENSE_CAP_EXCEEDED")) {
+    } else if (!isExplicitlyAllowed && !isExplicitlyForbidden && expAllowedList.length > 0 && isRuleActive("UNAUTHORIZED_EXPENSE_TYPE")) {
+      issues.push({
+        invoiceId,
+        analysisRunId: runId,
+        invoiceItemId: item.id,
+        ruleCode: "UNAUTHORIZED_EXPENSE_TYPE",
+        ruleType: "objective",
+        severity: "warning",
+        evaluatorType: "deterministic",
+        issueStatus: "open",
+        routeToRole: "legal_ops",
+        explanationText: `Line ${item.lineNo} records an expense of type "${item.expenseType}" for ${invoice.currency} ${amount.toFixed(2)}. This expense type was not found in the list of authorised expense categories under Panel T&C. Please confirm whether this disbursement is recoverable.`,
+        evidenceJson: {
+          line_no: item.lineNo,
+          expense_type: item.expenseType,
+          amount,
+          description: item.description,
+          source_document: "Panel T&C",
+          allowed_list: expAllowedList,
+        },
+        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+        recoverableAmount: amount.toFixed(2),
+        recoveryGroupKey: `unauth_expense_${item.lineNo}`,
+      });
+    }
+
+    // Legacy flat-format cap check
+    const expensePolicy = rawExpensePolicy as Record<string, { cap?: number; allowed?: boolean }> | null;
+    const found = expensePolicy ? Object.keys(expensePolicy).find(t => expType.includes(t.toLowerCase())) : undefined;
+    if (found && expensePolicy![found]?.cap !== undefined && isRuleActive("EXPENSE_CAP_EXCEEDED")) {
       const cap = expensePolicy![found].cap!;
       if (amount > cap) {
         const excess = amount - cap;
@@ -674,34 +714,59 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
     !item.isExpenseLine && item.roleRaw !== null && item.roleNormalized === null
   );
   if (isRuleActive("LAWYER_ROLE_MISMATCH")) {
+    // Group by (timekeeperLabel, roleRaw) so one issue is raised per person/role combination
+    type MismatchGroup = {
+      timekeeperLabel: string | null;
+      roleRaw: string;
+      isUnauth: boolean;
+      lines: { lineNo: number; itemId: number; amount: number }[];
+      firstItemId: number;
+    };
+    const mismatchGroups = new Map<string, MismatchGroup>();
+
     for (const item of missingRoleItems) {
-      const isUnauth = item.isUnauthorized;
-      const recoverableAmt = isUnauth && item.amount ? n(item.amount) : null;
+      const groupKey = `${item.timekeeperLabel ?? ""}|${item.roleRaw ?? ""}`;
+      if (!mismatchGroups.has(groupKey)) {
+        mismatchGroups.set(groupKey, {
+          timekeeperLabel: item.timekeeperLabel,
+          roleRaw: item.roleRaw ?? "",
+          isUnauth: item.isUnauthorized,
+          lines: [],
+          firstItemId: item.id,
+        });
+      }
+      mismatchGroups.get(groupKey)!.lines.push({ lineNo: item.lineNo, itemId: item.id, amount: n(item.amount) });
+    }
+
+    for (const group of mismatchGroups.values()) {
+      const affectedLines = group.lines.map(l => l.lineNo).join(", ");
+      const lineWord = group.lines.length === 1 ? "line" : "lines";
+      const totalAmt = group.lines.reduce((s, l) => s + l.amount, 0);
       issues.push({
         invoiceId,
         analysisRunId: runId,
-        invoiceItemId: item.id,
+        invoiceItemId: group.firstItemId,
         ruleCode: "LAWYER_ROLE_MISMATCH",
         ruleType: "objective",
         severity: "error",
         evaluatorType: "deterministic",
         issueStatus: "open",
         routeToRole: "legal_ops",
-        explanationText: isUnauth
-          ? `Line ${item.lineNo} records a non-human or unauthorised role ("${item.roleRaw}") billed as a timekeeper for ${invoice.currency} ${n(item.amount).toFixed(2)}. Machine translation tools, AI software, and similar non-human resources are not authorised as billable timekeepers under the Panel T&C.`
-          : `The role label "${item.roleRaw}" on line ${item.lineNo} for ${item.timekeeperLabel ?? "unknown timekeeper"} could not be mapped to any approved role in the rate schedule. Please clarify the correct role or confirm whether this timekeeper is authorised.`,
+        explanationText: group.isUnauth
+          ? `${group.timekeeperLabel ?? "An entry"} is billed as a non-human or unauthorised timekeeper with role "${group.roleRaw}" on ${lineWord} ${affectedLines} (total ${invoice.currency} ${totalAmt.toFixed(2)}). Machine translation tools, AI software, and similar non-human resources are not authorised as billable timekeepers under the Panel T&C.`
+          : `The role label "${group.roleRaw}" for ${group.timekeeperLabel ?? "an unknown timekeeper"} on ${lineWord} ${affectedLines} could not be mapped to any approved role in the rate schedule. Please clarify the correct role or confirm whether this timekeeper is authorised.`,
         evidenceJson: {
-          line_no: item.lineNo,
-          timekeeper_label: item.timekeeperLabel,
-          role_raw: item.roleRaw,
-          is_unauthorised_role: isUnauth,
+          timekeeper_label: group.timekeeperLabel,
+          role_raw: group.roleRaw,
+          is_unauthorised_role: group.isUnauth,
           normalisation_attempted: true,
+          affected_lines: group.lines.map(l => ({ line_no: l.lineNo, amount: l.amount })),
+          total_amount: totalAmt,
           available_roles_in_source: KNOWN_ROLE_CODES,
-          amount: item.amount,
         },
         suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        recoverableAmount: recoverableAmt !== null ? recoverableAmt.toFixed(2) : undefined,
-        recoveryGroupKey: isUnauth ? `unauth_timekeeper_${item.lineNo}` : undefined,
+        recoverableAmount: group.isUnauth ? totalAmt.toFixed(2) : undefined,
+        recoveryGroupKey: group.isUnauth ? `unauth_timekeeper_${group.timekeeperLabel?.replace(/\s+/g, "_")}` : undefined,
       });
     }
   }
@@ -709,6 +774,17 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
   const rolesMismatched = new Set(missingRoleItems.map(i => i.lineNo));
 
   if (isRuleActive("RATE_EXCESS")) {
+    // Group excess lines by timekeeper so one issue is raised per person (not per line)
+    type RateExcessGroup = {
+      timekeeperLabel: string;
+      roleNormalized: string;
+      maxRate: number;
+      rateCharged: number;
+      lines: { lineNo: number; hours: number; excessAmount: number; itemId: number }[];
+      firstItemId: number;
+    };
+    const rateExcessGroups = new Map<string, RateExcessGroup>();
+
     for (const item of items) {
       if (item.isExpenseLine || rolesMismatched.has(item.lineNo) || !item.roleNormalized || !item.rateCharged) continue;
       const applicableRates = panelRates.filter(pr =>
@@ -719,42 +795,57 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
         && (!invoice.invoiceDate || !pr.r.validFrom || pr.r.validFrom <= invoice.invoiceDate)
         && (!pr.r.validTo || !invoice.invoiceDate || pr.r.validTo >= invoice.invoiceDate)
       );
-      if (applicableRates.length > 0) {
-        const maxRate = Math.max(...applicableRates.map(pr => n(pr.r.maxRate)));
-        const rateCharged = n(item.rateCharged);
-        if (rateCharged > maxRate) {
-          const excessPerHour = rateCharged - maxRate;
-          const hours = n(item.hours);
-          const recoverableAmount = excessPerHour * hours;
-          issues.push({
-            invoiceId,
-            analysisRunId: runId,
-            invoiceItemId: item.id,
-            ruleCode: "RATE_EXCESS",
-            ruleType: "objective",
-            severity: "error",
-            evaluatorType: "deterministic",
-            issueStatus: "open",
-            routeToRole: "legal_ops",
-            explanationText: `The hourly rate charged for ${item.timekeeperLabel ?? "unknown"} (${item.roleNormalized}) on line ${item.lineNo} is ${invoice.currency} ${rateCharged.toFixed(2)}, which exceeds the maximum approved rate of ${invoice.currency} ${maxRate.toFixed(2)} for this role and jurisdiction (${invoice.jurisdiction}). Excess per hour: ${invoice.currency} ${excessPerHour.toFixed(2)}. Total excess: ${invoice.currency} ${recoverableAmount.toFixed(2)}.`,
-            evidenceJson: {
-              line_no: item.lineNo,
-              timekeeper_label: item.timekeeperLabel,
-              role_normalized: item.roleNormalized,
-              rate_charged: rateCharged,
-              max_rate: maxRate,
-              jurisdiction: invoice.jurisdiction,
-              hours,
-              excess_per_hour: excessPerHour,
-              excess_total: recoverableAmount,
-              source_document: "Active Panel Rates",
-            },
-            suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-            recoverableAmount: recoverableAmount.toFixed(2),
-            recoveryGroupKey: `rate_excess_line_${item.lineNo}`,
-          });
-        }
+      if (applicableRates.length === 0) continue;
+
+      const maxRate = Math.max(...applicableRates.map(pr => n(pr.r.maxRate)));
+      const rateCharged = n(item.rateCharged);
+      if (rateCharged <= maxRate) continue;
+
+      const groupKey = `${item.timekeeperLabel}|${item.roleNormalized}|${maxRate}`;
+      if (!rateExcessGroups.has(groupKey)) {
+        rateExcessGroups.set(groupKey, {
+          timekeeperLabel: item.timekeeperLabel ?? "unknown",
+          roleNormalized: item.roleNormalized,
+          maxRate,
+          rateCharged,
+          lines: [],
+          firstItemId: item.id,
+        });
       }
+      const group = rateExcessGroups.get(groupKey)!;
+      const hours = n(item.hours);
+      group.lines.push({ lineNo: item.lineNo, hours, excessAmount: (rateCharged - maxRate) * hours, itemId: item.id });
+    }
+
+    for (const group of rateExcessGroups.values()) {
+      const totalExcess = group.lines.reduce((s, l) => s + l.excessAmount, 0);
+      const affectedLines = group.lines.map(l => l.lineNo).join(", ");
+      const lineWord = group.lines.length === 1 ? "line" : "lines";
+      issues.push({
+        invoiceId,
+        analysisRunId: runId,
+        invoiceItemId: group.firstItemId,
+        ruleCode: "RATE_EXCESS",
+        ruleType: "objective",
+        severity: "error",
+        evaluatorType: "deterministic",
+        issueStatus: "open",
+        routeToRole: "legal_ops",
+        explanationText: `${group.timekeeperLabel} (${group.roleNormalized}) is billed at ${invoice.currency} ${group.rateCharged.toFixed(2)}/h on ${lineWord} ${affectedLines}, exceeding the maximum approved rate of ${invoice.currency} ${group.maxRate.toFixed(2)}/h for this role and jurisdiction (${invoice.jurisdiction}). Total recoverable excess: ${invoice.currency} ${totalExcess.toFixed(2)}.`,
+        evidenceJson: {
+          timekeeper_label: group.timekeeperLabel,
+          role_normalized: group.roleNormalized,
+          rate_charged: group.rateCharged,
+          max_rate: group.maxRate,
+          jurisdiction: invoice.jurisdiction,
+          affected_lines: group.lines.map(l => ({ line_no: l.lineNo, hours: l.hours, excess_amount: l.excessAmount })),
+          excess_total: totalExcess,
+          source_document: "Active Panel Rates",
+        },
+        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+        recoverableAmount: totalExcess.toFixed(2),
+        recoveryGroupKey: `rate_excess_${group.timekeeperLabel.replace(/\s+/g, "_")}`,
+      });
     }
   }
 
