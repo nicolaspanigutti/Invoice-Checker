@@ -6,3 +6,15 @@ id = "5tZJozpSf4ebQmROHgXKA"
 uri = "file://demo/Caldwell_Pryce_LLP_INV-2026-0148_Demo.pdf"
 type = "pdf"
 title = "Factura Demo – Caldwell & Pryce LLP (INV-2026-0148)"
+
+[[outputs]]
+id = "gDaL-VdJE6JwgOVDKMTst"
+uri = "file://demo/Caldwell_Pryce_LLP_INV-2026-0148.pdf"
+type = "pdf"
+title = "Factura limpia – INV-2026-0148 (subir a Invoice Checker)"
+
+[[outputs]]
+id = "RZjSURyPE6kITkzTRgxn2"
+uri = "file://demo/Caldwell_Pryce_LLP_INV-2026-0148_Demo_Guide.pdf"
+type = "pdf"
+title = "Guía del presentador – errores esperados"

@@ -10,7 +10,8 @@ import path from "path";
 const require = createRequire(import.meta.url);
 const PDFDocument = require("./artifacts/api-server/node_modules/pdfkit");
 
-const OUT = "./demo/Caldwell_Pryce_LLP_INV-2026-0148_Demo.pdf";
+const OUT       = "./demo/Caldwell_Pryce_LLP_INV-2026-0148.pdf";
+const OUT_GUIDE = "./demo/Caldwell_Pryce_LLP_INV-2026-0148_Demo_Guide.pdf";
 
 // ─── Palette ───────────────────────────────────────────────────────────────
 const RED    = "#8B0000";
@@ -497,108 +498,134 @@ doc.fontSize(6.5).font("Helvetica").fillColor(LIGHT)
 doc.fontSize(7).font("Helvetica-Bold").fillColor(RED)
    .text("Page " + pageNo + " / " + pageNo, PW - MR - 40, footY + 4, { width: 40, align: "right" });
 
-// ─── Error annotation box (for demo reference only) ───────────────────────
-// (NOT part of the real invoice — helps demonstrate during the video)
-doc.addPage();
-doc.rect(0, 0, PW, 8).fill(RED);
-
-doc.fontSize(14).font("Helvetica-Bold").fillColor(RED)
-   .text("DEMO ANNOTATION — NOT FOR CLIENT", ML, 24, { align: "center", width: CW });
-
-doc.fontSize(8).font("Helvetica").fillColor(DARK)
-   .text("This page lists the deliberate billing errors embedded in this invoice for demonstration purposes.\nThe Invoice Checker tool should detect and flag each of the following issues:", ML, 55, { width: CW });
-
-const ISSUES = [
-  {
-    rule: "RATE_EXCESS",
-    sev:  "Error",
-    desc: "H. Ashworth (Partner) billed at EUR 820/h on multiple dates. Panel max = EUR 720/h. Excess = EUR 100/h.",
-    lines: "Lines: 06 Jan, 10 Jan, 12 Jan, 24 Jan, 29 Jan",
-  },
-  {
-    rule: "RATE_EXCESS",
-    sev:  "Error",
-    desc: "J. Sinclair (Senior Associate) billed at EUR 650/h throughout. Panel max = EUR 580/h. Excess = EUR 70/h.",
-    lines: "Lines: 07 Jan, 12 Jan, 13 Jan, 15 Jan (×3), 21 Jan, 27 Jan, 31 Jan",
-  },
-  {
-    rule: "MEETING_OVERSTAFFING",
-    sev:  "Warning",
-    desc: "Four timekeepers (Partner, Sr. Associate, Associate, Legal Trainee) all billed the same 2.0 h for an identical conference call description on 12 Jan 2026. Policy threshold = 3.",
-    lines: "Lines: 12 Jan 2026 (all four timekeepers)",
-  },
-  {
-    rule: "DAILY_HOURS_EXCEEDED",
-    sev:  "Error",
-    desc: "J. Sinclair billed 4.0 + 4.5 + 2.5 = 11.0 hours on 15 January 2026. Panel max = 10 hours/day per timekeeper.",
-    lines: "Lines: 15 Jan 2026 (three entries for J. Sinclair)",
-  },
-  {
-    rule: "DUPLICATE_LINE",
-    sev:  "Error",
-    desc: "E. Montague has two identical line items on 16 Jan 2026: 3.5 h @ EUR 445 = EUR 1,557.50 with the same description. One entry is duplicated.",
-    lines: "Lines: 16 Jan 2026 (rows 15 & 16)",
-  },
-  {
-    rule: "ARITHMETIC_ERROR",
-    sev:  "Error",
-    desc: "T. Whitfield line on 23 Jan 2026: 4.0 h × EUR 275/h = EUR 1,100.00 but invoice shows EUR 1,200.00. Overcharge = EUR 100.00.",
-    lines: "Line: 23 Jan 2026",
-  },
-  {
-    rule: "INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER",
-    sev:  "Error",
-    desc: "H. Ashworth charged at EUR 820/h on all lines except 20 Jan 2026, where the rate is EUR 850/h. Rate inconsistency for same timekeeper.",
-    lines: "Affected line: 20 Jan 2026",
-  },
-];
-
-let annY = 88;
-ISSUES.forEach((issue, i) => {
-  const isErr = issue.sev === "Error";
-  doc.rect(ML, annY, CW, 1).fill(RULE);
-  annY += 6;
-
-  const badgeColor = isErr ? "#B91C1C" : "#92400E";
-  const badgeBg    = isErr ? "#FEE2E2" : "#FEF3C7";
-
-  // Rule code badge
-  doc.roundedRect(ML, annY, 180, 14, 3).fill(badgeBg);
-  doc.fontSize(7.5).font("Helvetica-Bold").fillColor(badgeColor)
-     .text(`[${issue.sev.toUpperCase()}]  ${issue.rule}`, ML + 4, annY + 3.5, { width: 172, lineBreak: false });
-
-  doc.fontSize(8).font("Helvetica").fillColor(DARK)
-     .text(issue.desc, ML, annY + 18, { width: CW });
-  const dH = doc.heightOfString(issue.desc, { width: CW });
-
-  doc.fontSize(7.5).font("Helvetica-Oblique").fillColor(LIGHT)
-     .text(issue.lines, ML, annY + 18 + dH + 2, { width: CW });
-  const lH = doc.heightOfString(issue.lines, { width: CW });
-
-  annY += 14 + 4 + dH + lH + 10;
-});
-
-doc.rect(ML, annY + 4, CW, 1).fill(RULE);
-annY += 14;
-doc.fontSize(7.5).font("Helvetica-Oblique").fillColor(LIGHT)
-   .text(
-     "Note: This is a synthetic demo invoice created to showcase Invoice Checker capabilities. " +
-     "All names, firms and matter references are fictitious.",
-     ML, annY, { width: CW }
-   );
-
-// ─── Finalise ─────────────────────────────────────────────────────────────
+// ─── Finalise main invoice ────────────────────────────────────────────────
 doc.end();
 stream.on("finish", () => {
-  console.log(`\n✅  Invoice PDF written to: ${OUT}`);
-  console.log(`   Total lines: ${LINES.length}`);
-  console.log(`   Stated total: ${fmtMoney(TOTAL)}`);
-  console.log(`\n   Embedded errors:`);
-  console.log(`   [1] RATE_EXCESS            – H. Ashworth @ EUR 820-850 (panel max EUR 720)`);
-  console.log(`   [2] RATE_EXCESS            – J. Sinclair @ EUR 650 (panel max EUR 580)`);
-  console.log(`   [3] MEETING_OVERSTAFFING   – 4 timekeepers on same call (12 Jan)`);
-  console.log(`   [4] DAILY_HOURS_EXCEEDED   – J. Sinclair: 11.0 h on 15 Jan`);
-  console.log(`   [5] DUPLICATE_LINE         – E. Montague row repeated (16 Jan)`);
-  console.log(`   [6] ARITHMETIC_ERROR       – T. Whitfield: 4.0h × EUR 275 shown as EUR 1,200`);
-  console.log(`   [7] INCONSISTENT_RATE      – H. Ashworth EUR 820 vs EUR 850 (20 Jan)\n`);
+  console.log(`✅  Invoice PDF:  ${OUT}`);
+  buildGuide();
 });
+
+// ─── Separate guide PDF ───────────────────────────────────────────────────
+function buildGuide() {
+  const guide  = new PDFDocument({ size: "A4", margin: 50, info: {
+    Title:   "Demo Guide – " + INVOICE.number,
+    Author:  "Invoice Checker Demo",
+    Subject: "Billing errors embedded in demo invoice",
+  }});
+  const gStream = createWriteStream(OUT_GUIDE);
+  guide.pipe(gStream);
+
+  const GW = guide.page.width - 100;  // content width (margin 50 each side)
+
+  // Top bar
+  guide.rect(0, 0, guide.page.width, 8).fill(RED);
+
+  // Title
+  guide.fontSize(16).font("Helvetica-Bold").fillColor(RED)
+       .text("Invoice Checker — Demo Reference Guide", 50, 22, { width: GW });
+  guide.fontSize(9).font("Helvetica").fillColor(LIGHT)
+       .text(`Invoice: ${INVOICE.number}  ·  Firm: ${FIRM.name}  ·  Matter: ${INVOICE.matter}`, 50, 44, { width: GW });
+
+  guide.rect(50, 58, GW, 0.5).fill(RULE);
+
+  guide.fontSize(8).font("Helvetica").fillColor(DARK)
+       .text(
+         "The invoice file (Caldwell_Pryce_LLP_INV-2026-0148.pdf) contains 7 deliberate billing errors across its 29 line items. " +
+         "Upload that file to Invoice Checker and run the analysis — the tool should independently detect each of the issues listed below.",
+         50, 66, { width: GW }
+       );
+
+  const ISSUES = [
+    {
+      rule:  "RATE_EXCESS",
+      sev:   "Error",
+      desc:  "H. Ashworth (Partner) billed at EUR 820/h on multiple dates. Panel agreed max = EUR 720/h. Overcharge = EUR 100/h.",
+      lines: "Affected lines: 06 Jan, 10 Jan, 12 Jan, 24 Jan, 29 Jan",
+    },
+    {
+      rule:  "RATE_EXCESS",
+      sev:   "Error",
+      desc:  "J. Sinclair (Senior Associate) billed at EUR 650/h throughout the invoice. Panel agreed max = EUR 580/h. Overcharge = EUR 70/h.",
+      lines: "Affected lines: 07 Jan, 12 Jan, 13 Jan, 15 Jan (×3), 21 Jan, 27 Jan, 31 Jan",
+    },
+    {
+      rule:  "MEETING_OVERSTAFFING",
+      sev:   "Warning",
+      desc:  "On 12 Jan 2026, four timekeepers (Partner, Senior Associate, Associate, Legal Trainee) each billed 2.0 h for an identically described conference call. Panel policy threshold = 3 attendees.",
+      lines: "Affected lines: all four 12 Jan 2026 entries",
+    },
+    {
+      rule:  "DAILY_HOURS_EXCEEDED",
+      sev:   "Error",
+      desc:  "J. Sinclair billed 4.0 + 4.5 + 2.5 = 11.0 hours on 15 January 2026 in three separate entries. Panel max = 10 hours per timekeeper per day.",
+      lines: "Affected lines: the three J. Sinclair entries on 15 Jan 2026",
+    },
+    {
+      rule:  "DUPLICATE_LINE",
+      sev:   "Error",
+      desc:  "E. Montague has two line items on 16 Jan 2026 with identical hours (3.5 h), rate (EUR 445/h), amount (EUR 1,557.50) and description. One is a duplicated charge.",
+      lines: "Affected lines: rows 15 and 16 (both dated 16 Jan 2026, E. Montague)",
+    },
+    {
+      rule:  "ARITHMETIC_ERROR",
+      sev:   "Error",
+      desc:  "T. Whitfield on 23 Jan 2026: 4.0 hours × EUR 275/h should equal EUR 1,100.00. The invoice states EUR 1,200.00. Overcharge = EUR 100.00.",
+      lines: "Affected line: T. Whitfield, 23 Jan 2026",
+    },
+    {
+      rule:  "INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER",
+      sev:   "Error",
+      desc:  "H. Ashworth is charged at EUR 820/h on all lines except 20 Jan 2026, where the stated rate is EUR 850/h. Same timekeeper, same role, different rate within one invoice.",
+      lines: "Affected line: H. Ashworth, 20 Jan 2026",
+    },
+  ];
+
+  let annY = 104;
+
+  ISSUES.forEach((issue) => {
+    const isErr      = issue.sev === "Error";
+    const badgeColor = isErr ? "#B91C1C" : "#92400E";
+    const badgeBg    = isErr ? "#FEE2E2" : "#FEF3C7";
+
+    guide.rect(50, annY, GW, 1).fill(RULE);
+    annY += 8;
+
+    // Badge
+    guide.roundedRect(50, annY, 195, 15, 3).fill(badgeBg);
+    guide.fontSize(7.5).font("Helvetica-Bold").fillColor(badgeColor)
+         .text(`[${issue.sev.toUpperCase()}]  ${issue.rule}`, 54, annY + 4, { width: 187, lineBreak: false });
+
+    // Description
+    guide.fontSize(8).font("Helvetica").fillColor(DARK)
+         .text(issue.desc, 50, annY + 20, { width: GW });
+    const dH = guide.heightOfString(issue.desc, { width: GW, fontSize: 8 });
+
+    // Lines ref
+    guide.fontSize(7.5).font("Helvetica-Oblique").fillColor(LIGHT)
+         .text(issue.lines, 50, annY + 20 + dH + 2, { width: GW });
+    const lH = guide.heightOfString(issue.lines, { width: GW, fontSize: 7.5 });
+
+    annY += 15 + 6 + dH + lH + 12;
+  });
+
+  guide.rect(50, annY + 4, GW, 1).fill(RULE);
+  annY += 16;
+  guide.fontSize(7.5).font("Helvetica-Oblique").fillColor(LIGHT)
+       .text(
+         "This guide is for the demo presenter only. The invoice file contains no hints or annotations. " +
+         "All names, law firm details and matter references in the invoice are fictitious and used for demonstration purposes only.",
+         50, annY, { width: GW }
+       );
+
+  guide.end();
+  gStream.on("finish", () => {
+    console.log(`✅  Guide PDF:    ${OUT_GUIDE}`);
+    console.log(`\n   7 errors embedded across ${LINES.length} lines · Total: ${fmtMoney(TOTAL)}`);
+    console.log(`   [1] RATE_EXCESS (×2)             – H. Ashworth EUR 820-850 (max EUR 720); J. Sinclair EUR 650 (max EUR 580)`);
+    console.log(`   [3] MEETING_OVERSTAFFING          – 4 timekeepers on same call (12 Jan)`);
+    console.log(`   [4] DAILY_HOURS_EXCEEDED          – J. Sinclair 11.0 h on 15 Jan`);
+    console.log(`   [5] DUPLICATE_LINE                – E. Montague repeated (16 Jan)`);
+    console.log(`   [6] ARITHMETIC_ERROR              – T. Whitfield 4×275 shown as 1,200`);
+    console.log(`   [7] INCONSISTENT_RATE             – H. Ashworth EUR 820 vs EUR 850 (20 Jan)\n`);
+  });
+}
