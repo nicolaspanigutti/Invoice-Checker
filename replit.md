@@ -106,6 +106,9 @@ Base path: `/api`
 | `/api/invoices/:id/items` | GET | all roles | List extracted line items |
 | `/api/invoices/:id/completeness` | GET | all roles | Check completeness gate |
 | `/api/invoices/:id/extract` | POST | admin, legal_ops | Run AI data extraction |
+| `/api/invoices/:id/analyse` | POST | admin, legal_ops | Run full rule engine analysis |
+| `/api/invoices/:id/analysis-runs` | GET | all roles | List analysis runs for an invoice |
+| `/api/invoices/:id/issues` | GET | all roles | List compliance issues found |
 | `/api/storage/uploads/request-url` | POST | all authenticated | Get presigned GCS upload URL |
 
 Codegen: `pnpm --filter @workspace/api-spec run codegen` — regenerates `lib/api-client-react/src/generated/` and `lib/api-zod/src/generated/`
@@ -143,7 +146,7 @@ pnpm run typecheck                              # Full monorepo typecheck
 - [x] **Sprint 0** — Foundation & App Scaffold (auth, DB schema, seed data, login/logout UI)
 - [x] **Sprint 1** — Reference Data Management (Law Firms, Rates CRUD, Users)
 - [x] **Sprint 2** — Invoice Upload & AI Extraction (CRUD, file upload via GCS presigned URLs, AI extraction via GPT, completeness gate, frontend list + detail pages)
-- [ ] **Sprint 3** — Rule Engine MVP (17 objective + 7 grey rules)
+- [x] **Sprint 3** — Rule Engine MVP (17 objective + 7 grey rules, 1 configurable, 2 metadata warnings; full issues panel in UI with expand/collapse, evidence, amount at risk)
 - [ ] **Sprint 4** — Review Workflow, Comments & Audit Trail
 - [ ] **Sprint 5** — Recovery, Report & Email Draft
 - [ ] **Sprint 6** — Hardening, Re-run & Rules Admin

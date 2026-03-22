@@ -450,6 +450,7 @@ export const ListInvoicesResponse = zod.object({
       projectReference: zod.string().nullish(),
       internalRequestorId: zod.number().nullish(),
       internalRequestorName: zod.string().nullish(),
+      jurisdiction: zod.string().nullish(),
       invoiceStatus: zod.enum([
         "extracting_data",
         "in_review",
@@ -521,6 +522,7 @@ export const GetInvoiceResponse = zod
     projectReference: zod.string().nullish(),
     internalRequestorId: zod.number().nullish(),
     internalRequestorName: zod.string().nullish(),
+    jurisdiction: zod.string().nullish(),
     invoiceStatus: zod.enum([
       "extracting_data",
       "in_review",
@@ -610,6 +612,7 @@ export const UpdateInvoiceResponse = zod
     projectReference: zod.string().nullish(),
     internalRequestorId: zod.number().nullish(),
     internalRequestorName: zod.string().nullish(),
+    jurisdiction: zod.string().nullish(),
     invoiceStatus: zod.enum([
       "extracting_data",
       "in_review",
@@ -778,3 +781,71 @@ export const ExtractInvoiceDataResponse = zod.object({
   }),
   confidence: zod.record(zod.string(), zod.number()).optional(),
 });
+
+/**
+ * @summary Run checking analysis (rule engine) on an invoice
+ */
+export const RunInvoiceAnalysisParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RunInvoiceAnalysisResponse = zod.object({
+  analysisRunId: zod.number(),
+  invoiceId: zod.number(),
+  status: zod.enum(["running", "completed", "failed"]),
+  issueCount: zod.number(),
+  outcome: zod.string().nullish(),
+  amountAtRisk: zod.string().nullish(),
+});
+
+/**
+ * @summary List analysis runs for an invoice
+ */
+export const ListAnalysisRunsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListAnalysisRunsResponseItem = zod.object({
+  id: zod.number(),
+  invoiceId: zod.number(),
+  versionNo: zod.number(),
+  status: zod.enum(["running", "completed", "failed", "obsolete"]),
+  triggerReason: zod.string().nullish(),
+  startedAt: zod.date(),
+  finishedAt: zod.date().nullish(),
+  summaryJson: zod.unknown().nullish(),
+});
+export const ListAnalysisRunsResponse = zod.array(ListAnalysisRunsResponseItem);
+
+/**
+ * @summary List issues for an invoice
+ */
+export const ListInvoiceIssuesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListInvoiceIssuesQueryParams = zod.object({
+  analysisRunId: zod.coerce.number().optional(),
+});
+
+export const ListInvoiceIssuesResponseItem = zod.object({
+  id: zod.number(),
+  invoiceId: zod.number(),
+  analysisRunId: zod.number().nullish(),
+  invoiceItemId: zod.number().nullish(),
+  ruleCode: zod.string(),
+  ruleType: zod.enum(["objective", "gray", "configurable", "metadata"]),
+  severity: zod.enum(["error", "warning"]),
+  issueStatus: zod.string(),
+  routeToRole: zod.enum(["legal_ops", "internal_lawyer"]),
+  explanationText: zod.string(),
+  evidenceJson: zod.unknown().nullish(),
+  suggestedAction: zod.string().nullish(),
+  recoverableAmount: zod.string().nullish(),
+  recoveryGroupKey: zod.string().nullish(),
+  configSnapshotJson: zod.unknown().nullish(),
+  createdAt: zod.date(),
+});
+export const ListInvoiceIssuesResponse = zod.array(
+  ListInvoiceIssuesResponseItem,
+);

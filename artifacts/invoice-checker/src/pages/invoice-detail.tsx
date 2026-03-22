@@ -4,15 +4,16 @@ import {
   useGetInvoice,
   useListInvoiceDocuments,
   useListInvoiceItems,
-  useUpdateInvoice,
   useAddInvoiceDocument,
   useExtractInvoiceData,
   useRequestUploadUrl,
+  useRunInvoiceAnalysis,
+  useListInvoiceIssues,
   type InvoiceItem,
   type InvoiceDocument,
+  type InvoiceIssue,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -38,7 +39,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { getGetInvoiceQueryKey, getListInvoiceDocumentsQueryKey } from "@workspace/api-client-react";
+import {
+  getGetInvoiceQueryKey,
+  getListInvoiceDocumentsQueryKey,
+  getListInvoiceIssuesQueryKey,
+} from "@workspace/api-client-react";
 import {
   ArrowLeft,
   Loader2,
@@ -49,7 +54,13 @@ import {
   Plus,
   Sparkles,
   Upload,
-  Building2,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  TriangleAlert,
+  ShieldCheck,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -75,6 +86,42 @@ const KIND_LABELS: Record<string, string> = {
   budget_estimate: "Budget Estimate",
 };
 
+const RULE_LABELS: Record<string, string> = {
+  WRONG_CURRENCY: "Wrong Currency",
+  MISSING_DOCUMENTS_FIXED_SCOPE: "Missing EL (Fixed Scope)",
+  FIXED_SCOPE_AMOUNT_MISMATCH: "Fixed Scope Amount Mismatch",
+  LINE_ITEMS_IN_FIXED_SCOPE: "Line Items in Fixed Scope",
+  TAX_OR_VAT_MISMATCH: "Tax / VAT Mismatch",
+  VOLUME_DISCOUNT_NOT_APPLIED: "Volume Discount Not Applied",
+  UNAUTHORIZED_EXPENSE_TYPE: "Unauthorised Expense",
+  EXPENSE_CAP_EXCEEDED: "Expense Cap Exceeded",
+  DUPLICATE_LINE: "Duplicate Line",
+  ARITHMETIC_ERROR: "Arithmetic Error",
+  DAILY_HOURS_EXCEEDED: "Daily Hours Exceeded",
+  BILLING_PERIOD_OUTSIDE_EL: "Billing Outside EL Period",
+  INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER: "Inconsistent Rate",
+  RATE_CARD_EXPIRED_OR_MISSING: "Rate Card Missing",
+  LAWYER_ROLE_MISMATCH: "Role Not Recognised",
+  RATE_EXCESS: "Rate Excess",
+  MEETING_OVERSTAFFING: "Meeting Overstaffing",
+  EL_CONFLICT_WITH_PANEL_BASELINE: "EL / Panel Conflict",
+  HOURS_DISPROPORTIONATE: "Hours Disproportionate",
+  PARALLEL_BILLING: "Parallel Billing",
+  SCOPE_CREEP: "Scope Creep",
+  SENIORITY_OVERKILL: "Seniority Overkill",
+  ESTIMATE_EXCESS: "Estimate Exceeded",
+  INTERNAL_COORDINATION: "Internal Coordination",
+  MISSING_LINE_DETAIL: "Missing Line Detail",
+  JURISDICTION_UNCLEAR: "Jurisdiction Unclear",
+};
+
+const RULE_TYPE_LABELS: Record<string, string> = {
+  objective: "Objective",
+  gray: "Grey Area",
+  configurable: "Configurable",
+  metadata: "Metadata",
+};
+
 function DocKindBadge({ kind }: { kind: string }) {
   const colours: Record<string, string> = {
     invoice_file: "bg-blue-100 text-blue-700",
@@ -92,6 +139,187 @@ function ExtractionStatusIcon({ status }: { status: string }) {
   if (status === "done") return <CheckCircle2 className="h-4 w-4 text-green-600" />;
   if (status === "failed") return <AlertTriangle className="h-4 w-4 text-destructive" />;
   return <Clock className="h-4 w-4 text-muted-foreground" />;
+}
+
+function SeverityBadge({ severity }: { severity: string }) {
+  if (severity === "error") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+        <AlertCircle className="h-3 w-3" /> Error
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+      <TriangleAlert className="h-3 w-3" /> Warning
+    </span>
+  );
+}
+
+function RuleTypeBadge({ ruleType }: { ruleType: string }) {
+  const colours: Record<string, string> = {
+    objective: "bg-blue-50 text-blue-700 border border-blue-200",
+    gray: "bg-purple-50 text-purple-700 border border-purple-200",
+    configurable: "bg-orange-50 text-orange-700 border border-orange-200",
+    metadata: "bg-gray-50 text-gray-600 border border-gray-200",
+  };
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colours[ruleType] ?? "bg-gray-50 text-gray-600"}`}>
+      {RULE_TYPE_LABELS[ruleType] ?? ruleType}
+    </span>
+  );
+}
+
+function IssueCard({ issue }: { issue: InvoiceIssue }) {
+  const [expanded, setExpanded] = useState(false);
+  const evidence = issue.evidenceJson as Record<string, unknown> | null;
+  const recoverable = issue.recoverableAmount ? parseFloat(issue.recoverableAmount) : null;
+
+  return (
+    <div className={`rounded-2xl border ${issue.severity === "error" ? "border-red-200 bg-red-50/40" : "border-amber-200 bg-amber-50/30"} overflow-hidden`}>
+      <div
+        className="flex items-start gap-3 p-4 cursor-pointer select-none"
+        onClick={() => setExpanded(v => !v)}
+      >
+        <div className="flex-shrink-0 mt-0.5">
+          {issue.severity === "error"
+            ? <AlertCircle className="h-5 w-5 text-red-600" />
+            : <TriangleAlert className="h-5 w-5 text-amber-600" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <span className="font-mono text-xs font-bold text-muted-foreground tracking-wide">{issue.ruleCode}</span>
+            <RuleTypeBadge ruleType={issue.ruleType} />
+            <SeverityBadge severity={issue.severity} />
+            {recoverable !== null && recoverable > 0 && (
+              <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 flex-shrink-0">
+                At risk: {recoverable.toLocaleString("en-GB", { minimumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
+          <p className="text-sm font-semibold text-foreground">{RULE_LABELS[issue.ruleCode] ?? issue.ruleCode}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed line-clamp-2">{issue.explanationText}</p>
+        </div>
+        <div className="flex-shrink-0 ml-2 mt-0.5">
+          {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-inherit px-4 pb-4 pt-3 space-y-3">
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Full Explanation</p>
+            <p className="text-sm text-foreground leading-relaxed">{issue.explanationText}</p>
+          </div>
+
+          {evidence && Object.keys(evidence).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Evidence</p>
+              <div className="bg-card rounded-xl border border-border overflow-hidden">
+                <table className="w-full text-xs">
+                  <tbody>
+                    {Object.entries(evidence).map(([k, v]) => (
+                      <tr key={k} className="border-b border-border last:border-0">
+                        <td className="px-3 py-1.5 font-mono text-muted-foreground font-medium w-1/3">{k}</td>
+                        <td className="px-3 py-1.5 font-mono">
+                          {Array.isArray(v) ? v.join(", ") : typeof v === "object" && v !== null ? JSON.stringify(v) : String(v ?? "—")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {issue.suggestedAction && (
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Suggested Action:</p>
+              <p className="text-xs text-foreground font-medium">{issue.suggestedAction}</p>
+            </div>
+          )}
+
+          {issue.routeToRole && (
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Route to:</p>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                {issue.routeToRole === "legal_ops" ? "Legal Ops" : issue.routeToRole === "internal_lawyer" ? "Internal Lawyer" : issue.routeToRole}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IssuesPanel({ invoiceId, currency }: { invoiceId: number; currency: string | null }) {
+  const { data: issues, isLoading } = useListInvoiceIssues(invoiceId);
+  const [showAll, setShowAll] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!issues || issues.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <ShieldCheck className="mx-auto h-8 w-8 text-green-500 mb-3" />
+        <p className="text-sm font-medium text-green-700">No issues found</p>
+        <p className="text-xs text-muted-foreground mt-1">This invoice passed all compliance checks.</p>
+      </div>
+    );
+  }
+
+  const errorIssues = issues.filter(i => i.severity === "error");
+  const warningIssues = issues.filter(i => i.severity === "warning");
+  const totalAtRisk = issues.reduce((sum, i) => sum + (i.recoverableAmount ? parseFloat(i.recoverableAmount) : 0), 0);
+
+  const displayedIssues = showAll ? issues : issues.filter(i => i.severity === "error");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex gap-2">
+          {errorIssues.length > 0 && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+              <AlertCircle className="h-3.5 w-3.5" /> {errorIssues.length} error{errorIssues.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          {warningIssues.length > 0 && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+              <TriangleAlert className="h-3.5 w-3.5" /> {warningIssues.length} warning{warningIssues.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+        {totalAtRisk > 0 && (
+          <span className="text-sm font-bold text-red-700">
+            {currency} {totalAtRisk.toLocaleString("en-GB", { minimumFractionDigits: 2 })} at risk
+          </span>
+        )}
+      </div>
+
+      {warningIssues.length > 0 && (
+        <button
+          onClick={() => setShowAll(v => !v)}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {showAll ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          {showAll ? "Show errors only" : `Show all ${issues.length} issues (incl. ${warningIssues.length} warning${warningIssues.length !== 1 ? "s" : ""})`}
+        </button>
+      )}
+
+      <div className="space-y-2">
+        {displayedIssues.map(issue => (
+          <IssueCard key={issue.id} issue={issue} />
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function AddDocumentModal({ invoiceId, open, onClose }: { invoiceId: number; open: boolean; onClose: () => void }) {
@@ -178,11 +406,13 @@ export default function InvoiceDetail() {
   const id = parseInt(params.id, 10);
   const [addDocOpen, setAddDocOpen] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [analysisRan, setAnalysisRan] = useState(false);
 
   const { data: invoice, isLoading } = useGetInvoice(id);
   const { data: documents } = useListInvoiceDocuments(id);
   const { data: items } = useListInvoiceItems(id);
   const extractData = useExtractInvoiceData();
+  const runAnalysis = useRunInvoiceAnalysis();
 
   if (isLoading) {
     return (
@@ -204,7 +434,6 @@ export default function InvoiceDetail() {
   const completeness = invoice.completeness;
   const canRunAnalysis = completeness?.canRunAnalysis ?? false;
   const blockingIssues = completeness?.blockingIssues ?? [];
-
   const displayItems = items ?? [];
 
   const handleExtract = async () => {
@@ -221,6 +450,27 @@ export default function InvoiceDetail() {
     }
   };
 
+  const handleRunAnalysis = async () => {
+    try {
+      const result = await runAnalysis.mutateAsync({ id });
+      setAnalysisRan(true);
+      const issueCount = (result as unknown as { issueCount?: number }).issueCount ?? 0;
+      const outcome = (result as unknown as { outcome?: string }).outcome ?? null;
+      if (outcome === "clean") {
+        toast({ title: "Analysis complete — Clean", description: "No compliance issues found. Invoice moved to Ready to Pay." });
+      } else {
+        toast({ title: `Analysis complete — ${issueCount} issue${issueCount !== 1 ? "s" : ""} found`, description: "Review the issues panel below." });
+      }
+      queryClient.invalidateQueries({ queryKey: getGetInvoiceQueryKey(id) });
+      queryClient.invalidateQueries({ queryKey: getListInvoiceIssuesQueryKey(id) });
+    } catch (err: unknown) {
+      const msg = (err as { data?: { error?: string } })?.data?.error ?? "Analysis failed.";
+      toast({ variant: "destructive", title: "Analysis failed", description: msg });
+    }
+  };
+
+  const showIssuesPanel = analysisRan || (invoice.invoiceStatus !== "extracting_data" && invoice.invoiceStatus !== "in_review");
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-center gap-3">
@@ -232,6 +482,12 @@ export default function InvoiceDetail() {
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOURS[invoice.invoiceStatus] ?? "bg-gray-100 text-gray-700"}`}>
           {STATUS_LABELS[invoice.invoiceStatus] ?? invoice.invoiceStatus}
         </span>
+        {invoice.amountAtRisk && parseFloat(invoice.amountAtRisk) > 0 && (
+          <span className="ml-auto inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200">
+            <AlertCircle className="h-3.5 w-3.5" />
+            {invoice.currency} {parseFloat(invoice.amountAtRisk).toLocaleString("en-GB", { minimumFractionDigits: 2 })} at risk
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -306,6 +562,20 @@ export default function InvoiceDetail() {
             </dl>
           </div>
 
+          {showIssuesPanel && (
+            <div className="border border-border rounded-3xl bg-card shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-border bg-gradient-to-r from-red-50 to-card">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                  <h2 className="text-lg font-display font-semibold">Compliance Issues</h2>
+                </div>
+              </div>
+              <div className="p-6">
+                <IssuesPanel invoiceId={id} currency={invoice.currency} />
+              </div>
+            </div>
+          )}
+
           <div className="border border-border rounded-3xl bg-card shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-border flex items-center justify-between">
               <h2 className="text-lg font-display font-semibold">Line Items</h2>
@@ -317,38 +587,36 @@ export default function InvoiceDetail() {
                 <p className="text-sm text-muted-foreground">No line items extracted yet. Run AI extraction to populate.</p>
               </div>
             ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead className="w-8">#</TableHead>
-                        <TableHead>Timekeeper</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead className="text-right">Hours</TableHead>
-                        <TableHead className="text-right">Rate</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead>Description</TableHead>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-8">#</TableHead>
+                      <TableHead>Timekeeper</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">Hours</TableHead>
+                      <TableHead className="text-right">Rate</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Description</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {displayItems.map((item: InvoiceItem) => (
+                      <TableRow key={item.id} className={item.isExpenseLine ? "bg-amber-50/40" : ""}>
+                        <TableCell className="text-muted-foreground text-xs">{item.lineNo}</TableCell>
+                        <TableCell className="text-sm font-medium">{item.timekeeperLabel ?? "—"}</TableCell>
+                        <TableCell className="text-sm">{item.roleRaw ?? (item.isExpenseLine ? <span className="text-amber-700 text-xs font-medium">Expense</span> : "—")}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{item.workDate ? format(new Date(item.workDate), "d MMM yy") : "—"}</TableCell>
+                        <TableCell className="text-right text-sm font-mono">{item.hours ?? "—"}</TableCell>
+                        <TableCell className="text-right text-sm font-mono">{item.rateCharged ?? "—"}</TableCell>
+                        <TableCell className="text-right text-sm font-mono font-medium">{item.amount ? parseFloat(item.amount).toLocaleString("en-GB", { minimumFractionDigits: 2 }) : "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{item.description ?? "—"}</TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {displayItems.map((item: InvoiceItem) => (
-                        <TableRow key={item.id} className={item.isExpenseLine ? "bg-amber-50/40" : ""}>
-                          <TableCell className="text-muted-foreground text-xs">{item.lineNo}</TableCell>
-                          <TableCell className="text-sm font-medium">{item.timekeeperLabel ?? "—"}</TableCell>
-                          <TableCell className="text-sm">{item.roleRaw ?? (item.isExpenseLine ? <span className="text-amber-700 text-xs font-medium">Expense</span> : "—")}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{item.workDate ? format(new Date(item.workDate), "d MMM yy") : "—"}</TableCell>
-                          <TableCell className="text-right text-sm font-mono">{item.hours ?? "—"}</TableCell>
-                          <TableCell className="text-right text-sm font-mono">{item.rateCharged ?? "—"}</TableCell>
-                          <TableCell className="text-right text-sm font-mono font-medium">{item.amount ? parseFloat(item.amount).toLocaleString("en-GB", { minimumFractionDigits: 2 }) : "—"}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{item.description ?? "—"}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </div>
 
@@ -369,10 +637,14 @@ export default function InvoiceDetail() {
                   <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
                   <span className="text-sm font-medium">Ready for analysis</span>
                 </div>
-                <Button className="w-full gap-2" disabled>
-                  <Sparkles className="h-4 w-4" />
-                  Run Checking Analysis
-                  <span className="text-xs opacity-70">(Sprint 3)</span>
+                <Button
+                  className="w-full gap-2"
+                  onClick={handleRunAnalysis}
+                  disabled={runAnalysis.isPending}
+                >
+                  {runAnalysis.isPending
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Analysing…</>
+                    : <><Sparkles className="h-4 w-4" /> Run Checking Analysis</>}
                 </Button>
               </div>
             ) : (

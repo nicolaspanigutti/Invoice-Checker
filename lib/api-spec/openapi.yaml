@@ -711,6 +711,83 @@ paths:
               schema:
                 $ref: "#/components/schemas/ExtractionResult"
 
+  /invoices/{id}/analyse:
+    post:
+      operationId: runInvoiceAnalysis
+      tags: [invoices]
+      summary: Run checking analysis (rule engine) on an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Analysis run result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisRunResult"
+        "404":
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Cannot run analysis — completeness gate failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invoices/{id}/analysis-runs:
+    get:
+      operationId: listAnalysisRuns
+      tags: [invoices]
+      summary: List analysis runs for an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Analysis runs list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalysisRun"
+
+  /invoices/{id}/issues:
+    get:
+      operationId: listInvoiceIssues
+      tags: [invoices]
+      summary: List issues for an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: analysisRunId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Issues list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InvoiceIssue"
+
 components:
   schemas:
     RequestUploadUrlBody:
@@ -1582,3 +1659,113 @@ components:
           type: boolean
       required:
         - found
+
+    AnalysisRunResult:
+      type: object
+      properties:
+        analysisRunId:
+          type: integer
+        invoiceId:
+          type: integer
+        status:
+          type: string
+          enum: [running, completed, failed]
+        issueCount:
+          type: integer
+        outcome:
+          type: string
+          nullable: true
+        amountAtRisk:
+          type: string
+          nullable: true
+      required:
+        - analysisRunId
+        - invoiceId
+        - status
+        - issueCount
+
+    AnalysisRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceId:
+          type: integer
+        versionNo:
+          type: integer
+        status:
+          type: string
+          enum: [running, completed, failed, obsolete]
+        triggerReason:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        summaryJson:
+          nullable: true
+      required:
+        - id
+        - invoiceId
+        - versionNo
+        - status
+        - startedAt
+
+    InvoiceIssue:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceId:
+          type: integer
+        analysisRunId:
+          type: integer
+          nullable: true
+        invoiceItemId:
+          type: integer
+          nullable: true
+        ruleCode:
+          type: string
+        ruleType:
+          type: string
+          enum: [objective, gray, configurable, metadata]
+        severity:
+          type: string
+          enum: [error, warning]
+        issueStatus:
+          type: string
+        routeToRole:
+          type: string
+          enum: [legal_ops, internal_lawyer]
+        explanationText:
+          type: string
+        evidenceJson:
+          nullable: true
+        suggestedAction:
+          type: string
+          nullable: true
+        recoverableAmount:
+          type: string
+          nullable: true
+        recoveryGroupKey:
+          type: string
+          nullable: true
+        configSnapshotJson:
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - invoiceId
+        - ruleCode
+        - ruleType
+        - severity
+        - issueStatus
+        - routeToRole
+        - explanationText
+        - createdAt

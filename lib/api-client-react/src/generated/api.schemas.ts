@@ -545,6 +545,90 @@ export interface PanelRateLookupResult {
   found: boolean;
 }
 
+export type AnalysisRunResultStatus =
+  (typeof AnalysisRunResultStatus)[keyof typeof AnalysisRunResultStatus];
+
+export const AnalysisRunResultStatus = {
+  running: "running",
+  completed: "completed",
+  failed: "failed",
+} as const;
+
+export interface AnalysisRunResult {
+  analysisRunId: number;
+  invoiceId: number;
+  status: AnalysisRunResultStatus;
+  issueCount: number;
+  outcome?: string | null;
+  amountAtRisk?: string | null;
+}
+
+export type AnalysisRunStatus =
+  (typeof AnalysisRunStatus)[keyof typeof AnalysisRunStatus];
+
+export const AnalysisRunStatus = {
+  running: "running",
+  completed: "completed",
+  failed: "failed",
+  obsolete: "obsolete",
+} as const;
+
+export interface AnalysisRun {
+  id: number;
+  invoiceId: number;
+  versionNo: number;
+  status: AnalysisRunStatus;
+  triggerReason?: string | null;
+  startedAt: string;
+  finishedAt?: string | null;
+  summaryJson?: unknown | null;
+}
+
+export type InvoiceIssueRuleType =
+  (typeof InvoiceIssueRuleType)[keyof typeof InvoiceIssueRuleType];
+
+export const InvoiceIssueRuleType = {
+  objective: "objective",
+  gray: "gray",
+  configurable: "configurable",
+  metadata: "metadata",
+} as const;
+
+export type InvoiceIssueSeverity =
+  (typeof InvoiceIssueSeverity)[keyof typeof InvoiceIssueSeverity];
+
+export const InvoiceIssueSeverity = {
+  error: "error",
+  warning: "warning",
+} as const;
+
+export type InvoiceIssueRouteToRole =
+  (typeof InvoiceIssueRouteToRole)[keyof typeof InvoiceIssueRouteToRole];
+
+export const InvoiceIssueRouteToRole = {
+  legal_ops: "legal_ops",
+  internal_lawyer: "internal_lawyer",
+} as const;
+
+export interface InvoiceIssue {
+  id: number;
+  invoiceId: number;
+  analysisRunId?: number | null;
+  invoiceItemId?: number | null;
+  ruleCode: string;
+  ruleType: InvoiceIssueRuleType;
+  severity: InvoiceIssueSeverity;
+  issueStatus: string;
+  routeToRole: InvoiceIssueRouteToRole;
+  explanationText: string;
+  evidenceJson?: unknown | null;
+  suggestedAction?: string | null;
+  recoverableAmount?: string | null;
+  recoveryGroupKey?: string | null;
+  configSnapshotJson?: unknown | null;
+  createdAt: string;
+}
+
 export type ListLawFirmsParams = {
   includeInactive?: boolean;
 };
@@ -597,3 +681,7 @@ export const ListInvoicesStatus = {
   pending_law_firm: "pending_law_firm",
   ready_to_pay: "ready_to_pay",
 } as const;
+
+export type ListInvoiceIssuesParams = {
+  analysisRunId?: number;
+};

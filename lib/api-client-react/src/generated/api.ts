@@ -18,6 +18,8 @@ import type {
 
 import type {
   AddInvoiceDocumentRequest,
+  AnalysisRun,
+  AnalysisRunResult,
   AuthUser,
   CompletenessResult,
   CreateInvoiceRequest,
@@ -30,10 +32,12 @@ import type {
   HealthStatus,
   InvoiceDetail,
   InvoiceDocument,
+  InvoiceIssue,
   InvoiceItem,
   InvoiceListResponse,
   LawFirm,
   LawFirmDetail,
+  ListInvoiceIssuesParams,
   ListInvoicesParams,
   ListLawFirmsParams,
   ListPanelBaselineDocumentsParams,
@@ -2503,3 +2507,284 @@ export const useExtractInvoiceData = <
 > => {
   return useMutation(getExtractInvoiceDataMutationOptions(options));
 };
+
+/**
+ * @summary Run checking analysis (rule engine) on an invoice
+ */
+export const getRunInvoiceAnalysisUrl = (id: number) => {
+  return `/api/invoices/${id}/analyse`;
+};
+
+export const runInvoiceAnalysis = async (
+  id: number,
+  options?: RequestInit,
+): Promise<AnalysisRunResult> => {
+  return customFetch<AnalysisRunResult>(getRunInvoiceAnalysisUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRunInvoiceAnalysisMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runInvoiceAnalysis>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runInvoiceAnalysis>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["runInvoiceAnalysis"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runInvoiceAnalysis>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return runInvoiceAnalysis(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunInvoiceAnalysisMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runInvoiceAnalysis>>
+>;
+
+export type RunInvoiceAnalysisMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Run checking analysis (rule engine) on an invoice
+ */
+export const useRunInvoiceAnalysis = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runInvoiceAnalysis>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runInvoiceAnalysis>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRunInvoiceAnalysisMutationOptions(options));
+};
+
+/**
+ * @summary List analysis runs for an invoice
+ */
+export const getListAnalysisRunsUrl = (id: number) => {
+  return `/api/invoices/${id}/analysis-runs`;
+};
+
+export const listAnalysisRuns = async (
+  id: number,
+  options?: RequestInit,
+): Promise<AnalysisRun[]> => {
+  return customFetch<AnalysisRun[]>(getListAnalysisRunsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAnalysisRunsQueryKey = (id: number) => {
+  return [`/api/invoices/${id}/analysis-runs`] as const;
+};
+
+export const getListAnalysisRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAnalysisRuns>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAnalysisRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListAnalysisRunsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAnalysisRuns>>
+  > = ({ signal }) => listAnalysisRuns(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAnalysisRuns>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAnalysisRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAnalysisRuns>>
+>;
+export type ListAnalysisRunsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List analysis runs for an invoice
+ */
+
+export function useListAnalysisRuns<
+  TData = Awaited<ReturnType<typeof listAnalysisRuns>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAnalysisRuns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAnalysisRunsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List issues for an invoice
+ */
+export const getListInvoiceIssuesUrl = (
+  id: number,
+  params?: ListInvoiceIssuesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/invoices/${id}/issues?${stringifiedParams}`
+    : `/api/invoices/${id}/issues`;
+};
+
+export const listInvoiceIssues = async (
+  id: number,
+  params?: ListInvoiceIssuesParams,
+  options?: RequestInit,
+): Promise<InvoiceIssue[]> => {
+  return customFetch<InvoiceIssue[]>(getListInvoiceIssuesUrl(id, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListInvoiceIssuesQueryKey = (
+  id: number,
+  params?: ListInvoiceIssuesParams,
+) => {
+  return [`/api/invoices/${id}/issues`, ...(params ? [params] : [])] as const;
+};
+
+export const getListInvoiceIssuesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listInvoiceIssues>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: ListInvoiceIssuesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceIssues>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListInvoiceIssuesQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listInvoiceIssues>>
+  > = ({ signal }) =>
+    listInvoiceIssues(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listInvoiceIssues>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListInvoiceIssuesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listInvoiceIssues>>
+>;
+export type ListInvoiceIssuesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List issues for an invoice
+ */
+
+export function useListInvoiceIssues<
+  TData = Awaited<ReturnType<typeof listInvoiceIssues>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: ListInvoiceIssuesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceIssues>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListInvoiceIssuesQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

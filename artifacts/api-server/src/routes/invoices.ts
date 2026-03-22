@@ -1,11 +1,12 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, invoicesTable, invoiceDocumentsTable, invoiceItemsTable, lawFirmsTable, usersTable } from "@workspace/db";
+import { db, invoicesTable, invoiceDocumentsTable, invoiceItemsTable, lawFirmsTable, usersTable, analysisRunsTable, issuesTable } from "@workspace/db";
 import { eq, and, ilike, or, sql, desc, count } from "drizzle-orm";
 import { requireRole } from "../middleware/auth";
 import { checkCompleteness } from "../lib/completenessGate";
 import { extractInvoiceFromText, extractInvoiceFromImage } from "../lib/extractInvoice";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer, imageBufferToBase64 } from "../lib/extractText";
+import { runAnalysis } from "../lib/runAnalysis";
 
 const router: IRouter = Router();
 const objectStorage = new ObjectStorageService();
@@ -454,6 +455,91 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
   }
 
   res.json({ invoiceId: id, extracted, confidence, fromCache });
+});
+
+router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
+  if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  const completeness = await checkCompleteness(id);
+  if (!completeness.canRunAnalysis) {
+    res.status(422).json({ error: `Cannot run analysis: ${completeness.blockingIssues.map(i => i.message).join("; ")}` });
+    return;
+  }
+
+  try {
+    const result = await runAnalysis(id, req.session.userId!);
+    res.json({
+      analysisRunId: result.analysisRunId,
+      invoiceId: id,
+      status: result.status,
+      issueCount: result.issueCount,
+      outcome: result.outcome,
+      amountAtRisk: result.amountAtRisk,
+    });
+  } catch (err) {
+    console.error("Analysis failed:", err);
+    res.status(500).json({ error: "Analysis failed unexpectedly." });
+  }
+});
+
+router.get("/invoices/:id/analysis-runs", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const runs = await db
+    .select()
+    .from(analysisRunsTable)
+    .where(eq(analysisRunsTable.invoiceId, id))
+    .orderBy(desc(analysisRunsTable.startedAt));
+
+  res.json(runs.map(r => ({
+    id: r.id,
+    invoiceId: r.invoiceId,
+    versionNo: r.versionNo,
+    status: r.status,
+    triggerReason: r.triggerReason,
+    startedAt: r.startedAt,
+    finishedAt: r.finishedAt,
+    summaryJson: r.summaryJson,
+  })));
+});
+
+router.get("/invoices/:id/issues", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const analysisRunId = req.query.analysisRunId ? parseInt(String(req.query.analysisRunId), 10) : undefined;
+  const conditions = [eq(issuesTable.invoiceId, id)];
+  if (analysisRunId && !isNaN(analysisRunId)) conditions.push(eq(issuesTable.analysisRunId, analysisRunId));
+
+  const issues = await db
+    .select()
+    .from(issuesTable)
+    .where(and(...conditions))
+    .orderBy(issuesTable.id);
+
+  res.json(issues.map(iss => ({
+    id: iss.id,
+    invoiceId: iss.invoiceId,
+    analysisRunId: iss.analysisRunId,
+    invoiceItemId: iss.invoiceItemId,
+    ruleCode: iss.ruleCode,
+    ruleType: iss.ruleType,
+    severity: iss.severity,
+    issueStatus: iss.issueStatus,
+    routeToRole: iss.routeToRole,
+    explanationText: iss.explanationText,
+    evidenceJson: iss.evidenceJson,
+    suggestedAction: iss.suggestedAction,
+    recoverableAmount: iss.recoverableAmount,
+    recoveryGroupKey: iss.recoveryGroupKey,
+    configSnapshotJson: iss.configSnapshotJson,
+    createdAt: iss.createdAt,
+  })));
 });
 
 export default router;
