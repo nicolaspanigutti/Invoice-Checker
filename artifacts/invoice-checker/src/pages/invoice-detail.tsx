@@ -324,12 +324,6 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
             <p className="text-sm text-foreground leading-relaxed">{issue.explanationText}</p>
           </div>
 
-          {issue.suggestedAction && (
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Suggested Action:</p>
-              <p className="text-xs text-foreground font-medium">{issue.suggestedAction}</p>
-            </div>
-          )}
 
           {issue.routeToRole && (
             <div className="flex items-center gap-2">
