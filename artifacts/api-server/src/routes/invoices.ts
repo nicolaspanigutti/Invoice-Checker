@@ -1,12 +1,13 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, invoicesTable, invoiceDocumentsTable, invoiceItemsTable, lawFirmsTable, usersTable, analysisRunsTable, issuesTable } from "@workspace/db";
-import { eq, and, ilike, or, sql, desc, count } from "drizzle-orm";
+import { db, invoicesTable, invoiceDocumentsTable, invoiceItemsTable, lawFirmsTable, usersTable, analysisRunsTable, issuesTable, issueDecisionsTable, commentsTable, auditEventsTable } from "@workspace/db";
+import { eq, and, ilike, or, sql, desc, count, asc } from "drizzle-orm";
 import { requireRole } from "../middleware/auth";
 import { checkCompleteness } from "../lib/completenessGate";
 import { extractInvoiceFromText, extractInvoiceFromImage } from "../lib/extractInvoice";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer, imageBufferToBase64 } from "../lib/extractText";
 import { runAnalysis } from "../lib/runAnalysis";
+import { evaluateInvoiceState } from "../lib/stateTransition";
 
 const router: IRouter = Router();
 const objectStorage = new ObjectStorageService();
@@ -523,23 +524,305 @@ router.get("/invoices/:id/issues", requireRole("super_admin", "legal_ops", "inte
     .where(and(...conditions))
     .orderBy(issuesTable.id);
 
-  res.json(issues.map(iss => ({
-    id: iss.id,
-    invoiceId: iss.invoiceId,
-    analysisRunId: iss.analysisRunId,
-    invoiceItemId: iss.invoiceItemId,
-    ruleCode: iss.ruleCode,
-    ruleType: iss.ruleType,
-    severity: iss.severity,
-    issueStatus: iss.issueStatus,
-    routeToRole: iss.routeToRole,
-    explanationText: iss.explanationText,
-    evidenceJson: iss.evidenceJson,
-    suggestedAction: iss.suggestedAction,
-    recoverableAmount: iss.recoverableAmount,
-    recoveryGroupKey: iss.recoveryGroupKey,
-    configSnapshotJson: iss.configSnapshotJson,
-    createdAt: iss.createdAt,
+  const issueIds = issues.map(i => i.id);
+  const decisionsByIssue = new Map<number, typeof issueDecisionsTable.$inferSelect & { actorName: string | null }>();
+
+  if (issueIds.length > 0) {
+    const decisions = await db
+      .select({
+        d: issueDecisionsTable,
+        actorName: usersTable.displayName,
+      })
+      .from(issueDecisionsTable)
+      .leftJoin(usersTable, eq(issueDecisionsTable.actorId, usersTable.id))
+      .where(sql`${issueDecisionsTable.issueId} = ANY(${sql.raw(`ARRAY[${issueIds.join(",")}]::int[]`)})`)
+      .orderBy(desc(issueDecisionsTable.createdAt));
+
+    for (const row of decisions) {
+      if (!decisionsByIssue.has(row.d.issueId)) {
+        decisionsByIssue.set(row.d.issueId, { ...row.d, actorName: row.actorName ?? null });
+      }
+    }
+  }
+
+  res.json(issues.map(iss => {
+    const latestDecision = decisionsByIssue.get(iss.id) ?? null;
+    return {
+      id: iss.id,
+      invoiceId: iss.invoiceId,
+      analysisRunId: iss.analysisRunId,
+      invoiceItemId: iss.invoiceItemId,
+      ruleCode: iss.ruleCode,
+      ruleType: iss.ruleType,
+      severity: iss.severity,
+      issueStatus: iss.issueStatus,
+      routeToRole: iss.routeToRole,
+      explanationText: iss.explanationText,
+      evidenceJson: iss.evidenceJson,
+      suggestedAction: iss.suggestedAction,
+      recoverableAmount: iss.recoverableAmount,
+      recoveryGroupKey: iss.recoveryGroupKey,
+      configSnapshotJson: iss.configSnapshotJson,
+      latestDecision: latestDecision ? {
+        id: latestDecision.id,
+        issueId: latestDecision.issueId,
+        actorId: latestDecision.actorId,
+        actorRole: latestDecision.actorRole,
+        actorName: latestDecision.actorName,
+        action: latestDecision.action,
+        note: latestDecision.note,
+        createdAt: latestDecision.createdAt,
+      } : null,
+      createdAt: iss.createdAt,
+    };
+  }));
+});
+
+const ROLE_PERMITTED_ACTIONS: Record<string, string[]> = {
+  legal_ops: ["accept", "reject", "delegate"],
+  internal_lawyer: ["accept", "reject", "return"],
+  super_admin: ["accept", "reject", "delegate", "return"],
+};
+
+const ACTION_TO_STATUS: Record<string, typeof issuesTable.$inferSelect["issueStatus"]> = {
+  accept: "accepted_by_legal_ops",
+  reject: "rejected_by_legal_ops",
+  delegate: "escalated_to_internal_lawyer",
+  return: "open",
+};
+
+const ACTION_TO_STATUS_LAWYER: Record<string, typeof issuesTable.$inferSelect["issueStatus"]> = {
+  accept: "accepted_by_internal_lawyer",
+  reject: "rejected_by_internal_lawyer",
+  return: "open",
+};
+
+router.post("/invoices/:id/issues/:issueId/decide", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
+  const invoiceId = parseId(req.params.id);
+  const issueId = parseId(req.params.issueId);
+  if (isNaN(invoiceId) || isNaN(issueId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const actorId = req.session.userId!;
+  const actorRole = req.session.userRole as string;
+  const { action, note } = req.body as { action: string; note?: string };
+
+  if (!action) { res.status(400).json({ error: "action is required" }); return; }
+
+  const permitted = ROLE_PERMITTED_ACTIONS[actorRole] ?? [];
+  if (!permitted.includes(action)) {
+    res.status(403).json({ error: `Role '${actorRole}' cannot perform action '${action}'` });
+    return;
+  }
+
+  if (action === "return" && !note?.trim()) {
+    res.status(400).json({ error: "A note is required when returning an issue to Legal Ops" });
+    return;
+  }
+
+  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, invoiceId)).limit(1);
+  if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  const [issue] = await db.select().from(issuesTable).where(and(eq(issuesTable.id, issueId), eq(issuesTable.invoiceId, invoiceId))).limit(1);
+  if (!issue) { res.status(404).json({ error: "Issue not found" }); return; }
+
+  const isLawyer = actorRole === "internal_lawyer";
+  const statusMap = isLawyer ? ACTION_TO_STATUS_LAWYER : ACTION_TO_STATUS;
+  const newIssueStatus = statusMap[action] ?? issue.issueStatus;
+
+  await db.update(issuesTable).set({ issueStatus: newIssueStatus, updatedAt: new Date() }).where(eq(issuesTable.id, issueId));
+
+  await db.insert(issueDecisionsTable).values({
+    issueId,
+    actorId,
+    actorRole,
+    action,
+    note: note ?? null,
+  });
+
+  await db.insert(auditEventsTable).values({
+    entityType: "issue",
+    entityId: issueId,
+    eventType: `issue_${action}`,
+    actorId,
+    beforeJson: { issueStatus: issue.issueStatus },
+    afterJson: { issueStatus: newIssueStatus },
+    reason: note ?? null,
+  });
+
+  await evaluateInvoiceState(invoiceId, actorId, `issue ${action} by ${actorRole}`);
+
+  const [updatedIssue] = await db.select().from(issuesTable).where(eq(issuesTable.id, issueId)).limit(1);
+  const [actorUser] = await db.select({ displayName: usersTable.displayName }).from(usersTable).where(eq(usersTable.id, actorId)).limit(1);
+
+  const [latestDecision] = await db
+    .select()
+    .from(issueDecisionsTable)
+    .where(eq(issueDecisionsTable.issueId, issueId))
+    .orderBy(desc(issueDecisionsTable.createdAt))
+    .limit(1);
+
+  res.json({
+    id: updatedIssue.id,
+    invoiceId: updatedIssue.invoiceId,
+    analysisRunId: updatedIssue.analysisRunId,
+    invoiceItemId: updatedIssue.invoiceItemId,
+    ruleCode: updatedIssue.ruleCode,
+    ruleType: updatedIssue.ruleType,
+    severity: updatedIssue.severity,
+    issueStatus: updatedIssue.issueStatus,
+    routeToRole: updatedIssue.routeToRole,
+    explanationText: updatedIssue.explanationText,
+    evidenceJson: updatedIssue.evidenceJson,
+    suggestedAction: updatedIssue.suggestedAction,
+    recoverableAmount: updatedIssue.recoverableAmount,
+    recoveryGroupKey: updatedIssue.recoveryGroupKey,
+    configSnapshotJson: updatedIssue.configSnapshotJson,
+    latestDecision: latestDecision ? {
+      id: latestDecision.id,
+      issueId: latestDecision.issueId,
+      actorId: latestDecision.actorId,
+      actorRole: latestDecision.actorRole,
+      actorName: actorUser?.displayName ?? null,
+      action: latestDecision.action,
+      note: latestDecision.note,
+      createdAt: latestDecision.createdAt,
+    } : null,
+    createdAt: updatedIssue.createdAt,
+  });
+});
+
+router.get("/invoices/:id/comments", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const issueId = req.query.issueId ? parseInt(String(req.query.issueId), 10) : undefined;
+  const scope = req.query.scope as string | undefined;
+
+  const conditions = [eq(commentsTable.invoiceId, id)];
+  if (issueId && !isNaN(issueId)) conditions.push(eq(commentsTable.issueId, issueId));
+  if (scope) conditions.push(eq(commentsTable.commentScope, scope as typeof commentsTable.$inferSelect["commentScope"]));
+
+  const comments = await db
+    .select({
+      c: commentsTable,
+      authorName: usersTable.displayName,
+    })
+    .from(commentsTable)
+    .leftJoin(usersTable, eq(commentsTable.authorId, usersTable.id))
+    .where(and(...conditions))
+    .orderBy(asc(commentsTable.createdAt));
+
+  res.json(comments.map(row => ({
+    id: row.c.id,
+    invoiceId: row.c.invoiceId,
+    issueId: row.c.issueId,
+    invoiceItemId: row.c.invoiceItemId,
+    commentScope: row.c.commentScope,
+    authorId: row.c.authorId,
+    authorName: row.authorName ?? null,
+    content: row.c.content,
+    createdAt: row.c.createdAt,
+  })));
+});
+
+router.post("/invoices/:id/comments", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const actorId = req.session.userId!;
+  const { content, commentScope, issueId, invoiceItemId } = req.body as {
+    content: string;
+    commentScope: string;
+    issueId?: number;
+    invoiceItemId?: number;
+  };
+
+  if (!content?.trim()) { res.status(400).json({ error: "content is required" }); return; }
+  if (!commentScope) { res.status(400).json({ error: "commentScope is required" }); return; }
+
+  const [invoice] = await db.select({ id: invoicesTable.id }).from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
+  if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  const [comment] = await db.insert(commentsTable).values({
+    invoiceId: id,
+    issueId: issueId ?? null,
+    invoiceItemId: invoiceItemId ?? null,
+    commentScope: commentScope as typeof commentsTable.$inferSelect["commentScope"],
+    authorId: actorId,
+    content: content.trim(),
+  }).returning();
+
+  await db.insert(auditEventsTable).values({
+    entityType: "invoice",
+    entityId: id,
+    eventType: "comment_posted",
+    actorId,
+    afterJson: { commentId: comment.id, scope: commentScope, issueId: issueId ?? null },
+  });
+
+  const [actorUser] = await db.select({ displayName: usersTable.displayName }).from(usersTable).where(eq(usersTable.id, actorId)).limit(1);
+
+  res.status(201).json({
+    id: comment.id,
+    invoiceId: comment.invoiceId,
+    issueId: comment.issueId,
+    invoiceItemId: comment.invoiceItemId,
+    commentScope: comment.commentScope,
+    authorId: comment.authorId,
+    authorName: actorUser?.displayName ?? null,
+    content: comment.content,
+    createdAt: comment.createdAt,
+  });
+});
+
+router.get("/invoices/:id/audit-events", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [invoice] = await db.select({ id: invoicesTable.id }).from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
+  if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  const events = await db
+    .select({
+      e: auditEventsTable,
+      actorName: usersTable.displayName,
+    })
+    .from(auditEventsTable)
+    .leftJoin(usersTable, eq(auditEventsTable.actorId, usersTable.id))
+    .where(and(
+      eq(auditEventsTable.entityType, "invoice"),
+      eq(auditEventsTable.entityId, id),
+    ))
+    .orderBy(asc(auditEventsTable.createdAt));
+
+  const issueEvents = await db
+    .select({
+      e: auditEventsTable,
+      actorName: usersTable.displayName,
+    })
+    .from(auditEventsTable)
+    .leftJoin(usersTable, eq(auditEventsTable.actorId, usersTable.id))
+    .where(and(
+      eq(auditEventsTable.entityType, "issue"),
+      sql`${auditEventsTable.entityId} IN (SELECT id FROM issues WHERE invoice_id = ${id})`,
+    ))
+    .orderBy(asc(auditEventsTable.createdAt));
+
+  const allEvents = [...events, ...issueEvents].sort((a, b) =>
+    new Date(a.e.createdAt).getTime() - new Date(b.e.createdAt).getTime()
+  );
+
+  res.json(allEvents.map(row => ({
+    id: row.e.id,
+    entityType: row.e.entityType,
+    entityId: row.e.entityId,
+    eventType: row.e.eventType,
+    actorId: row.e.actorId,
+    actorName: row.actorName ?? null,
+    beforeJson: row.e.beforeJson,
+    afterJson: row.e.afterJson,
+    reason: row.e.reason,
+    createdAt: row.e.createdAt,
   })));
 });
 

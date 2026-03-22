@@ -844,8 +844,142 @@ export const ListInvoiceIssuesResponseItem = zod.object({
   recoverableAmount: zod.string().nullish(),
   recoveryGroupKey: zod.string().nullish(),
   configSnapshotJson: zod.unknown().nullish(),
+  latestDecision: zod
+    .object({
+      id: zod.number(),
+      issueId: zod.number(),
+      actorId: zod.number().nullish(),
+      actorRole: zod.string(),
+      actorName: zod.string().nullish(),
+      action: zod.enum(["accept", "reject", "delegate", "return"]),
+      note: zod.string().nullish(),
+      createdAt: zod.date(),
+    })
+    .nullish(),
   createdAt: zod.date(),
 });
 export const ListInvoiceIssuesResponse = zod.array(
   ListInvoiceIssuesResponseItem,
+);
+
+/**
+ * @summary Record a decision on an issue (accept / reject / delegate / return)
+ */
+export const DecideIssueParams = zod.object({
+  id: zod.coerce.number(),
+  issueId: zod.coerce.number(),
+});
+
+export const DecideIssueBody = zod.object({
+  action: zod.enum(["accept", "reject", "delegate", "return"]),
+  note: zod.string().nullish(),
+});
+
+export const DecideIssueResponse = zod.object({
+  id: zod.number(),
+  invoiceId: zod.number(),
+  analysisRunId: zod.number().nullish(),
+  invoiceItemId: zod.number().nullish(),
+  ruleCode: zod.string(),
+  ruleType: zod.enum(["objective", "gray", "configurable", "metadata"]),
+  severity: zod.enum(["error", "warning"]),
+  issueStatus: zod.string(),
+  routeToRole: zod.enum(["legal_ops", "internal_lawyer"]),
+  explanationText: zod.string(),
+  evidenceJson: zod.unknown().nullish(),
+  suggestedAction: zod.string().nullish(),
+  recoverableAmount: zod.string().nullish(),
+  recoveryGroupKey: zod.string().nullish(),
+  configSnapshotJson: zod.unknown().nullish(),
+  latestDecision: zod
+    .object({
+      id: zod.number(),
+      issueId: zod.number(),
+      actorId: zod.number().nullish(),
+      actorRole: zod.string(),
+      actorName: zod.string().nullish(),
+      action: zod.enum(["accept", "reject", "delegate", "return"]),
+      note: zod.string().nullish(),
+      createdAt: zod.date(),
+    })
+    .nullish(),
+  createdAt: zod.date(),
+});
+
+/**
+ * @summary List comments for an invoice
+ */
+export const ListInvoiceCommentsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListInvoiceCommentsQueryParams = zod.object({
+  issueId: zod.coerce.number().optional(),
+  scope: zod
+    .enum(["general", "issue_inline", "line_inline", "escalation", "decision"])
+    .optional(),
+});
+
+export const ListInvoiceCommentsResponseItem = zod.object({
+  id: zod.number(),
+  invoiceId: zod.number(),
+  issueId: zod.number().nullish(),
+  invoiceItemId: zod.number().nullish(),
+  commentScope: zod.enum([
+    "general",
+    "issue_inline",
+    "line_inline",
+    "escalation",
+    "decision",
+  ]),
+  authorId: zod.number().nullish(),
+  authorName: zod.string().nullish(),
+  content: zod.string(),
+  createdAt: zod.date(),
+});
+export const ListInvoiceCommentsResponse = zod.array(
+  ListInvoiceCommentsResponseItem,
+);
+
+/**
+ * @summary Post a comment on an invoice
+ */
+export const PostInvoiceCommentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const PostInvoiceCommentBody = zod.object({
+  content: zod.string(),
+  commentScope: zod.enum([
+    "general",
+    "issue_inline",
+    "line_inline",
+    "escalation",
+    "decision",
+  ]),
+  issueId: zod.number().nullish(),
+  invoiceItemId: zod.number().nullish(),
+});
+
+/**
+ * @summary List audit trail events for an invoice
+ */
+export const ListInvoiceAuditEventsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListInvoiceAuditEventsResponseItem = zod.object({
+  id: zod.number(),
+  entityType: zod.string(),
+  entityId: zod.number(),
+  eventType: zod.string(),
+  actorId: zod.number().nullish(),
+  actorName: zod.string().nullish(),
+  beforeJson: zod.unknown().nullish(),
+  afterJson: zod.unknown().nullish(),
+  reason: zod.string().nullish(),
+  createdAt: zod.date(),
+});
+export const ListInvoiceAuditEventsResponse = zod.array(
+  ListInvoiceAuditEventsResponseItem,
 );

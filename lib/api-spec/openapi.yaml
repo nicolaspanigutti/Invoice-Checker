@@ -788,6 +788,134 @@ paths:
                 items:
                   $ref: "#/components/schemas/InvoiceIssue"
 
+  /invoices/{id}/issues/{issueId}/decide:
+    post:
+      operationId: decideIssue
+      tags: [invoices]
+      summary: Record a decision on an issue (accept / reject / delegate / return)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: issueId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideIssueRequest"
+      responses:
+        "200":
+          description: Decision recorded; returns updated issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceIssue"
+        "400":
+          description: Invalid action or missing mandatory note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Role not permitted to take this action
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice or issue not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invoices/{id}/comments:
+    get:
+      operationId: listInvoiceComments
+      tags: [invoices]
+      summary: List comments for an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: issueId
+          in: query
+          schema:
+            type: integer
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [general, issue_inline, line_inline, escalation, decision]
+      responses:
+        "200":
+          description: Comments list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommentResponse"
+    post:
+      operationId: postInvoiceComment
+      tags: [invoices]
+      summary: Post a comment on an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostCommentRequest"
+      responses:
+        "201":
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommentResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invoices/{id}/audit-events:
+    get:
+      operationId: listInvoiceAuditEvents
+      tags: [invoices]
+      summary: List audit trail events for an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Audit events list (chronological)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditEventResponse"
+
 components:
   schemas:
     RequestUploadUrlBody:
@@ -1756,6 +1884,9 @@ components:
           nullable: true
         configSnapshotJson:
           nullable: true
+        latestDecision:
+          $ref: "#/components/schemas/IssueDecisionResponse"
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -1769,3 +1900,141 @@ components:
         - routeToRole
         - explanationText
         - createdAt
+
+    DecideIssueRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [accept, reject, delegate, return]
+        note:
+          type: string
+          nullable: true
+      required:
+        - action
+
+    IssueDecisionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        issueId:
+          type: integer
+        actorId:
+          type: integer
+          nullable: true
+        actorRole:
+          type: string
+        actorName:
+          type: string
+          nullable: true
+        action:
+          type: string
+          enum: [accept, reject, delegate, return]
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - issueId
+        - actorRole
+        - action
+        - createdAt
+
+    PostCommentRequest:
+      type: object
+      properties:
+        content:
+          type: string
+        commentScope:
+          type: string
+          enum: [general, issue_inline, line_inline, escalation, decision]
+        issueId:
+          type: integer
+          nullable: true
+        invoiceItemId:
+          type: integer
+          nullable: true
+      required:
+        - content
+        - commentScope
+
+    CommentResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceId:
+          type: integer
+        issueId:
+          type: integer
+          nullable: true
+        invoiceItemId:
+          type: integer
+          nullable: true
+        commentScope:
+          type: string
+          enum: [general, issue_inline, line_inline, escalation, decision]
+        authorId:
+          type: integer
+          nullable: true
+        authorName:
+          type: string
+          nullable: true
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - invoiceId
+        - commentScope
+        - content
+        - createdAt
+
+    AuditEventResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        entityType:
+          type: string
+        entityId:
+          type: integer
+        eventType:
+          type: string
+        actorId:
+          type: integer
+          nullable: true
+        actorName:
+          type: string
+          nullable: true
+        beforeJson:
+          nullable: true
+        afterJson:
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - entityType
+        - entityId
+        - eventType
+        - createdAt
+
+    ListInvoiceCommentsParams:
+      type: object
+      properties:
+        issueId:
+          type: integer
+        scope:
+          type: string
+          enum: [general, issue_inline, line_inline, escalation, decision]

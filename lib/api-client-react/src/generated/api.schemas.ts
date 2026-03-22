@@ -610,6 +610,27 @@ export const InvoiceIssueRouteToRole = {
   internal_lawyer: "internal_lawyer",
 } as const;
 
+export type IssueDecisionResponseAction =
+  (typeof IssueDecisionResponseAction)[keyof typeof IssueDecisionResponseAction];
+
+export const IssueDecisionResponseAction = {
+  accept: "accept",
+  reject: "reject",
+  delegate: "delegate",
+  return: "return",
+} as const;
+
+export interface IssueDecisionResponse {
+  id: number;
+  issueId: number;
+  actorId?: number | null;
+  actorRole: string;
+  actorName?: string | null;
+  action: IssueDecisionResponseAction;
+  note?: string | null;
+  createdAt: string;
+}
+
 export interface InvoiceIssue {
   id: number;
   invoiceId: number;
@@ -626,7 +647,93 @@ export interface InvoiceIssue {
   recoverableAmount?: string | null;
   recoveryGroupKey?: string | null;
   configSnapshotJson?: unknown | null;
+  latestDecision?: IssueDecisionResponse | null;
   createdAt: string;
+}
+
+export type DecideIssueRequestAction =
+  (typeof DecideIssueRequestAction)[keyof typeof DecideIssueRequestAction];
+
+export const DecideIssueRequestAction = {
+  accept: "accept",
+  reject: "reject",
+  delegate: "delegate",
+  return: "return",
+} as const;
+
+export interface DecideIssueRequest {
+  action: DecideIssueRequestAction;
+  note?: string | null;
+}
+
+export type PostCommentRequestCommentScope =
+  (typeof PostCommentRequestCommentScope)[keyof typeof PostCommentRequestCommentScope];
+
+export const PostCommentRequestCommentScope = {
+  general: "general",
+  issue_inline: "issue_inline",
+  line_inline: "line_inline",
+  escalation: "escalation",
+  decision: "decision",
+} as const;
+
+export interface PostCommentRequest {
+  content: string;
+  commentScope: PostCommentRequestCommentScope;
+  issueId?: number | null;
+  invoiceItemId?: number | null;
+}
+
+export type CommentResponseCommentScope =
+  (typeof CommentResponseCommentScope)[keyof typeof CommentResponseCommentScope];
+
+export const CommentResponseCommentScope = {
+  general: "general",
+  issue_inline: "issue_inline",
+  line_inline: "line_inline",
+  escalation: "escalation",
+  decision: "decision",
+} as const;
+
+export interface CommentResponse {
+  id: number;
+  invoiceId: number;
+  issueId?: number | null;
+  invoiceItemId?: number | null;
+  commentScope: CommentResponseCommentScope;
+  authorId?: number | null;
+  authorName?: string | null;
+  content: string;
+  createdAt: string;
+}
+
+export interface AuditEventResponse {
+  id: number;
+  entityType: string;
+  entityId: number;
+  eventType: string;
+  actorId?: number | null;
+  actorName?: string | null;
+  beforeJson?: unknown | null;
+  afterJson?: unknown | null;
+  reason?: string | null;
+  createdAt: string;
+}
+
+export type ListInvoiceCommentsParamsScope =
+  (typeof ListInvoiceCommentsParamsScope)[keyof typeof ListInvoiceCommentsParamsScope];
+
+export const ListInvoiceCommentsParamsScope = {
+  general: "general",
+  issue_inline: "issue_inline",
+  line_inline: "line_inline",
+  escalation: "escalation",
+  decision: "decision",
+} as const;
+
+export interface ListInvoiceCommentsParams {
+  issueId?: number;
+  scope?: ListInvoiceCommentsParamsScope;
 }
 
 export type ListLawFirmsParams = {
@@ -685,3 +792,14 @@ export const ListInvoicesStatus = {
 export type ListInvoiceIssuesParams = {
   analysisRunId?: number;
 };
+
+export type ListInvoiceCommentsScope =
+  (typeof ListInvoiceCommentsScope)[keyof typeof ListInvoiceCommentsScope];
+
+export const ListInvoiceCommentsScope = {
+  general: "general",
+  issue_inline: "issue_inline",
+  line_inline: "line_inline",
+  escalation: "escalation",
+  decision: "decision",
+} as const;

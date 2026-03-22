@@ -20,12 +20,15 @@ import type {
   AddInvoiceDocumentRequest,
   AnalysisRun,
   AnalysisRunResult,
+  AuditEventResponse,
   AuthUser,
+  CommentResponse,
   CompletenessResult,
   CreateInvoiceRequest,
   CreateLawFirmRequest,
   CreatePanelBaselineDocumentRequest,
   CreateUserRequest,
+  DecideIssueRequest,
   ErrorResponse,
   ExtractionResult,
   FirmTerm,
@@ -37,6 +40,7 @@ import type {
   InvoiceListResponse,
   LawFirm,
   LawFirmDetail,
+  ListInvoiceCommentsParams,
   ListInvoiceIssuesParams,
   ListInvoicesParams,
   ListLawFirmsParams,
@@ -48,6 +52,7 @@ import type {
   PanelBaselineDocument,
   PanelRate,
   PanelRateLookupResult,
+  PostCommentRequest,
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
   UpdateDocumentStatusRequest,
@@ -2781,6 +2786,379 @@ export function useListInvoiceIssues<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListInvoiceIssuesQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Record a decision on an issue (accept / reject / delegate / return)
+ */
+export const getDecideIssueUrl = (id: number, issueId: number) => {
+  return `/api/invoices/${id}/issues/${issueId}/decide`;
+};
+
+export const decideIssue = async (
+  id: number,
+  issueId: number,
+  decideIssueRequest: DecideIssueRequest,
+  options?: RequestInit,
+): Promise<InvoiceIssue> => {
+  return customFetch<InvoiceIssue>(getDecideIssueUrl(id, issueId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(decideIssueRequest),
+  });
+};
+
+export const getDecideIssueMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof decideIssue>>,
+    TError,
+    { id: number; issueId: number; data: BodyType<DecideIssueRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof decideIssue>>,
+  TError,
+  { id: number; issueId: number; data: BodyType<DecideIssueRequest> },
+  TContext
+> => {
+  const mutationKey = ["decideIssue"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof decideIssue>>,
+    { id: number; issueId: number; data: BodyType<DecideIssueRequest> }
+  > = (props) => {
+    const { id, issueId, data } = props ?? {};
+
+    return decideIssue(id, issueId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DecideIssueMutationResult = NonNullable<
+  Awaited<ReturnType<typeof decideIssue>>
+>;
+export type DecideIssueMutationBody = BodyType<DecideIssueRequest>;
+export type DecideIssueMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Record a decision on an issue (accept / reject / delegate / return)
+ */
+export const useDecideIssue = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof decideIssue>>,
+    TError,
+    { id: number; issueId: number; data: BodyType<DecideIssueRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof decideIssue>>,
+  TError,
+  { id: number; issueId: number; data: BodyType<DecideIssueRequest> },
+  TContext
+> => {
+  return useMutation(getDecideIssueMutationOptions(options));
+};
+
+/**
+ * @summary List comments for an invoice
+ */
+export const getListInvoiceCommentsUrl = (
+  id: number,
+  params?: ListInvoiceCommentsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/invoices/${id}/comments?${stringifiedParams}`
+    : `/api/invoices/${id}/comments`;
+};
+
+export const listInvoiceComments = async (
+  id: number,
+  params?: ListInvoiceCommentsParams,
+  options?: RequestInit,
+): Promise<CommentResponse[]> => {
+  return customFetch<CommentResponse[]>(getListInvoiceCommentsUrl(id, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListInvoiceCommentsQueryKey = (
+  id: number,
+  params?: ListInvoiceCommentsParams,
+) => {
+  return [`/api/invoices/${id}/comments`, ...(params ? [params] : [])] as const;
+};
+
+export const getListInvoiceCommentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listInvoiceComments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: ListInvoiceCommentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceComments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListInvoiceCommentsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listInvoiceComments>>
+  > = ({ signal }) =>
+    listInvoiceComments(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listInvoiceComments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListInvoiceCommentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listInvoiceComments>>
+>;
+export type ListInvoiceCommentsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List comments for an invoice
+ */
+
+export function useListInvoiceComments<
+  TData = Awaited<ReturnType<typeof listInvoiceComments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params?: ListInvoiceCommentsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceComments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListInvoiceCommentsQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Post a comment on an invoice
+ */
+export const getPostInvoiceCommentUrl = (id: number) => {
+  return `/api/invoices/${id}/comments`;
+};
+
+export const postInvoiceComment = async (
+  id: number,
+  postCommentRequest: PostCommentRequest,
+  options?: RequestInit,
+): Promise<CommentResponse> => {
+  return customFetch<CommentResponse>(getPostInvoiceCommentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(postCommentRequest),
+  });
+};
+
+export const getPostInvoiceCommentMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof postInvoiceComment>>,
+    TError,
+    { id: number; data: BodyType<PostCommentRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof postInvoiceComment>>,
+  TError,
+  { id: number; data: BodyType<PostCommentRequest> },
+  TContext
+> => {
+  const mutationKey = ["postInvoiceComment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof postInvoiceComment>>,
+    { id: number; data: BodyType<PostCommentRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return postInvoiceComment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PostInvoiceCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof postInvoiceComment>>
+>;
+export type PostInvoiceCommentMutationBody = BodyType<PostCommentRequest>;
+export type PostInvoiceCommentMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Post a comment on an invoice
+ */
+export const usePostInvoiceComment = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof postInvoiceComment>>,
+    TError,
+    { id: number; data: BodyType<PostCommentRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof postInvoiceComment>>,
+  TError,
+  { id: number; data: BodyType<PostCommentRequest> },
+  TContext
+> => {
+  return useMutation(getPostInvoiceCommentMutationOptions(options));
+};
+
+/**
+ * @summary List audit trail events for an invoice
+ */
+export const getListInvoiceAuditEventsUrl = (id: number) => {
+  return `/api/invoices/${id}/audit-events`;
+};
+
+export const listInvoiceAuditEvents = async (
+  id: number,
+  options?: RequestInit,
+): Promise<AuditEventResponse[]> => {
+  return customFetch<AuditEventResponse[]>(getListInvoiceAuditEventsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListInvoiceAuditEventsQueryKey = (id: number) => {
+  return [`/api/invoices/${id}/audit-events`] as const;
+};
+
+export const getListInvoiceAuditEventsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listInvoiceAuditEvents>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceAuditEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListInvoiceAuditEventsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listInvoiceAuditEvents>>
+  > = ({ signal }) => listInvoiceAuditEvents(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listInvoiceAuditEvents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListInvoiceAuditEventsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listInvoiceAuditEvents>>
+>;
+export type ListInvoiceAuditEventsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List audit trail events for an invoice
+ */
+
+export function useListInvoiceAuditEvents<
+  TData = Awaited<ReturnType<typeof listInvoiceAuditEvents>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listInvoiceAuditEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListInvoiceAuditEventsQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

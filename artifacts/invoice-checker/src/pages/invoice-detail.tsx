@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import {
   useGetInvoice,
@@ -9,10 +9,20 @@ import {
   useRequestUploadUrl,
   useRunInvoiceAnalysis,
   useListInvoiceIssues,
+  useGetMe,
+  useDecideIssue,
+  useListInvoiceComments,
+  usePostInvoiceComment,
+  useListInvoiceAuditEvents,
+  getListInvoiceCommentsQueryKey,
+  getListInvoiceAuditEventsQueryKey,
   type InvoiceItem,
   type InvoiceDocument,
   type InvoiceIssue,
   type AnalysisRunResult,
+  type CommentResponse,
+  type AuditEventResponse,
+  type ListInvoiceCommentsParams,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,6 +72,14 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
+  ThumbsUp,
+  ThumbsDown,
+  ArrowRightCircle,
+  Undo2,
+  MessageSquare,
+  Send,
+  Activity,
+  UserCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -171,10 +189,98 @@ function RuleTypeBadge({ ruleType }: { ruleType: string }) {
   );
 }
 
-function IssueCard({ issue }: { issue: InvoiceIssue }) {
+const DECISION_ACTION_LABELS: Record<string, string> = {
+  accept: "Accepted",
+  reject: "Rejected",
+  delegate: "Delegated to Lawyer",
+  return: "Returned to Legal Ops",
+};
+
+const DECISION_ACTION_COLOURS: Record<string, string> = {
+  accept: "bg-green-100 text-green-800",
+  reject: "bg-red-100 text-red-800",
+  delegate: "bg-purple-100 text-purple-800",
+  return: "bg-orange-100 text-orange-800",
+};
+
+function IssueDecisionBadge({ action, actorName, note }: { action: string; actorName?: string | null; note?: string | null }) {
+  return (
+    <div className={`flex items-start gap-2 px-3 py-2 rounded-xl text-xs font-medium ${DECISION_ACTION_COLOURS[action] ?? "bg-gray-100 text-gray-700"}`}>
+      <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+      <div>
+        <span className="font-semibold">{DECISION_ACTION_LABELS[action] ?? action}</span>
+        {actorName && <span className="font-normal opacity-70"> by {actorName}</span>}
+        {note && <p className="mt-0.5 font-normal opacity-80 italic">"{note}"</p>}
+      </div>
+    </div>
+  );
+}
+
+function IssueCard({ issue, invoiceId, userRole, onDecided }: {
+  issue: InvoiceIssue;
+  invoiceId: number;
+  userRole: string | null;
+  onDecided: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [showNoteInput, setShowNoteInput] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [showComments, setShowComments] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const decideIssue = useDecideIssue();
+  const { data: inlineComments } = useListInvoiceComments(invoiceId, { issueId: issue.id, scope: "issue_inline" } as ListInvoiceCommentsParams);
+  const postComment = usePostInvoiceComment();
+  const [commentText, setCommentText] = useState("");
+
   const evidence = issue.evidenceJson as Record<string, unknown> | null;
   const recoverable = issue.recoverableAmount ? parseFloat(issue.recoverableAmount) : null;
+
+  const latestDecision = issue.latestDecision ?? null;
+  const hasDecision = latestDecision !== null;
+
+  const ROLE_PERMITTED_ACTIONS: Record<string, string[]> = {
+    legal_ops: ["accept", "reject", "delegate"],
+    internal_lawyer: ["accept", "reject", "return"],
+    super_admin: ["accept", "reject", "delegate", "return"],
+  };
+  const permitted = userRole ? (ROLE_PERMITTED_ACTIONS[userRole] ?? []) : [];
+
+  const canDecide = !hasDecision || (latestDecision?.action === "return") || (latestDecision?.action === "delegate" && userRole === "internal_lawyer");
+
+  const handleDecide = async (action: string) => {
+    if (action === "return" && !note.trim()) {
+      setShowNoteInput(action);
+      return;
+    }
+    if (showNoteInput === action && !note.trim()) {
+      toast({ variant: "destructive", title: "Note required", description: "Please add a note before returning." });
+      return;
+    }
+    try {
+      await decideIssue.mutateAsync({ id: invoiceId, issueId: issue.id, data: { action: action as import("@workspace/api-client-react").DecideIssueRequestAction, note: note || undefined } });
+      toast({ title: "Decision recorded", description: `Issue ${DECISION_ACTION_LABELS[action] ?? action}.` });
+      setShowNoteInput(null);
+      setNote("");
+      queryClient.invalidateQueries({ queryKey: getListInvoiceIssuesQueryKey(invoiceId) });
+      queryClient.invalidateQueries({ queryKey: getGetInvoiceQueryKey(invoiceId) });
+      queryClient.invalidateQueries({ queryKey: getListInvoiceAuditEventsQueryKey(invoiceId) });
+      onDecided();
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Failed to record decision." });
+    }
+  };
+
+  const handlePostComment = async () => {
+    if (!commentText.trim()) return;
+    try {
+      await postComment.mutateAsync({ id: invoiceId, data: { content: commentText.trim(), commentScope: "issue_inline", issueId: issue.id } });
+      setCommentText("");
+      queryClient.invalidateQueries({ queryKey: getListInvoiceCommentsQueryKey(invoiceId) });
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Failed to post comment." });
+    }
+  };
 
   return (
     <div className={`rounded-2xl border ${issue.severity === "error" ? "border-red-200 bg-red-50/40" : "border-amber-200 bg-amber-50/30"} overflow-hidden`}>
@@ -192,7 +298,13 @@ function IssueCard({ issue }: { issue: InvoiceIssue }) {
             <span className="font-mono text-xs font-bold text-muted-foreground tracking-wide">{issue.ruleCode}</span>
             <RuleTypeBadge ruleType={issue.ruleType} />
             <SeverityBadge severity={issue.severity} />
-            {recoverable !== null && recoverable > 0 && (
+            {hasDecision && (
+              <span className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${DECISION_ACTION_COLOURS[latestDecision!.action] ?? "bg-gray-100"}`}>
+                <CheckCircle2 className="h-3 w-3" />
+                {DECISION_ACTION_LABELS[latestDecision!.action] ?? latestDecision!.action}
+              </span>
+            )}
+            {!hasDecision && recoverable !== null && recoverable > 0 && (
               <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 flex-shrink-0">
                 At risk: {recoverable.toLocaleString("en-GB", { minimumFractionDigits: 2 })}
               </span>
@@ -248,13 +360,154 @@ function IssueCard({ issue }: { issue: InvoiceIssue }) {
               </span>
             </div>
           )}
+
+          {hasDecision && (
+            <IssueDecisionBadge action={latestDecision!.action} actorName={latestDecision!.actorName} note={latestDecision!.note} />
+          )}
+
+          {canDecide && permitted.length > 0 && !hasDecision && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Your Decision</p>
+              <div className="flex flex-wrap gap-2">
+                {permitted.includes("accept") && (
+                  <Button size="sm" variant="outline" className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
+                    onClick={() => handleDecide("accept")} disabled={decideIssue.isPending}>
+                    <ThumbsUp className="h-3.5 w-3.5" /> Accept
+                  </Button>
+                )}
+                {permitted.includes("reject") && (
+                  <Button size="sm" variant="outline" className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
+                    onClick={() => handleDecide("reject")} disabled={decideIssue.isPending}>
+                    <ThumbsDown className="h-3.5 w-3.5" /> Reject
+                  </Button>
+                )}
+                {permitted.includes("delegate") && (
+                  <Button size="sm" variant="outline" className="gap-1.5 border-purple-300 text-purple-700 hover:bg-purple-50"
+                    onClick={() => handleDecide("delegate")} disabled={decideIssue.isPending}>
+                    <ArrowRightCircle className="h-3.5 w-3.5" /> Delegate
+                  </Button>
+                )}
+                {permitted.includes("return") && (
+                  <Button size="sm" variant="outline" className="gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50"
+                    onClick={() => { setShowNoteInput("return"); }} disabled={decideIssue.isPending}>
+                    <Undo2 className="h-3.5 w-3.5" /> Return
+                  </Button>
+                )}
+              </div>
+              {showNoteInput && (
+                <div className="space-y-2">
+                  <textarea
+                    className="w-full text-sm border border-border rounded-xl p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[72px]"
+                    placeholder={showNoteInput === "return" ? "Reason for returning (required)…" : "Add a note (optional)…"}
+                    value={note}
+                    onChange={e => setNote(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => handleDecide(showNoteInput)} disabled={decideIssue.isPending || (showNoteInput === "return" && !note.trim())}>
+                      {decideIssue.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setShowNoteInput(null); setNote(""); }}>Cancel</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {latestDecision?.action === "delegate" && (
+            <div className="flex items-center gap-2 p-2.5 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-700">
+              <ArrowRightCircle className="h-3.5 w-3.5 flex-shrink-0" />
+              Waiting for Internal Lawyer review
+            </div>
+          )}
+
+          {canDecide && permitted.length > 0 && latestDecision?.action === "delegate" && userRole === "internal_lawyer" && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Internal Lawyer Decision</p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
+                  onClick={() => handleDecide("accept")} disabled={decideIssue.isPending}>
+                  <ThumbsUp className="h-3.5 w-3.5" /> Accept
+                </Button>
+                <Button size="sm" variant="outline" className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
+                  onClick={() => handleDecide("reject")} disabled={decideIssue.isPending}>
+                  <ThumbsDown className="h-3.5 w-3.5" /> Reject
+                </Button>
+                <Button size="sm" variant="outline" className="gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50"
+                  onClick={() => { setShowNoteInput("return"); }} disabled={decideIssue.isPending}>
+                  <Undo2 className="h-3.5 w-3.5" /> Return to Legal Ops
+                </Button>
+              </div>
+              {showNoteInput && (
+                <div className="space-y-2">
+                  <textarea
+                    className="w-full text-sm border border-border rounded-xl p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[72px]"
+                    placeholder="Reason for returning (required)…"
+                    value={note}
+                    onChange={e => setNote(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => handleDecide("return")} disabled={decideIssue.isPending || !note.trim()}>
+                      {decideIssue.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm Return"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setShowNoteInput(null); setNote(""); }}>Cancel</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <button
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setShowComments(v => !v)}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              {showComments ? "Hide comments" : `Comments ${inlineComments && inlineComments.length > 0 ? `(${inlineComments.length})` : ""}`}
+            </button>
+            {showComments && (
+              <div className="mt-2 space-y-2">
+                {inlineComments && inlineComments.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {inlineComments.map((c: CommentResponse) => (
+                      <div key={c.id} className="flex items-start gap-2 bg-card border border-border rounded-xl px-3 py-2">
+                        <UserCircle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium">{c.authorName ?? "Unknown"}</span>
+                            <span className="text-xs text-muted-foreground">{format(new Date(c.createdAt), "d MMM yyyy HH:mm")}</span>
+                          </div>
+                          <p className="text-xs text-foreground mt-0.5">{c.content}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No comments yet.</p>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="Add a comment…"
+                    value={commentText}
+                    onChange={e => setCommentText(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handlePostComment(); } }}
+                  />
+                  <Button size="sm" variant="outline" className="px-2.5" onClick={handlePostComment} disabled={postComment.isPending || !commentText.trim()}>
+                    <Send className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function IssuesPanel({ invoiceId, currency }: { invoiceId: number; currency: string | null }) {
+function IssuesPanel({ invoiceId, currency, userRole }: { invoiceId: number; currency: string | null; userRole: string | null }) {
+  const queryClient = useQueryClient();
   const { data: issues, isLoading } = useListInvoiceIssues(invoiceId);
   const [showAll, setShowAll] = useState(false);
 
@@ -316,7 +569,16 @@ function IssuesPanel({ invoiceId, currency }: { invoiceId: number; currency: str
 
       <div className="space-y-2">
         {displayedIssues.map(issue => (
-          <IssueCard key={issue.id} issue={issue} />
+          <IssueCard
+            key={issue.id}
+            issue={issue}
+            invoiceId={invoiceId}
+            userRole={userRole}
+            onDecided={() => {
+              queryClient.invalidateQueries({ queryKey: getListInvoiceIssuesQueryKey(invoiceId) });
+              queryClient.invalidateQueries({ queryKey: getGetInvoiceQueryKey(invoiceId) });
+            }}
+          />
         ))}
       </div>
     </div>
@@ -408,14 +670,22 @@ export default function InvoiceDetail() {
   const [addDocOpen, setAddDocOpen] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [analysisRan, setAnalysisRan] = useState(false);
+  const [generalComment, setGeneralComment] = useState("");
+  const commentsEndRef = useRef<HTMLDivElement>(null);
 
   const { data: invoice, isLoading } = useGetInvoice(id);
   const { data: documents } = useListInvoiceDocuments(id);
   const { data: items } = useListInvoiceItems(id);
   const { data: issues } = useListInvoiceIssues(id);
+  const { data: me } = useGetMe();
+  const { data: generalComments } = useListInvoiceComments(id, { scope: "general" } as ListInvoiceCommentsParams);
+  const { data: auditEvents } = useListInvoiceAuditEvents(id);
+  const postComment = usePostInvoiceComment();
   const extractData = useExtractInvoiceData();
   const runAnalysis = useRunInvoiceAnalysis();
   const [showAllLines, setShowAllLines] = useState(false);
+
+  const userRole = me?.role ?? null;
 
   if (isLoading) {
     return (
@@ -583,7 +853,7 @@ export default function InvoiceDetail() {
                 </div>
               </div>
               <div className="p-6">
-                <IssuesPanel invoiceId={id} currency={invoice.currency} />
+                <IssuesPanel invoiceId={id} currency={invoice.currency} userRole={userRole} />
               </div>
             </div>
           )}
@@ -666,10 +936,121 @@ export default function InvoiceDetail() {
           </div>
 
           <div className="border border-border rounded-3xl bg-card p-6 shadow-sm">
-            <h2 className="text-lg font-display font-semibold mb-4">General Comments</h2>
-            <div className="text-center py-8 text-muted-foreground">
-              <p className="text-sm">No comments yet. Comments will be available in a future update.</p>
+            <div className="flex items-center gap-2 mb-4">
+              <MessageSquare className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-display font-semibold">General Comments</h2>
+              {generalComments && generalComments.length > 0 && (
+                <span className="ml-auto text-xs text-muted-foreground">{generalComments.length} comment{generalComments.length !== 1 ? "s" : ""}</span>
+              )}
             </div>
+            <div className="space-y-3">
+              {(!generalComments || generalComments.length === 0) ? (
+                <div className="text-center py-6">
+                  <MessageSquare className="mx-auto h-6 w-6 text-muted-foreground/30 mb-2" />
+                  <p className="text-sm text-muted-foreground">No comments yet. Be the first to add one.</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {generalComments.map((c: CommentResponse) => (
+                    <div key={c.id} className="flex items-start gap-3 bg-muted/40 rounded-2xl px-4 py-3">
+                      <UserCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-sm font-semibold">{c.authorName ?? "Unknown"}</span>
+                          <span className="text-xs text-muted-foreground">{format(new Date(c.createdAt), "d MMM yyyy, HH:mm")}</span>
+                        </div>
+                        <p className="text-sm text-foreground leading-relaxed">{c.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={commentsEndRef} />
+                </div>
+              )}
+              <div className="flex gap-2 pt-1">
+                <textarea
+                  className="flex-1 text-sm border border-border rounded-xl p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[72px]"
+                  placeholder="Add a general comment about this invoice…"
+                  value={generalComment}
+                  onChange={e => setGeneralComment(e.target.value)}
+                  onKeyDown={async e => {
+                    if (e.key === "Enter" && e.ctrlKey) {
+                      e.preventDefault();
+                      if (!generalComment.trim()) return;
+                      try {
+                        await postComment.mutateAsync({ id, data: { content: generalComment.trim(), commentScope: "general" } });
+                        setGeneralComment("");
+                        queryClient.invalidateQueries({ queryKey: getListInvoiceCommentsQueryKey(id) });
+                      } catch {
+                        toast({ variant: "destructive", title: "Error", description: "Failed to post comment." });
+                      }
+                    }
+                  }}
+                />
+                <Button
+                  className="self-end gap-2"
+                  onClick={async () => {
+                    if (!generalComment.trim()) return;
+                    try {
+                      await postComment.mutateAsync({ id, data: { content: generalComment.trim(), commentScope: "general" } });
+                      setGeneralComment("");
+                      queryClient.invalidateQueries({ queryKey: getListInvoiceCommentsQueryKey(id) });
+                    } catch {
+                      toast({ variant: "destructive", title: "Error", description: "Failed to post comment." });
+                    }
+                  }}
+                  disabled={postComment.isPending || !generalComment.trim()}
+                >
+                  {postComment.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Post
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-border rounded-3xl bg-card p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <Activity className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-display font-semibold">Audit Trail</h2>
+            </div>
+            {(!auditEvents || auditEvents.length === 0) ? (
+              <div className="text-center py-6">
+                <Activity className="mx-auto h-6 w-6 text-muted-foreground/30 mb-2" />
+                <p className="text-sm text-muted-foreground">No audit events yet.</p>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="absolute left-5 top-0 bottom-0 w-px bg-border" />
+                <div className="space-y-4">
+                  {(auditEvents as AuditEventResponse[]).map((evt) => (
+                    <div key={evt.id} className="relative flex items-start gap-4 pl-12">
+                      <div className="absolute left-3.5 top-1 h-3 w-3 rounded-full bg-primary border-2 border-background shadow" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold capitalize">{String(evt.eventType).replace(/_/g, " ")}</span>
+                          {evt.actorName && <span className="text-xs text-muted-foreground">by {evt.actorName}</span>}
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {format(new Date(evt.createdAt), "d MMM yyyy, HH:mm")}
+                          </span>
+                        </div>
+                        {evt.afterJson != null && typeof evt.afterJson === "object" && !Array.isArray(evt.afterJson) && Object.keys(evt.afterJson as Record<string, unknown>).length > 0 && (() => {
+                          const entries = Object.entries(evt.afterJson as Record<string, unknown>);
+                          return (
+                            <div className="mt-1.5 rounded-xl bg-muted/50 border border-border px-3 py-2 text-xs font-mono text-muted-foreground overflow-x-auto">
+                              {entries.map(([k, v]) => (
+                                <div key={k}><span className="text-foreground font-medium">{k}:</span> {String(v)}</div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        {evt.reason && (
+                          <p className="mt-1 text-xs text-muted-foreground italic">Note: {evt.reason}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
