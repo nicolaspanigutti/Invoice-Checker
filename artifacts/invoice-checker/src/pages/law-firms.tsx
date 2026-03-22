@@ -41,6 +41,28 @@ const TERM_LABELS: Record<string, string> = {
   best_friend_firms_json: "Best Friend Firms",
 };
 
+const TERM_ORDER: string[] = [
+  "billing_type_default",
+  "payment_terms_days",
+  "max_daily_hours_per_timekeeper",
+  "third_party_services_require_approval",
+  "contract_start_date",
+  "contract_end_date",
+  "getting_up_to_speed_billable",
+  "expense_policy_json",
+  "travel_policy",
+];
+
+function sortTerms<T extends { termKey: string }>(terms: T[]): T[] {
+  return [...terms].sort((a, b) => {
+    const ai = TERM_ORDER.indexOf(a.termKey);
+    const bi = TERM_ORDER.indexOf(b.termKey);
+    const aPos = ai === -1 ? TERM_ORDER.length : ai;
+    const bPos = bi === -1 ? TERM_ORDER.length : bi;
+    return aPos - bPos;
+  });
+}
+
 type DiscountBand = { from?: number; to?: number | null; pct?: number; threshold?: number; method?: string };
 type ExpensePolicy = { allowed?: string[]; not_allowed?: string[]; caps?: Record<string, number> };
 
@@ -931,7 +953,7 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
                 )}
                 {typedFirm.terms && typedFirm.terms.length > 0 && !showTcUpload && (
                   <div className="space-y-2 bg-muted/30 rounded-2xl p-4">
-                    {typedFirm.terms.map(term => {
+                    {sortTerms(typedFirm.terms).map(term => {
                       const isWide = term.termKey === "travel_policy" || term.termKey === "expense_policy_json";
                       const verifyBtn = term.verificationStatus === "verified" ? (
                         <span title="Verified manually"><CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" /></span>
