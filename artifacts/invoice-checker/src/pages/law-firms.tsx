@@ -9,7 +9,9 @@ import {
   useExtractLawFirmInfo,
   useUpsertLawFirmTerms,
   useRequestUploadUrl,
+  useCreatePanelBaselineDocument,
   getListLawFirmsQueryKey,
+  getListPanelBaselineDocumentsQueryKey,
   type LawFirmDetail,
   type CreateLawFirmMutationError,
   type UpdateLawFirmMutationError,
@@ -441,6 +443,7 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
   const requestUploadUrl = useRequestUploadUrl();
   const extractInfoMutation = useExtractLawFirmInfo();
   const extractTermsMutation = useExtractLawFirmTermsFromTc();
+  const createPanelTCMutation = useCreatePanelBaselineDocument();
   const [form, setForm] = useState<FormData>(emptyForm);
   const [step, setStep] = useState<"upload" | "review">("upload");
   const [uploading, setUploading] = useState(false);
@@ -506,10 +509,17 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
         queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
         const created = result as { id: number; name: string };
         if (uploadedPath) {
+          const tcFileName = selectedFile?.name ?? null;
+          const tcVersionLabel = `T&C — ${created.name}`;
           extractTermsMutation.mutateAsync({ id: created.id, data: { storagePath: uploadedPath, mimeType: uploadedMimeType } })
             .then(() => {
               queryClient.invalidateQueries({ queryKey: ["law-firms", created.id] });
               queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+            })
+            .catch(() => {});
+          createPanelTCMutation.mutateAsync({ data: { documentKind: "terms_conditions", versionLabel: tcVersionLabel, fileName: tcFileName } })
+            .then(() => {
+              queryClient.invalidateQueries({ queryKey: getListPanelBaselineDocumentsQueryKey() });
             })
             .catch(() => {});
         }
