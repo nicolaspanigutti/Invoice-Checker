@@ -1,4 +1,4 @@
-import { db, invoicesTable, invoiceDocumentsTable, lawFirmsTable, panelBaselineDocumentsTable, firmTermsTable } from "@workspace/db";
+import { db, invoicesTable, invoiceDocumentsTable, lawFirmsTable, panelBaselineDocumentsTable, firmTermsTable, panelRatesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 export interface CompletenessIssue {
@@ -75,6 +75,7 @@ export async function checkCompleteness(invoiceId: number): Promise<Completeness
       }
 
       if (firm.firmType === "panel") {
+        // Accept rates if: an active baseline doc exists OR any rates rows exist in panel_rates
         const [activeRatesDoc] = await db
           .select({ id: panelBaselineDocumentsTable.id })
           .from(panelBaselineDocumentsTable)
@@ -86,10 +87,15 @@ export async function checkCompleteness(invoiceId: number): Promise<Completeness
           )
           .limit(1);
 
-        if (!activeRatesDoc) {
+        const [anyRate] = await db
+          .select({ id: panelRatesTable.id })
+          .from(panelRatesTable)
+          .limit(1);
+
+        if (!activeRatesDoc && !anyRate) {
           issues.push({
             code: "REQUIRED_SOURCE_MISSING",
-            message: "No active panel rate schedule exists. Activate a rate schedule before running analysis on panel firm invoices.",
+            message: "No panel rate schedule exists. Add rates on the Rates page before running analysis on panel firm invoices.",
             field: "panelRates",
           });
         }
