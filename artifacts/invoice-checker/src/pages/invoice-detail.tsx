@@ -281,12 +281,25 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
     }
   };
 
+  const currentIssueStatus = issue.issueStatus;
+  const isOpen = currentIssueStatus === "open";
+  const isEscalated = currentIssueStatus === "escalated_to_internal_lawyer";
+  const actionsForLegalOps = isOpen && (userRole === "legal_ops" || userRole === "super_admin")
+    ? ["accept", "reject", "delegate"]
+    : [];
+  const actionsForLawyer = isEscalated && (userRole === "internal_lawyer" || userRole === "super_admin")
+    ? (userRole === "internal_lawyer" ? ["accept", "reject", "return"] : ["accept", "reject"])
+    : [];
+  const availableActions = [...new Set([...actionsForLegalOps, ...actionsForLawyer])];
+  const sectionLabel = isEscalated && userRole === "internal_lawyer"
+    ? "Internal Lawyer Decision"
+    : hasDecision && latestDecision?.action === "return"
+    ? "Re-evaluate Issue"
+    : "Your Decision";
+
   return (
     <div className={`rounded-2xl border ${issue.severity === "error" ? "border-red-200 bg-red-50/40" : "border-amber-200 bg-amber-50/30"} overflow-hidden`}>
-      <div
-        className="flex items-start gap-3 p-4 cursor-pointer select-none"
-        onClick={() => setExpanded(v => !v)}
-      >
+      <div className="flex items-start gap-3 px-4 pt-4 pb-0">
         <div className="flex-shrink-0 mt-0.5">
           {issue.severity === "error"
             ? <AlertCircle className="h-5 w-5 text-red-600" />
@@ -310,150 +323,135 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
             )}
           </div>
           <p className="text-sm font-semibold text-foreground">{RULE_LABELS[issue.ruleCode] ?? issue.ruleCode}</p>
-          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed line-clamp-2">{issue.explanationText}</p>
         </div>
-        <div className="flex-shrink-0 ml-2 mt-0.5">
+        <button
+          className="flex-shrink-0 ml-2 mt-0.5 p-0.5 rounded hover:bg-black/5 transition-colors"
+          onClick={() => setExpanded(v => !v)}
+          aria-label={expanded ? "Collapse" : "Expand"}
+        >
           {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-        </div>
+        </button>
       </div>
 
-      {expanded && (
-        <div className="border-t border-inherit px-4 pb-4 pt-3 space-y-3">
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Full Explanation</p>
-            <p className="text-sm text-foreground leading-relaxed">{issue.explanationText}</p>
+      <div className="px-4 pb-4 pt-2 space-y-3">
+        {/* Explanation text — clamped to 2 lines when collapsed, full when expanded */}
+        <p
+          className={`text-xs text-muted-foreground leading-relaxed cursor-pointer ${expanded ? "" : "line-clamp-2"}`}
+          onClick={() => setExpanded(v => !v)}
+        >
+          {issue.explanationText}
+        </p>
+
+        {/* Route To — always visible */}
+        {issue.routeToRole && (
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Route to:</p>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+              {issue.routeToRole === "legal_ops" ? "Legal Ops" : issue.routeToRole === "internal_lawyer" ? "Internal Lawyer" : issue.routeToRole}
+            </span>
           </div>
+        )}
 
+        {/* Decision badge — always visible */}
+        {hasDecision && (
+          <IssueDecisionBadge action={latestDecision!.action} actorName={latestDecision!.actorName} note={latestDecision!.note} />
+        )}
 
-          {issue.routeToRole && (
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Route to:</p>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                {issue.routeToRole === "legal_ops" ? "Legal Ops" : issue.routeToRole === "internal_lawyer" ? "Internal Lawyer" : issue.routeToRole}
-              </span>
+        {/* Action buttons — always visible */}
+        {availableActions.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{sectionLabel}</p>
+            <div className="flex flex-wrap gap-2">
+              {availableActions.includes("accept") && (
+                <Button size="sm" variant="outline" className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
+                  onClick={() => handleDecide("accept")} disabled={decideIssue.isPending}>
+                  <ThumbsUp className="h-3.5 w-3.5" /> Accept
+                </Button>
+              )}
+              {availableActions.includes("reject") && (
+                <Button size="sm" variant="outline" className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
+                  onClick={() => handleDecide("reject")} disabled={decideIssue.isPending}>
+                  <ThumbsDown className="h-3.5 w-3.5" /> Reject
+                </Button>
+              )}
+              {availableActions.includes("delegate") && (
+                <Button size="sm" variant="outline" className="gap-1.5 border-purple-300 text-purple-700 hover:bg-purple-50"
+                  onClick={() => handleDecide("delegate")} disabled={decideIssue.isPending}>
+                  <ArrowRightCircle className="h-3.5 w-3.5" /> Delegate
+                </Button>
+              )}
+              {availableActions.includes("return") && (
+                <Button size="sm" variant="outline" className="gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50"
+                  onClick={() => { setShowNoteInput("return"); }} disabled={decideIssue.isPending}>
+                  <Undo2 className="h-3.5 w-3.5" /> {isEscalated ? "Return to Legal Ops" : "Return"}
+                </Button>
+              )}
             </div>
-          )}
-
-          {hasDecision && (
-            <IssueDecisionBadge action={latestDecision!.action} actorName={latestDecision!.actorName} note={latestDecision!.note} />
-          )}
-
-          {(() => {
-            const currentIssueStatus = issue.issueStatus;
-            const isOpen = currentIssueStatus === "open";
-            const isEscalated = currentIssueStatus === "escalated_to_internal_lawyer";
-
-            const actionsForLegalOps = isOpen && (userRole === "legal_ops" || userRole === "super_admin")
-              ? ["accept", "reject", "delegate"]
-              : [];
-            const actionsForLawyer = isEscalated && (userRole === "internal_lawyer" || userRole === "super_admin")
-              ? (userRole === "internal_lawyer" ? ["accept", "reject", "return"] : ["accept", "reject"])
-              : [];
-            const availableActions = [...new Set([...actionsForLegalOps, ...actionsForLawyer])];
-
-            if (availableActions.length === 0) return null;
-
-            const sectionLabel = isEscalated && userRole === "internal_lawyer"
-              ? "Internal Lawyer Decision"
-              : hasDecision && latestDecision?.action === "return"
-              ? "Re-evaluate Issue"
-              : "Your Decision";
-
-            return (
+            {showNoteInput && (
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{sectionLabel}</p>
-                <div className="flex flex-wrap gap-2">
-                  {availableActions.includes("accept") && (
-                    <Button size="sm" variant="outline" className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
-                      onClick={() => handleDecide("accept")} disabled={decideIssue.isPending}>
-                      <ThumbsUp className="h-3.5 w-3.5" /> Accept
-                    </Button>
-                  )}
-                  {availableActions.includes("reject") && (
-                    <Button size="sm" variant="outline" className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
-                      onClick={() => handleDecide("reject")} disabled={decideIssue.isPending}>
-                      <ThumbsDown className="h-3.5 w-3.5" /> Reject
-                    </Button>
-                  )}
-                  {availableActions.includes("delegate") && (
-                    <Button size="sm" variant="outline" className="gap-1.5 border-purple-300 text-purple-700 hover:bg-purple-50"
-                      onClick={() => handleDecide("delegate")} disabled={decideIssue.isPending}>
-                      <ArrowRightCircle className="h-3.5 w-3.5" /> Delegate
-                    </Button>
-                  )}
-                  {availableActions.includes("return") && (
-                    <Button size="sm" variant="outline" className="gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50"
-                      onClick={() => { setShowNoteInput("return"); }} disabled={decideIssue.isPending}>
-                      <Undo2 className="h-3.5 w-3.5" /> {isEscalated ? "Return to Legal Ops" : "Return"}
-                    </Button>
-                  )}
-                </div>
-                {showNoteInput && (
-                  <div className="space-y-2">
-                    <textarea
-                      className="w-full text-sm border border-border rounded-xl p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[72px]"
-                      placeholder={showNoteInput === "return" ? "Reason for returning (required)…" : "Add a note (optional)…"}
-                      value={note}
-                      onChange={e => setNote(e.target.value)}
-                    />
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={() => handleDecide(showNoteInput)} disabled={decideIssue.isPending || (showNoteInput === "return" && !note.trim())}>
-                        {decideIssue.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => { setShowNoteInput(null); setNote(""); }}>Cancel</Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          <div>
-            <button
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setShowComments(v => !v)}
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              {showComments ? "Hide comments" : `Comments ${inlineComments && inlineComments.length > 0 ? `(${inlineComments.length})` : ""}`}
-            </button>
-            {showComments && (
-              <div className="mt-2 space-y-2">
-                {inlineComments && inlineComments.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {inlineComments.map((c: CommentResponse) => (
-                      <div key={c.id} className="flex items-start gap-2 bg-card border border-border rounded-xl px-3 py-2">
-                        <UserCircle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium">{c.authorName ?? "Unknown"}</span>
-                            <span className="text-xs text-muted-foreground">{format(new Date(c.createdAt), "d MMM yyyy HH:mm")}</span>
-                          </div>
-                          <p className="text-xs text-foreground mt-0.5">{c.content}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">No comments yet.</p>
-                )}
+                <textarea
+                  className="w-full text-sm border border-border rounded-xl p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[72px]"
+                  placeholder={showNoteInput === "return" ? "Reason for returning (required)…" : "Add a note (optional)…"}
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                />
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    className="flex-1 text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
-                    placeholder="Add a comment…"
-                    value={commentText}
-                    onChange={e => setCommentText(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handlePostComment(); } }}
-                  />
-                  <Button size="sm" variant="outline" className="px-2.5" onClick={handlePostComment} disabled={postComment.isPending || !commentText.trim()}>
-                    <Send className="h-3.5 w-3.5" />
+                  <Button size="sm" onClick={() => handleDecide(showNoteInput)} disabled={decideIssue.isPending || (showNoteInput === "return" && !note.trim())}>
+                    {decideIssue.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
                   </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setShowNoteInput(null); setNote(""); }}>Cancel</Button>
                 </div>
               </div>
             )}
           </div>
+        )}
+
+        {/* Comments — always visible */}
+        <div>
+          <button
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setShowComments(v => !v)}
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            {showComments ? "Hide comments" : `Comments${inlineComments && inlineComments.length > 0 ? ` (${inlineComments.length})` : ""}`}
+          </button>
+          {showComments && (
+            <div className="mt-2 space-y-2">
+              {inlineComments && inlineComments.length > 0 ? (
+                <div className="space-y-1.5">
+                  {inlineComments.map((c: CommentResponse) => (
+                    <div key={c.id} className="flex items-start gap-2 bg-card border border-border rounded-xl px-3 py-2">
+                      <UserCircle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium">{c.authorName ?? "Unknown"}</span>
+                          <span className="text-xs text-muted-foreground">{format(new Date(c.createdAt), "d MMM yyyy HH:mm")}</span>
+                        </div>
+                        <p className="text-xs text-foreground mt-0.5">{c.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No comments yet.</p>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="flex-1 text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="Add a comment…"
+                  value={commentText}
+                  onChange={e => setCommentText(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handlePostComment(); } }}
+                />
+                <Button size="sm" variant="outline" className="px-2.5" onClick={handlePostComment} disabled={postComment.isPending || !commentText.trim()}>
+                  <Send className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
