@@ -424,13 +424,7 @@ export const ListInvoicesQueryParams = zod.object({
   pageSize: zod.coerce.number().default(listInvoicesQueryPageSizeDefault),
   search: zod.coerce.string().optional(),
   status: zod
-    .enum([
-      "extracting_data",
-      "in_review",
-      "waiting_internal_lawyer",
-      "pending_law_firm",
-      "ready_to_pay",
-    ])
+    .enum(["pending", "in_review", "escalated", "disputed", "accepted"])
     .optional(),
   lawFirmId: zod.coerce.number().optional(),
 });
@@ -452,11 +446,11 @@ export const ListInvoicesResponse = zod.object({
       internalRequestorName: zod.string().nullish(),
       jurisdiction: zod.string().nullish(),
       invoiceStatus: zod.enum([
-        "extracting_data",
+        "pending",
         "in_review",
-        "waiting_internal_lawyer",
-        "pending_law_firm",
-        "ready_to_pay",
+        "escalated",
+        "disputed",
+        "accepted",
       ]),
       issueCount: zod.number(),
       createdAt: zod.date(),
@@ -524,11 +518,11 @@ export const GetInvoiceResponse = zod
     internalRequestorName: zod.string().nullish(),
     jurisdiction: zod.string().nullish(),
     invoiceStatus: zod.enum([
-      "extracting_data",
+      "pending",
       "in_review",
-      "waiting_internal_lawyer",
-      "pending_law_firm",
-      "ready_to_pay",
+      "escalated",
+      "disputed",
+      "accepted",
     ]),
     issueCount: zod.number(),
     createdAt: zod.date(),
@@ -589,13 +583,7 @@ export const UpdateInvoiceBody = zod.object({
   assignedLegalOpsId: zod.number().nullish(),
   assignedInternalLawyerId: zod.number().nullish(),
   invoiceStatus: zod
-    .enum([
-      "extracting_data",
-      "in_review",
-      "waiting_internal_lawyer",
-      "pending_law_firm",
-      "ready_to_pay",
-    ])
+    .enum(["pending", "in_review", "escalated", "disputed", "accepted"])
     .nullish(),
 });
 
@@ -615,11 +603,11 @@ export const UpdateInvoiceResponse = zod
     internalRequestorName: zod.string().nullish(),
     jurisdiction: zod.string().nullish(),
     invoiceStatus: zod.enum([
-      "extracting_data",
+      "pending",
       "in_review",
-      "waiting_internal_lawyer",
-      "pending_law_firm",
-      "ready_to_pay",
+      "escalated",
+      "disputed",
+      "accepted",
     ]),
     issueCount: zod.number(),
     createdAt: zod.date(),

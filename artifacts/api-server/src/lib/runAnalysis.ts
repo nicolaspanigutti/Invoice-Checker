@@ -360,7 +360,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
       FROM invoices 
       WHERE law_firm_id = ${invoice.lawFirmId}
         AND EXTRACT(YEAR FROM COALESCE(invoice_date::date, created_at::date)) = ${year}
-        AND invoice_status = 'ready_to_pay'
+        AND invoice_status = 'accepted'
         AND id != ${invoiceId}
     `);
     const cumulativeYtd = parseFloat((priorInvoicesResult.rows[0] as { total: string }).total ?? "0");
@@ -945,7 +945,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   let newStatus: typeof invoicesTable.$inferSelect["invoiceStatus"] = "in_review";
   if (issues.length === 0) {
     outcome = "clean";
-    newStatus = "ready_to_pay";
+    newStatus = "accepted";
   }
 
   const oldInvoiceStatus = invoice.invoiceStatus;

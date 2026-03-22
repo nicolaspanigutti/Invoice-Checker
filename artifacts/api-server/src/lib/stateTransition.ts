@@ -44,27 +44,26 @@ export async function evaluateInvoiceState(
   let outcome: ReviewOutcome | null = invoice.reviewOutcome ?? null;
 
   if (issues.length === 0) {
-    // No issues at all — invoice is clean
-    newStatus = "ready_to_pay";
+    // No issues at all — invoice is clean and approved
+    newStatus = "accepted";
     outcome = "clean";
   } else if (hasRejected && !hasEscalated) {
-    // Any rejection (regardless of open issues remaining) and no escalation pending
-    // → immediately move to pending_law_firm so the law firm can respond
+    // Any rejection and no escalation pending → disputed with the law firm
     const allRejected = issues.every(i => REJECTED_STATUSES.has(i.issueStatus));
     outcome = allRejected ? "fully_rejected" : "partially_rejected";
-    newStatus = "pending_law_firm";
+    newStatus = "disputed";
   } else if (hasEscalated) {
     // Issues waiting for internal lawyer — no rejections yet
-    newStatus = "waiting_internal_lawyer";
+    newStatus = "escalated";
     outcome = null;
   } else if (hasOpen) {
     // Issues still being reviewed by legal ops
     newStatus = "in_review";
     outcome = null;
   } else if (allDecided && !hasRejected) {
-    // All issues accepted/accepted_with_comments
+    // All issues accepted — invoice approved
     outcome = "accepted_with_comments";
-    newStatus = "ready_to_pay";
+    newStatus = "accepted";
   }
 
   if (newStatus !== oldStatus || outcome !== invoice.reviewOutcome) {

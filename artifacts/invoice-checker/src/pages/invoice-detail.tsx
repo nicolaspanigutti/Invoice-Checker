@@ -86,19 +86,19 @@ import {
 import { format } from "date-fns";
 
 const STATUS_LABELS: Record<string, string> = {
-  extracting_data: "Extracting Data",
+  pending: "Pending",
   in_review: "In Review",
-  waiting_internal_lawyer: "Awaiting Lawyer",
-  pending_law_firm: "Pending Firm",
-  ready_to_pay: "Ready to Pay",
+  escalated: "Escalated",
+  disputed: "Disputed",
+  accepted: "Accepted",
 };
 
 const STATUS_COLOURS: Record<string, string> = {
-  extracting_data: "bg-yellow-100 text-yellow-800",
+  pending: "bg-yellow-100 text-yellow-800",
   in_review: "bg-blue-100 text-blue-800",
-  waiting_internal_lawyer: "bg-purple-100 text-purple-800",
-  pending_law_firm: "bg-orange-100 text-orange-800",
-  ready_to_pay: "bg-green-100 text-green-800",
+  escalated: "bg-purple-100 text-purple-800",
+  disputed: "bg-orange-100 text-orange-800",
+  accepted: "bg-green-100 text-green-800",
 };
 
 const KIND_LABELS: Record<string, string> = {
@@ -683,7 +683,7 @@ export default function InvoiceDetail() {
   const blockingIssues = completeness?.blockingIssues ?? [];
 
   const serverHasIssues = (issues ?? []).length > 0;
-  const showIssuesPanel = analysisRan || serverHasIssues || (invoice.invoiceStatus !== "extracting_data" && invoice.invoiceStatus !== "in_review");
+  const showIssuesPanel = analysisRan || serverHasIssues || (invoice.invoiceStatus !== "pending" && invoice.invoiceStatus !== "in_review");
 
   const flaggedItemIds = new Set<number>(
     (issues ?? []).map(iss => iss.invoiceItemId).filter((itemId): itemId is number => itemId != null)
@@ -727,9 +727,9 @@ export default function InvoiceDetail() {
     }
   };
 
-  const reportableStatuses = ["in_review", "waiting_internal_lawyer", "pending_law_firm", "ready_to_pay"];
+  const reportableStatuses = ["in_review", "escalated", "disputed", "accepted"];
   const canViewReport = reportableStatuses.includes(invoice.invoiceStatus) && Boolean(invoice.currentAnalysisRunId);
-  const canDraftEmail = invoice.invoiceStatus === "pending_law_firm";
+  const canDraftEmail = invoice.invoiceStatus === "disputed";
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

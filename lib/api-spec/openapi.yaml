@@ -518,7 +518,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [extracting_data, in_review, waiting_internal_lawyer, pending_law_firm, ready_to_pay]
+            enum: [pending, in_review, escalated, disputed, accepted]
         - name: lawFirmId
           in: query
           schema:
@@ -939,7 +939,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/EmailDraft"
         "400":
-          description: Invoice not in pending_law_firm state
+          description: Invoice not in disputed state
           content:
             application/json:
               schema:
@@ -1058,7 +1058,7 @@ components:
           nullable: true
         invoiceStatus:
           type: string
-          enum: [extracting_data, in_review, waiting_internal_lawyer, pending_law_firm, ready_to_pay]
+          enum: [pending, in_review, escalated, disputed, accepted]
         issueCount:
           type: integer
         createdAt:
@@ -1221,7 +1221,7 @@ components:
           nullable: true
         invoiceStatus:
           type: string
-          enum: [extracting_data, in_review, waiting_internal_lawyer, pending_law_firm, ready_to_pay]
+          enum: [pending, in_review, escalated, disputed, accepted]
           nullable: true
 
     InvoiceDocument:

@@ -28,11 +28,11 @@ export type InvoiceSummaryInvoiceStatus =
   (typeof InvoiceSummaryInvoiceStatus)[keyof typeof InvoiceSummaryInvoiceStatus];
 
 export const InvoiceSummaryInvoiceStatus = {
-  extracting_data: "extracting_data",
+  pending: "pending",
   in_review: "in_review",
-  waiting_internal_lawyer: "waiting_internal_lawyer",
-  pending_law_firm: "pending_law_firm",
-  ready_to_pay: "ready_to_pay",
+  escalated: "escalated",
+  disputed: "disputed",
+  accepted: "accepted",
 } as const;
 
 export interface InvoiceSummary {
@@ -173,11 +173,11 @@ export type UpdateInvoiceRequestInvoiceStatus =
   | null;
 
 export const UpdateInvoiceRequestInvoiceStatus = {
-  extracting_data: "extracting_data",
+  pending: "pending",
   in_review: "in_review",
-  waiting_internal_lawyer: "waiting_internal_lawyer",
-  pending_law_firm: "pending_law_firm",
-  ready_to_pay: "ready_to_pay",
+  escalated: "escalated",
+  disputed: "disputed",
+  accepted: "accepted",
 } as const;
 
 export interface UpdateInvoiceRequest {
@@ -821,11 +821,11 @@ export type ListInvoicesStatus =
   (typeof ListInvoicesStatus)[keyof typeof ListInvoicesStatus];
 
 export const ListInvoicesStatus = {
-  extracting_data: "extracting_data",
+  pending: "pending",
   in_review: "in_review",
-  waiting_internal_lawyer: "waiting_internal_lawyer",
-  pending_law_firm: "pending_law_firm",
-  ready_to_pay: "ready_to_pay",
+  escalated: "escalated",
+  disputed: "disputed",
+  accepted: "accepted",
 } as const;
 
 export type ListInvoiceIssuesParams = {

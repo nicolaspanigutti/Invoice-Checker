@@ -6,11 +6,11 @@ import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Download, Loader2, CheckCircle2, XCircle, Clock, AlertCircle, TriangleAlert, ChevronRight, FileText } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
-  extracting_data: "Extracting Data",
+  pending: "Pending",
   in_review: "In Review",
-  waiting_internal_lawyer: "With Internal Lawyer",
-  pending_law_firm: "Pending Law Firm",
-  ready_to_pay: "Ready to Pay",
+  escalated: "Escalated",
+  disputed: "Disputed",
+  accepted: "Accepted",
 };
 
 const OUTCOME_LABELS: Record<string, string> = {

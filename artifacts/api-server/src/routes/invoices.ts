@@ -157,7 +157,7 @@ router.post("/invoices", requireRole("super_admin", "legal_ops"), async (req: Re
     internalRequestorId: internalRequestorId ?? null,
     assignedLegalOpsId: assignedLegalOpsId ?? null,
     assignedInternalLawyerId: assignedInternalLawyerId ?? null,
-    invoiceStatus: "extracting_data",
+    invoiceStatus: "pending",
     createdById: req.session.userId,
   }).returning();
 
@@ -439,7 +439,7 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
     updates.invoiceStatus = "in_review";
     await db.update(invoicesTable).set(updates).where(eq(invoicesTable.id, id));
     statusDidChange = prevStatus !== "in_review";
-  } else if (invoice.invoiceStatus === "extracting_data") {
+  } else if (invoice.invoiceStatus === "pending") {
     await db.update(invoicesTable).set({ invoiceStatus: "in_review" }).where(eq(invoicesTable.id, id));
     statusDidChange = true;
   }
@@ -1167,8 +1167,8 @@ router.post("/invoices/:id/email-draft", requireRole("super_admin", "legal_ops",
   const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
   if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
 
-  if (invoice.invoiceStatus !== "pending_law_firm") {
-    res.status(400).json({ error: "Email draft is only available when the invoice is in 'Pending Law Firm' state" });
+  if (invoice.invoiceStatus !== "disputed") {
+    res.status(400).json({ error: "Email draft is only available when the invoice is in 'Disputed' state" });
     return;
   }
 
@@ -1275,8 +1275,8 @@ router.get("/invoices/:id/report/pdf", requireRole("super_admin", "legal_ops", "
   const openIssues = allIssues.filter(i => i.issueStatus === "open");
 
   const STATUS_LABELS_MAP: Record<string, string> = {
-    extracting_data: "Extracting Data", in_review: "In Review", waiting_internal_lawyer: "With Internal Lawyer",
-    pending_law_firm: "Pending Law Firm", ready_to_pay: "Ready to Pay",
+    pending: "Pending", in_review: "In Review", escalated: "Escalated",
+    disputed: "Disputed", accepted: "Accepted",
   };
   const OUTCOME_MAP: Record<string, string> = {
     clean: "Clean — No Issues", accepted_with_comments: "Accepted with Comments",

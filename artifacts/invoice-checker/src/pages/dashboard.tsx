@@ -4,19 +4,19 @@ import { FileText, AlertTriangle, CheckCircle2, ArrowRight, XCircle } from "luci
 import { Link, useLocation } from "wouter";
 
 const STATUS_COLORS: Record<string, string> = {
-  extracting_data: "bg-yellow-100 text-yellow-800",
+  pending: "bg-yellow-100 text-yellow-800",
   in_review: "bg-blue-100 text-blue-700",
-  waiting_internal_lawyer: "bg-purple-100 text-purple-700",
-  pending_law_firm: "bg-orange-100 text-orange-700",
-  ready_to_pay: "bg-green-100 text-green-700",
+  escalated: "bg-purple-100 text-purple-700",
+  disputed: "bg-orange-100 text-orange-700",
+  accepted: "bg-green-100 text-green-700",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  extracting_data: "Extracting",
+  pending: "Pending",
   in_review: "In Review",
-  waiting_internal_lawyer: "Awaiting Lawyer",
-  pending_law_firm: "Pending Firm",
-  ready_to_pay: "Ready to Pay",
+  escalated: "Escalated",
+  disputed: "Disputed",
+  accepted: "Accepted",
 };
 
 function fmt(amount: string | null | undefined, currency?: string | null) {
@@ -43,9 +43,9 @@ export default function Dashboard() {
   const invoices = data?.data ?? [];
 
   const pending = invoices.filter(i => (i.invoiceStatus as string) === "in_review").length;
-  const escalated = invoices.filter(i => (i.invoiceStatus as string) === "waiting_internal_lawyer").length;
-  const approved = invoices.filter(i => (i.invoiceStatus as string) === "ready_to_pay").length;
-  const disputed = invoices.filter(i => (i.invoiceStatus as string) === "pending_law_firm").length;
+  const escalated = invoices.filter(i => (i.invoiceStatus as string) === "escalated").length;
+  const approved = invoices.filter(i => (i.invoiceStatus as string) === "accepted").length;
+  const disputed = invoices.filter(i => (i.invoiceStatus as string) === "disputed").length;
 
   const recent = [...invoices]
     .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime())
@@ -57,11 +57,11 @@ export default function Dashboard() {
   }, {});
 
   const chartData = [
-    { name: "Extracting",      statusKey: "extracting_data",        value: statusCounts["extracting_data"] ?? 0,        fill: "#f59e0b" },
-    { name: "In Review",       statusKey: "in_review",              value: statusCounts["in_review"] ?? 0,              fill: "#3b82f6" },
-    { name: "Awaiting Lawyer", statusKey: "waiting_internal_lawyer",value: statusCounts["waiting_internal_lawyer"] ?? 0, fill: "#EC0000" },
-    { name: "Pending Firm",    statusKey: "pending_law_firm",       value: statusCounts["pending_law_firm"] ?? 0,       fill: "#f97316" },
-    { name: "Ready to Pay",    statusKey: "ready_to_pay",           value: statusCounts["ready_to_pay"] ?? 0,           fill: "#22c55e" },
+    { name: "Pending",     statusKey: "pending",     value: statusCounts["pending"] ?? 0,     fill: "#f59e0b" },
+    { name: "In Review",   statusKey: "in_review",   value: statusCounts["in_review"] ?? 0,   fill: "#3b82f6" },
+    { name: "Escalated",   statusKey: "escalated",   value: statusCounts["escalated"] ?? 0,   fill: "#EC0000" },
+    { name: "Disputed",    statusKey: "disputed",    value: statusCounts["disputed"] ?? 0,    fill: "#f97316" },
+    { name: "Accepted",    statusKey: "accepted",    value: statusCounts["accepted"] ?? 0,    fill: "#22c55e" },
   ];
 
   return (
@@ -86,7 +86,7 @@ export default function Dashboard() {
         </Link>
 
         {/* Escalated */}
-        <Link href="/invoices?status=waiting_internal_lawyer" className="block group">
+        <Link href="/invoices?status=escalated" className="block group">
           <div className="h-full bg-orange-50 border border-orange-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-orange-400">
             <div className="flex items-start justify-between">
               <p className="text-sm font-medium text-orange-600">Escalated</p>
@@ -98,7 +98,7 @@ export default function Dashboard() {
         </Link>
 
         {/* Approved */}
-        <Link href="/invoices?status=ready_to_pay" className="block group">
+        <Link href="/invoices?status=accepted" className="block group">
           <div className="h-full bg-green-50 border border-green-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-green-400">
             <div className="flex items-start justify-between">
               <p className="text-sm font-medium text-green-700">Approved</p>
@@ -110,7 +110,7 @@ export default function Dashboard() {
         </Link>
 
         {/* Disputed */}
-        <Link href="/invoices?status=pending_law_firm" className="block group">
+        <Link href="/invoices?status=disputed" className="block group">
           <div className="h-full bg-red-50 border border-red-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-red-400">
             <div className="flex items-start justify-between">
               <p className="text-sm font-medium text-red-700">Disputed</p>

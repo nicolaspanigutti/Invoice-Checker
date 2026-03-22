@@ -57,19 +57,19 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 const STATUS_LABELS: Record<string, string> = {
-  extracting_data: "Extracting Data",
+  pending: "Pending",
   in_review: "In Review",
-  waiting_internal_lawyer: "Awaiting Lawyer",
-  pending_law_firm: "Pending Firm",
-  ready_to_pay: "Ready to Pay",
+  escalated: "Escalated",
+  disputed: "Disputed",
+  accepted: "Accepted",
 };
 
 const STATUS_COLOURS: Record<string, string> = {
-  extracting_data: "bg-yellow-100 text-yellow-800",
+  pending: "bg-yellow-100 text-yellow-800",
   in_review: "bg-blue-100 text-blue-800",
-  waiting_internal_lawyer: "bg-purple-100 text-purple-800",
-  pending_law_firm: "bg-orange-100 text-orange-800",
-  ready_to_pay: "bg-green-100 text-green-800",
+  escalated: "bg-purple-100 text-purple-800",
+  disputed: "bg-orange-100 text-orange-800",
+  accepted: "bg-green-100 text-green-800",
 };
 
 function StatusBadge({ status }: { status: string }) {
