@@ -6,6 +6,8 @@ import {
 } from "@workspace/api-zod";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { requireRole } from "../middleware/auth";
+import { db, invoiceDocumentsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -89,6 +91,23 @@ router.get("/storage/objects/*path", requireRole("super_admin", "legal_ops", "in
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
     const objectPath = `/objects/${wildcardPath}`;
+
+    const userRole = req.session.userRole;
+    const isSuperAdminOrLegalOps = userRole === "super_admin" || userRole === "legal_ops";
+
+    if (!isSuperAdminOrLegalOps) {
+      const [doc] = await db
+        .select({ id: invoiceDocumentsTable.id })
+        .from(invoiceDocumentsTable)
+        .where(eq(invoiceDocumentsTable.storagePath, objectPath))
+        .limit(1);
+
+      if (!doc) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    }
+
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
     const response = await objectStorageService.downloadObject(objectFile);

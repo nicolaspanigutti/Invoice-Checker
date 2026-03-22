@@ -1,13 +1,44 @@
 import { Storage, File } from "@google-cloud/storage";
 import { Readable } from "stream";
 import { randomUUID } from "crypto";
-import {
-  ObjectAclPolicy,
-  ObjectPermission,
-  canAccessObject,
-  getObjectAclPolicy,
-  setObjectAclPolicy,
-} from "./objectAcl";
+const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
+
+export interface ObjectAclPolicy {
+  owner: string;
+  visibility: "public" | "private";
+}
+
+export enum ObjectPermission {
+  READ = "read",
+  WRITE = "write",
+}
+
+async function getObjectAclPolicy(file: File): Promise<ObjectAclPolicy | null> {
+  const [metadata] = await file.getMetadata();
+  const raw = metadata?.metadata?.[ACL_POLICY_METADATA_KEY];
+  if (!raw) return null;
+  return JSON.parse(raw as string) as ObjectAclPolicy;
+}
+
+async function setObjectAclPolicy(file: File, aclPolicy: ObjectAclPolicy): Promise<void> {
+  await file.setMetadata({ metadata: { [ACL_POLICY_METADATA_KEY]: JSON.stringify(aclPolicy) } });
+}
+
+async function canAccessObject({
+  userId,
+  objectFile,
+  requestedPermission,
+}: {
+  userId?: string;
+  objectFile: File;
+  requestedPermission: ObjectPermission;
+}): Promise<boolean> {
+  const aclPolicy = await getObjectAclPolicy(objectFile);
+  if (!aclPolicy) return false;
+  if (aclPolicy.visibility === "public" && requestedPermission === ObjectPermission.READ) return true;
+  if (!userId) return false;
+  return aclPolicy.owner === userId;
+}
 
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
 

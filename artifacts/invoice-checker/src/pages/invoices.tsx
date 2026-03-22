@@ -8,6 +8,7 @@ import {
   useRequestUploadUrl,
   useExtractInvoiceData,
   useUpdateInvoice,
+  useGetInvoiceCompleteness,
   type InvoiceSummary,
   type ListInvoicesParams,
   type ExtractionResult,
@@ -145,6 +146,12 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
   const createInvoice = useCreateInvoice();
   const extractInvoice = useExtractInvoiceData();
   const updateInvoice = useUpdateInvoice();
+  const { data: completenessData } = useGetInvoiceCompleteness(createdInvoiceId ?? 0, {
+    query: {
+      enabled: !!createdInvoiceId && step === "review",
+      queryKey: [`/api/invoices/${createdInvoiceId ?? 0}/completeness`] as const,
+    },
+  });
 
   const lawyers = users?.filter(u => u.isActive && (u.role === "internal_lawyer" || u.role === "legal_ops")) ?? [];
 
@@ -240,10 +247,15 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                     invoiceDate: result.extracted.invoiceDate ?? undefined,
                     dueDate: result.extracted.dueDate ?? undefined,
                     totalAmount: result.extracted.totalAmount ?? undefined,
+                    subtotalAmount: result.extracted.subtotalAmount ?? undefined,
+                    taxAmount: result.extracted.taxAmount ?? undefined,
                     currency: result.extracted.currency ?? undefined,
                     matterName: result.extracted.matterName ?? undefined,
                     projectReference: result.extracted.projectReference ?? undefined,
                     jurisdiction: result.extracted.jurisdiction ?? undefined,
+                    applicableLaw: result.extracted.applicableLaw ?? undefined,
+                    billingPeriodStart: result.extracted.billingPeriodStart ?? undefined,
+                    billingPeriodEnd: result.extracted.billingPeriodEnd ?? undefined,
                   });
                   setExtracting(false);
                 },
@@ -278,10 +290,15 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
     if (reviewForm.invoiceDate !== undefined) patchData.invoiceDate = reviewForm.invoiceDate ?? null;
     if (reviewForm.dueDate !== undefined) patchData.dueDate = reviewForm.dueDate ?? null;
     if (reviewForm.totalAmount !== undefined) patchData.totalAmount = reviewForm.totalAmount ?? null;
+    if (reviewForm.subtotalAmount !== undefined) patchData.subtotalAmount = reviewForm.subtotalAmount ?? null;
+    if (reviewForm.taxAmount !== undefined) patchData.taxAmount = reviewForm.taxAmount ?? null;
     if (reviewForm.currency) patchData.currency = reviewForm.currency;
     if (reviewForm.matterName !== undefined) patchData.matterName = reviewForm.matterName ?? null;
     if (reviewForm.projectReference !== undefined) patchData.projectReference = reviewForm.projectReference ?? null;
     if (reviewForm.jurisdiction !== undefined) patchData.jurisdiction = reviewForm.jurisdiction ?? null;
+    if (reviewForm.applicableLaw !== undefined) patchData.applicableLaw = reviewForm.applicableLaw ?? null;
+    if (reviewForm.billingPeriodStart !== undefined) patchData.billingPeriodStart = reviewForm.billingPeriodStart ?? null;
+    if (reviewForm.billingPeriodEnd !== undefined) patchData.billingPeriodEnd = reviewForm.billingPeriodEnd ?? null;
 
     const doNavigate = () => {
       navigate(`/invoices/${createdInvoiceId}`);
@@ -588,6 +605,61 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                       onChange={e => setReviewForm(f => ({ ...f, jurisdiction: e.target.value }))}
                     />
                   </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label>
+                      Applicable Law
+                      <ConfidencePill score={extractionResult.confidence?.applicableLaw} />
+                    </Label>
+                    <Input
+                      value={reviewForm.applicableLaw ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, applicableLaw: e.target.value }))}
+                      placeholder="e.g. English Law"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      Subtotal
+                      <ConfidencePill score={extractionResult.confidence?.subtotalAmount} />
+                    </Label>
+                    <Input
+                      value={reviewForm.subtotalAmount ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, subtotalAmount: e.target.value }))}
+                      placeholder="e.g. 11000.00"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      Tax Amount
+                      <ConfidencePill score={extractionResult.confidence?.taxAmount} />
+                    </Label>
+                    <Input
+                      value={reviewForm.taxAmount ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, taxAmount: e.target.value }))}
+                      placeholder="e.g. 1500.00"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      Billing Period Start
+                      <ConfidencePill score={extractionResult.confidence?.billingPeriodStart} />
+                    </Label>
+                    <Input
+                      type="date"
+                      value={reviewForm.billingPeriodStart ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, billingPeriodStart: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      Billing Period End
+                      <ConfidencePill score={extractionResult.confidence?.billingPeriodEnd} />
+                    </Label>
+                    <Input
+                      type="date"
+                      value={reviewForm.billingPeriodEnd ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, billingPeriodEnd: e.target.value }))}
+                    />
+                  </div>
                 </div>
 
                 {(extractionResult.extracted.lineItems ?? []).length > 0 && (
@@ -607,6 +679,26 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                 <div>
                   <p className="text-sm font-medium text-amber-800">Extraction failed</p>
                   <p className="text-xs text-muted-foreground mt-0.5">You can still open the invoice and fill in details manually.</p>
+                </div>
+              </div>
+            )}
+
+            {!extracting && completenessData && (
+              <div className={`flex items-start gap-3 p-3 rounded-xl border ${completenessData.canRunAnalysis ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
+                {completenessData.canRunAnalysis ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                )}
+                <div>
+                  <p className={`text-xs font-medium ${completenessData.canRunAnalysis ? "text-green-800" : "text-amber-800"}`}>
+                    {completenessData.canRunAnalysis ? "Invoice is complete — ready for analysis" : "Some required fields are still missing"}
+                  </p>
+                  {!completenessData.canRunAnalysis && completenessData.blockingIssues.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {completenessData.blockingIssues.map(i => i.message).join("; ")}
+                    </p>
+                  )}
                 </div>
               </div>
             )}

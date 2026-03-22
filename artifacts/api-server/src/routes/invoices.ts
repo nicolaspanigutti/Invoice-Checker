@@ -332,13 +332,12 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
     return;
   }
 
-  const docs = await db
+  const allDocs = await db
     .select()
     .from(invoiceDocumentsTable)
-    .where(and(eq(invoiceDocumentsTable.invoiceId, id), eq(invoiceDocumentsTable.documentKind, "invoice_file")))
-    .limit(1);
+    .where(eq(invoiceDocumentsTable.invoiceId, id));
 
-  const invoiceDoc = docs[0];
+  const invoiceDoc = allDocs.find(d => d.documentKind === "invoice_file");
   if (!invoiceDoc) {
     res.status(422).json({ error: "No invoice file document found. Upload an invoice file before extracting." });
     return;
@@ -349,44 +348,64 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
     return;
   }
 
-  let buffer: Buffer;
-  try {
-    const file = await objectStorage.getObjectEntityFile(invoiceDoc.storagePath);
-    const fileResponse = await objectStorage.downloadObject(file);
-    const arrayBuffer = await fileResponse.arrayBuffer();
-    buffer = Buffer.from(arrayBuffer);
-  } catch {
+  const downloadDoc = async (doc: typeof invoiceDoc): Promise<Buffer | null> => {
+    if (!doc.storagePath) return null;
+    try {
+      const file = await objectStorage.getObjectEntityFile(doc.storagePath);
+      const fileResponse = await objectStorage.downloadObject(file);
+      const ab = await fileResponse.arrayBuffer();
+      return Buffer.from(ab);
+    } catch {
+      return null;
+    }
+  };
+
+  const extractDoc = async (doc: typeof invoiceDoc, buf: Buffer): Promise<Awaited<ReturnType<typeof extractInvoiceFromText>> | null> => {
+    const mime = doc.mimeType ?? "application/octet-stream";
+    const isImg = mime.startsWith("image/");
+    try {
+      if (isImg) {
+        const b64 = imageBufferToBase64(buf, mime);
+        return await extractInvoiceFromImage(b64, mime, doc.id);
+      } else {
+        const rawText = await extractTextFromBuffer(buf, mime);
+        if (rawText.trim().length < 10) return null;
+        await db.update(invoiceDocumentsTable).set({ rawText }).where(eq(invoiceDocumentsTable.id, doc.id));
+        return await extractInvoiceFromText(rawText, doc.id);
+      }
+    } catch {
+      await db.update(invoiceDocumentsTable).set({ extractionStatus: "failed" }).where(eq(invoiceDocumentsTable.id, doc.id));
+      return null;
+    }
+  };
+
+  const invoiceBuf = await downloadDoc(invoiceDoc);
+  if (!invoiceBuf) {
     await db.update(invoiceDocumentsTable).set({ extractionStatus: "failed" }).where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
     res.status(422).json({ error: "Failed to download the invoice file from storage." });
     return;
   }
 
-  const mimeType = invoiceDoc.mimeType ?? "application/octet-stream";
-  const isImage = mimeType.startsWith("image/");
-
-  let result;
-  try {
-    if (isImage) {
-      const base64DataUrl = imageBufferToBase64(buffer, mimeType);
-      result = await extractInvoiceFromImage(base64DataUrl, mimeType, invoiceDoc.id);
-    } else {
-      const rawText = await extractTextFromBuffer(buffer, mimeType);
-
-      if (rawText.trim().length < 10) {
-        res.status(422).json({ error: "Invoice file could not be read as text. Please upload a readable PDF, DOCX, or image file." });
-        return;
-      }
-
-      await db.update(invoiceDocumentsTable).set({ rawText }).where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
-      result = await extractInvoiceFromText(rawText, invoiceDoc.id);
-    }
-  } catch {
-    await db.update(invoiceDocumentsTable).set({ extractionStatus: "failed" }).where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
-    res.status(500).json({ error: "AI extraction failed. Please try again." });
+  const result = await extractDoc(invoiceDoc, invoiceBuf);
+  if (!result) {
+    res.status(422).json({ error: "Invoice file could not be read as text. Please upload a readable PDF, DOCX, or image file." });
     return;
   }
 
   const { extracted, confidence, textHash, fromCache } = result;
+
+  const elDoc = allDocs.find(d => d.documentKind === "engagement_letter" && d.storagePath);
+  const budgetDoc = allDocs.find(d => d.documentKind === "budget_estimate" && d.storagePath);
+
+  const [elBuf, budgetBuf] = await Promise.all([
+    elDoc ? downloadDoc(elDoc) : Promise.resolve(null),
+    budgetDoc ? downloadDoc(budgetDoc) : Promise.resolve(null),
+  ]);
+
+  await Promise.allSettled([
+    elDoc && elBuf ? extractDoc(elDoc, elBuf) : Promise.resolve(null),
+    budgetDoc && budgetBuf ? extractDoc(budgetDoc, budgetBuf) : Promise.resolve(null),
+  ]);
 
   const updates: Partial<typeof invoicesTable.$inferInsert> = {};
   if (extracted.invoiceDate) updates.invoiceDate = extracted.invoiceDate;
