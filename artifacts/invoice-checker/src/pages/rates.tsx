@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListPanelBaselineDocuments,
@@ -400,6 +400,16 @@ function FirmTermCard({ firm }: { firm: LawFirm }) {
 function PanelTCSection() {
   const { data: allFirms = [], isLoading } = useListLawFirms();
   const firmsWithPotentialTerms = (allFirms as LawFirm[]).filter(f => (f.firmType as string) === "panel");
+  const [selectedFirmId, setSelectedFirmId] = useState<string>("__none__");
+
+  // Auto-select first firm once loaded
+  useEffect(() => {
+    if (selectedFirmId === "__none__" && firmsWithPotentialTerms.length > 0) {
+      setSelectedFirmId(String(firmsWithPotentialTerms[0].id));
+    }
+  }, [firmsWithPotentialTerms, selectedFirmId]);
+
+  const selectedFirm = firmsWithPotentialTerms.find(f => String(f.id) === selectedFirmId) ?? null;
 
   return (
     <div className="space-y-4">
@@ -419,9 +429,18 @@ function PanelTCSection() {
         </div>
       ) : (
         <div className="space-y-4">
-          {firmsWithPotentialTerms.map(firm => (
-            <FirmTermCard key={firm.id} firm={firm} />
-          ))}
+          <Select value={selectedFirmId} onValueChange={setSelectedFirmId}>
+            <SelectTrigger className="w-72">
+              <SelectValue placeholder="Select a firm…" />
+            </SelectTrigger>
+            <SelectContent>
+              {firmsWithPotentialTerms.map(firm => (
+                <SelectItem key={firm.id} value={String(firm.id)}>{firm.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {selectedFirm && <FirmTermCard firm={selectedFirm} />}
         </div>
       )}
     </div>
