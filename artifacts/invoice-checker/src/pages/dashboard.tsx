@@ -187,7 +187,7 @@ export default function Dashboard() {
                 <BarChart
                   data={chartData}
                   barSize={28}
-                  margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
+                  margin={{ top: 4, right: 4, left: -20, bottom: 30 }}
                   style={{ cursor: "pointer" }}
                   onClick={(state) => {
                     if (state?.activePayload?.[0]?.payload?.statusKey) {
@@ -196,7 +196,16 @@ export default function Dashboard() {
                   }}
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 11, fill: "#94a3b8" }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval={0}
+                    angle={-30}
+                    textAnchor="end"
+                    height={50}
+                  />
                   <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
                   <Tooltip
                     contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}
