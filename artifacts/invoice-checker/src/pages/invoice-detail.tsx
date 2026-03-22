@@ -677,9 +677,41 @@ export default function InvoiceDetail() {
   const serverHasIssues = (issues ?? []).length > 0;
   const showIssuesPanel = analysisRan || serverHasIssues || (invoice.invoiceStatus !== "pending" && invoice.invoiceStatus !== "in_review");
 
-  const flaggedItemIds = new Set<number>(
-    (issues ?? []).map(iss => iss.invoiceItemId).filter((itemId): itemId is number => itemId != null)
+  // Build lineNo → item.id map so we can flag all affected lines from grouped issues
+  const lineNoToItemId = new Map<number, number>(
+    (items ?? []).map(it => [it.lineNo, it.id])
   );
+  const flaggedItemIds = new Set<number>();
+  for (const iss of (issues ?? [])) {
+    if (iss.invoiceItemId != null) flaggedItemIds.add(iss.invoiceItemId);
+    // Extract additional affected line numbers stored in evidenceJson
+    const ev = iss.evidenceJson as Record<string, unknown> | null;
+    if (ev) {
+      // affected_line_nos: number[]  (DAILY_HOURS_EXCEEDED, INCONSISTENT_RATE, etc.)
+      if (Array.isArray(ev.affected_line_nos)) {
+        for (const ln of ev.affected_line_nos as number[]) {
+          const id = lineNoToItemId.get(ln);
+          if (id != null) flaggedItemIds.add(id);
+        }
+      }
+      // affected_lines: { line_no: number }[]  (RATE_EXCESS, LAWYER_ROLE_MISMATCH, etc.)
+      if (Array.isArray(ev.affected_lines)) {
+        for (const entry of ev.affected_lines as { line_no?: number }[]) {
+          if (typeof entry?.line_no === "number") {
+            const id = lineNoToItemId.get(entry.line_no);
+            if (id != null) flaggedItemIds.add(id);
+          }
+        }
+      }
+      // lower_rate_line_nos: number[]  (INCONSISTENT_RATE lower-rate lines)
+      if (Array.isArray(ev.lower_rate_line_nos)) {
+        for (const ln of ev.lower_rate_line_nos as number[]) {
+          const id = lineNoToItemId.get(ln);
+          if (id != null) flaggedItemIds.add(id);
+        }
+      }
+    }
+  }
   const hasIssues = (issues ?? []).length > 0;
   const allItems = items ?? [];
   const displayItemsModal = (hasIssues && !showAllLinesModal && flaggedItemIds.size > 0)
