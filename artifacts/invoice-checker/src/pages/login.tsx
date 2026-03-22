@@ -90,9 +90,6 @@ export default function Login() {
           <h1 className="text-4xl font-display font-extrabold text-white mt-10 leading-tight">
             Invoice Checker
           </h1>
-          <p className="text-white/70 text-sm font-semibold tracking-widest uppercase mt-2 mb-8">
-            Legal Department · Company HQ
-          </p>
 
           <p className="text-white/85 text-base leading-relaxed max-w-xs">
             Automated platform for external legal invoice review with AI validation and incident management.
