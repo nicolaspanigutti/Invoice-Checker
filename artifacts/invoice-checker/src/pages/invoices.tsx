@@ -4,7 +4,6 @@ import {
   useListInvoices,
   useCreateInvoice,
   useListLawFirms,
-  useListUsers,
   useRequestUploadUrl,
   useExtractInvoiceData,
   useUpdateInvoice,
@@ -118,6 +117,19 @@ function ConfidencePill({ score }: { score?: number }) {
   return <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colour}`}>{pct}%</span>;
 }
 
+const RELATIONSHIP_PARTNERS = [
+  "Alexandra Morgan",
+  "James Harrington",
+  "Sophia Belmont",
+  "David Caldwell",
+  "Emma Richardson",
+  "Michael Fraser",
+  "Catherine Lawton",
+  "Robert Ashford",
+  "Victoria Pence",
+  "Thomas Whitmore",
+];
+
 function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -130,7 +142,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
   const [reviewExtras, setReviewExtras] = useState({
     billingType: "" as "" | "time_and_materials" | "fixed_scope",
     currency: "GBP",
-    internalRequestorId: "",
+    internalRequestorName: "",
   });
   const [form, setForm] = useState({
     lawFirmId: "",
@@ -138,7 +150,6 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
   });
 
   const { data: lawFirms } = useListLawFirms();
-  const { data: users } = useListUsers();
   const requestUploadUrl = useRequestUploadUrl();
   const createInvoice = useCreateInvoice();
   const extractInvoice = useExtractInvoiceData();
@@ -150,7 +161,8 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
     },
   });
 
-  const lawyers = users?.filter(u => u.isActive && (u.role === "internal_lawyer" || u.role === "legal_ops")) ?? [];
+  const selectedFirmJurisdictions: string[] = (lawFirms?.find(f => String(f.id) === form.lawFirmId) as { jurisdictions?: string[] } | undefined)?.jurisdictions ?? [];
+
 
   const resetModal = () => {
     setStep("upload");
@@ -159,7 +171,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
     setExtractionResult(null);
     setExtracting(false);
     setReviewForm({});
-    setReviewExtras({ billingType: "", currency: "GBP", internalRequestorId: "" });
+    setReviewExtras({ billingType: "", currency: "GBP", internalRequestorName: "" });
     setForm({ lawFirmId: "", documentType: "invoice" });
   };
 
@@ -298,7 +310,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
     if (reviewForm.billingPeriodEnd !== undefined) patchData.billingPeriodEnd = reviewForm.billingPeriodEnd ?? null;
     patchData.currency = reviewExtras.currency || "GBP";
     if (reviewExtras.billingType) patchData.billingType = reviewExtras.billingType;
-    if (reviewExtras.internalRequestorId) patchData.internalRequestorId = parseInt(reviewExtras.internalRequestorId, 10);
+    if (reviewExtras.internalRequestorName) patchData.internalRequestorName = reviewExtras.internalRequestorName;
 
     const doNavigate = () => {
       navigate(`/invoices/${createdInvoiceId}`);
@@ -487,11 +499,12 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   </div>
                   <div className="col-span-2 space-y-1.5">
                     <Label>Internal Requestor</Label>
-                    <Select value={reviewExtras.internalRequestorId} onValueChange={v => setReviewExtras(e => ({ ...e, internalRequestorId: v }))}>
+                    <Select value={reviewExtras.internalRequestorName || "__none__"} onValueChange={v => setReviewExtras(e => ({ ...e, internalRequestorName: v === "__none__" ? "" : v }))}>
                       <SelectTrigger><SelectValue placeholder="Select requestor (optional)" /></SelectTrigger>
                       <SelectContent>
-                        {lawyers.map(u => (
-                          <SelectItem key={u.id} value={String(u.id)}>{u.displayName} ({u.role.replace(/_/g, " ")})</SelectItem>
+                        <SelectItem value="__none__">— None —</SelectItem>
+                        {RELATIONSHIP_PARTNERS.map(name => (
+                          <SelectItem key={name} value={name}>{name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -575,11 +588,34 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                       Applicable Law
                       {extractionResult && <ConfidencePill score={extractionResult.confidence?.applicableLaw} />}
                     </Label>
-                    <Input
-                      value={reviewForm.applicableLaw ?? ""}
-                      onChange={e => setReviewForm(f => ({ ...f, applicableLaw: e.target.value }))}
-                      placeholder="e.g. English Law"
-                    />
+                    {selectedFirmJurisdictions.length > 0 ? (
+                      (() => {
+                        const currentVal = reviewForm.applicableLaw ?? "";
+                        const options = selectedFirmJurisdictions.includes(currentVal) || !currentVal
+                          ? selectedFirmJurisdictions
+                          : [currentVal, ...selectedFirmJurisdictions];
+                        return (
+                          <Select
+                            value={currentVal || "__none__"}
+                            onValueChange={v => setReviewForm(f => ({ ...f, applicableLaw: v === "__none__" ? "" : v }))}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Select applicable law" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">— Select —</SelectItem>
+                              {options.map(j => (
+                                <SelectItem key={j} value={j}>{j}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        );
+                      })()
+                    ) : (
+                      <Input
+                        value={reviewForm.applicableLaw ?? ""}
+                        onChange={e => setReviewForm(f => ({ ...f, applicableLaw: e.target.value }))}
+                        placeholder="e.g. English Law"
+                      />
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label>
