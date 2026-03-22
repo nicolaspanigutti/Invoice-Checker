@@ -344,10 +344,10 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
             const isEscalated = currentIssueStatus === "escalated_to_internal_lawyer";
 
             const actionsForLegalOps = isOpen && (userRole === "legal_ops" || userRole === "super_admin")
-              ? (userRole === "legal_ops" ? ["accept", "reject", "delegate"] : ["accept", "reject", "delegate", "return"])
+              ? ["accept", "reject", "delegate"]
               : [];
             const actionsForLawyer = isEscalated && (userRole === "internal_lawyer" || userRole === "super_admin")
-              ? ["accept", "reject", "return"]
+              ? (userRole === "internal_lawyer" ? ["accept", "reject", "return"] : ["accept", "reject"])
               : [];
             const availableActions = [...new Set([...actionsForLegalOps, ...actionsForLawyer])];
 
