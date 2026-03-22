@@ -327,7 +327,11 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-2xl max-h-[90vh] overflow-y-auto"
+        onInteractOutside={e => e.preventDefault()}
+        onPointerDownOutside={e => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="text-xl font-display">Add Invoice</DialogTitle>
         </DialogHeader>
