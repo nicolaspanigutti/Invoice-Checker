@@ -267,44 +267,46 @@ export default function Rules() {
       </div>
 
       {/* Legend */}
-      <div className="border border-border rounded-2xl bg-card p-4 shadow-sm space-y-3">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+      <div className="border border-border rounded-2xl bg-card p-5 shadow-sm">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-4">
           <Info className="w-3.5 h-3.5" />
           How to read the badges
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
-          <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-foreground">Category (rule type)</p>
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-start gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-800 shrink-0">Objective</span>
-                <span className="text-xs text-muted-foreground">Deterministic rule — a breach is always a billing error, no judgment needed.</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-800 shrink-0">Grey Area</span>
-                <span className="text-xs text-muted-foreground">AI-assessed heuristic — flags cases that warrant human review; not always an error.</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 shrink-0">Configurable</span>
-                <span className="text-xs text-muted-foreground">Rule with adjustable thresholds — your team can tune the parameters via Configure.</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-800 shrink-0">Warning</span>
-                <span className="text-xs text-muted-foreground">Informational check — flags data quality issues (e.g., missing detail) that may limit analysis accuracy.</span>
-              </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          {/* Category column */}
+          <div>
+            <p className="text-xs font-semibold text-foreground mb-2.5">Category (rule type)</p>
+            <div className="flex flex-col gap-2">
+              {([
+                { label: "Objective",    bg: "bg-blue-100",   text: "text-blue-800",   desc: "Deterministic — a breach is always a billing error, no judgment needed." },
+                { label: "Grey Area",    bg: "bg-purple-100", text: "text-purple-800", desc: "AI-assessed heuristic — flags cases that warrant human review; not always an error." },
+                { label: "Configurable", bg: "bg-amber-100",  text: "text-amber-800",  desc: "Rule with adjustable thresholds — tune the parameters via Configure." },
+                { label: "Warning",      bg: "bg-slate-100",  text: "text-slate-700",  desc: "Informational — flags data quality issues that may limit analysis accuracy." },
+              ] as const).map(({ label, bg, text, desc }) => (
+                <div key={label} className="flex items-start gap-3">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 min-w-[84px] text-center ${bg} ${text}`}>
+                    {label}
+                  </span>
+                  <span className="text-xs text-muted-foreground leading-relaxed">{desc}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="space-y-1.5">
-            <p className="text-xs font-semibold text-foreground">Severity</p>
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-start gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-800 shrink-0">error</span>
-                <span className="text-xs text-muted-foreground">High priority — a clear violation that should be challenged and withheld from payment.</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-yellow-100 text-yellow-800 shrink-0">warning</span>
-                <span className="text-xs text-muted-foreground">Medium priority — worth reviewing; may or may not require escalation depending on context.</span>
-              </div>
+          {/* Divider (vertical on sm+) */}
+          <div className="sm:border-l sm:border-border sm:pl-5">
+            <p className="text-xs font-semibold text-foreground mb-2.5">Severity</p>
+            <div className="flex flex-col gap-2">
+              {([
+                { label: "error",   bg: "bg-red-100",    text: "text-red-800",    desc: "High priority — clear violation that should be challenged and withheld from payment." },
+                { label: "warning", bg: "bg-yellow-100", text: "text-yellow-800", desc: "Medium priority — worth reviewing; may or may not require escalation depending on context." },
+              ] as const).map(({ label, bg, text, desc }) => (
+                <div key={label} className="flex items-start gap-3">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 min-w-[56px] text-center ${bg} ${text}`}>
+                    {label}
+                  </span>
+                  <span className="text-xs text-muted-foreground leading-relaxed">{desc}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
