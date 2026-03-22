@@ -55,14 +55,6 @@ export async function checkCompleteness(invoiceId: number): Promise<Completeness
     });
   }
 
-  if (!invoice.jurisdiction || invoice.jurisdiction.trim() === "") {
-    issues.push({
-      code: "JURISDICTION_UNCLEAR",
-      message: "Jurisdiction must be set so that the correct rate schedule can be applied.",
-      field: "jurisdiction",
-    });
-  }
-
   if (invoice.lawFirmId) {
     const [firm] = await db
       .select()

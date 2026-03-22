@@ -706,9 +706,11 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   }
 
   const missingRoleLines = items.filter(item =>
-    !item.isExpenseLine && item.roleRaw !== null && item.roleNormalizedComputed === null && !item.isUnauthorized
+    !item.isExpenseLine && item.roleRaw !== null && item.roleNormalizedComputed === null
   );
   for (const item of missingRoleLines) {
+    const isUnauth = item.isUnauthorized;
+    const recoverableAmt = isUnauth && item.amount ? n(item.amount) : null;
     issues.push({
       invoiceId,
       analysisRunId: run.id,
@@ -719,15 +721,21 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
       evaluatorType: "deterministic",
       issueStatus: "open",
       routeToRole: "legal_ops",
-      explanationText: `The role label "${item.roleRaw}" on line ${item.lineNo} for ${item.timekeeperLabel ?? "unknown timekeeper"} could not be mapped to any approved role in the rate schedule applicable to this matter. As a result, no maximum rate check can be performed for this line. Please clarify the correct role or confirm whether this timekeeper is authorised.`,
+      explanationText: isUnauth
+        ? `Line ${item.lineNo} records a non-human or unauthorised role ("${item.roleRaw}") billed as a timekeeper for ${invoice.currency} ${n(item.amount).toFixed(2)}. Machine translation tools, AI software, and similar non-human resources are not authorised as billable timekeepers under the Panel T&C.`
+        : `The role label "${item.roleRaw}" on line ${item.lineNo} for ${item.timekeeperLabel ?? "unknown timekeeper"} could not be mapped to any approved role in the rate schedule applicable to this matter. As a result, no maximum rate check can be performed for this line. Please clarify the correct role or confirm whether this timekeeper is authorised.`,
       evidenceJson: {
         line_no: item.lineNo,
         timekeeper_label: item.timekeeperLabel,
         role_raw: item.roleRaw,
+        is_unauthorised_role: isUnauth,
         normalisation_attempted: true,
         available_roles_in_source: KNOWN_ROLE_CODES,
+        amount: item.amount,
       },
       suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+      recoverableAmount: recoverableAmt !== null ? recoverableAmt.toFixed(2) : undefined,
+      recoveryGroupKey: isUnauth ? `unauth_timekeeper_${item.lineNo}` : undefined,
     });
   }
 
@@ -735,34 +743,6 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
 
   for (const item of items) {
     if (item.isExpenseLine || rolesMismatched.has(item.lineNo) || !item.roleNormalizedComputed || !item.rateCharged) continue;
-
-    if (item.isUnauthorized) {
-      const amount = n(item.amount);
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        invoiceItemId: item.id,
-        ruleCode: "UNAUTHORIZED_TIMEKEEPER_ROLE",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `Line ${item.lineNo} records a non-human or software role ("${item.roleRaw}") billed as a timekeeper for ${invoice.currency} ${amount.toFixed(2)}. Machine translation tools, AI software, and similar non-human resources are not authorised as billable timekeepers under the Panel T&C.`,
-        evidenceJson: {
-          line_no: item.lineNo,
-          role_raw: item.roleRaw,
-          amount,
-          description: item.description,
-          source_document: "Role normalisation policy",
-          authorised_roles: KNOWN_ROLE_CODES,
-        },
-        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        recoverableAmount: amount.toFixed(2),
-        recoveryGroupKey: `unauth_timekeeper_${item.lineNo}`,
-      });
-      continue;
-    }
 
     const applicableRates = panelRates.filter(pr =>
       pr.r.lawFirmName === firm?.name
