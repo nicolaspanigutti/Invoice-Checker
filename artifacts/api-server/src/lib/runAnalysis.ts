@@ -10,6 +10,7 @@ import {
   analysisRunsTable,
   issuesTable,
   rulesConfigTable,
+  auditEventsTable,
 } from "@workspace/db";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { createHash } from "crypto";
@@ -900,12 +901,25 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     newStatus = "ready_to_pay";
   }
 
+  const oldInvoiceStatus = invoice.invoiceStatus;
   await db.update(invoicesTable).set({
     invoiceStatus: newStatus,
     reviewOutcome: outcome as typeof invoicesTable.$inferSelect["reviewOutcome"] | null,
     amountAtRisk: totalRecoverable > 0 ? totalRecoverable.toFixed(2) : null,
     currentAnalysisRunId: run.id,
   }).where(eq(invoicesTable.id, invoiceId));
+
+  if (newStatus !== oldInvoiceStatus) {
+    await db.insert(auditEventsTable).values({
+      entityType: "invoice",
+      entityId: invoiceId,
+      eventType: "state_change",
+      actorId: startedById,
+      beforeJson: { status: oldInvoiceStatus },
+      afterJson: { status: newStatus, outcome, issueCount: issues.length },
+      reason: "analysis_completed",
+    });
+  }
 
   await db.update(analysisRunsTable).set({
     status: "completed",

@@ -430,11 +430,23 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
   if (extracted.jurisdiction && !invoice.jurisdiction) updates.jurisdiction = extracted.jurisdiction;
   if (extracted.applicableLaw && !invoice.applicableLaw) updates.applicableLaw = extracted.applicableLaw;
 
+  const prevStatus = invoice.invoiceStatus;
   if (Object.keys(updates).length > 0) {
     updates.invoiceStatus = "in_review";
     await db.update(invoicesTable).set(updates).where(eq(invoicesTable.id, id));
   } else if (invoice.invoiceStatus === "extracting_data") {
     await db.update(invoicesTable).set({ invoiceStatus: "in_review" }).where(eq(invoicesTable.id, id));
+  }
+  if (prevStatus !== "in_review") {
+    await db.insert(auditEventsTable).values({
+      entityType: "invoice",
+      entityId: id,
+      eventType: "state_change",
+      actorId: req.session.userId ?? null,
+      beforeJson: { status: prevStatus },
+      afterJson: { status: "in_review" },
+      reason: "extraction_completed",
+    });
   }
 
   if (!fromCache) {
@@ -475,6 +487,18 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
   if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
 
   const actorId = req.session.userId!;
+  const isRerun = invoice.currentAnalysisRunId !== null;
+
+  if (isRerun) {
+    await db.insert(auditEventsTable).values({
+      entityType: "invoice",
+      entityId: id,
+      eventType: "re_run_requested",
+      actorId,
+      afterJson: { previousRunId: invoice.currentAnalysisRunId },
+      reason: null,
+    });
+  }
 
   await db.insert(auditEventsTable).values({
     entityType: "invoice",

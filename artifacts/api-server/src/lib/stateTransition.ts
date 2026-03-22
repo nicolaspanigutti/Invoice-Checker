@@ -39,29 +39,32 @@ export async function evaluateInvoiceState(
   const hasOpen = issues.some(i => i.issueStatus === "open");
   const hasRejected = issues.some(i => REJECTED_STATUSES.has(i.issueStatus));
   const allDecided = issues.length > 0 && !hasOpen && !hasEscalated;
-  const allAccepted = allDecided && !hasRejected;
 
   let newStatus: InvoiceStatus = oldStatus;
   let outcome: ReviewOutcome | null = invoice.reviewOutcome ?? null;
 
   if (issues.length === 0) {
+    // No issues at all — invoice is clean
     newStatus = "ready_to_pay";
     outcome = "clean";
-  } else if (hasOpen) {
-    newStatus = "in_review";
-    outcome = null;
+  } else if (hasRejected && !hasEscalated) {
+    // Any rejection (regardless of open issues remaining) and no escalation pending
+    // → immediately move to pending_law_firm so the law firm can respond
+    const allRejected = issues.every(i => REJECTED_STATUSES.has(i.issueStatus));
+    outcome = allRejected ? "fully_rejected" : "partially_rejected";
+    newStatus = "pending_law_firm";
   } else if (hasEscalated) {
+    // Issues waiting for internal lawyer — no rejections yet
     newStatus = "waiting_internal_lawyer";
     outcome = null;
-  } else if (allDecided) {
-    if (hasRejected) {
-      const allRejected = issues.every(i => REJECTED_STATUSES.has(i.issueStatus));
-      outcome = allRejected ? "fully_rejected" : "partially_rejected";
-      newStatus = "pending_law_firm";
-    } else if (allAccepted) {
-      outcome = "accepted_with_comments";
-      newStatus = "ready_to_pay";
-    }
+  } else if (hasOpen) {
+    // Issues still being reviewed by legal ops
+    newStatus = "in_review";
+    outcome = null;
+  } else if (allDecided && !hasRejected) {
+    // All issues accepted/accepted_with_comments
+    outcome = "accepted_with_comments";
+    newStatus = "ready_to_pay";
   }
 
   if (newStatus !== oldStatus || outcome !== invoice.reviewOutcome) {
