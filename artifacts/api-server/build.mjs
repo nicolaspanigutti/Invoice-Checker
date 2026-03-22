@@ -100,6 +100,11 @@ async function buildAll() {
       "puppeteer",
       "puppeteer-core",
       "electron",
+      "pdfkit",
+      "fontkit",
+      "brotli",
+      "png-js",
+      "linebreak",
     ],
     sourcemap: "linked",
     plugins: [

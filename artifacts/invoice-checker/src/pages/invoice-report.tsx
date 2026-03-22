@@ -152,6 +152,11 @@ export default function InvoiceReportPage() {
     window.print();
   };
 
+  const handleDownloadPdf = () => {
+    const base = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    window.open(`${base}/api/invoices/${id}/report/pdf`, "_blank");
+  };
+
   if (!report) {
     return (
       <div className="max-w-2xl mx-auto py-20 text-center">
@@ -215,7 +220,10 @@ export default function InvoiceReportPage() {
           <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generateReport.isPending}>
             {generateReport.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Regenerate"}
           </Button>
-          <Button size="sm" onClick={handlePrint} className="gap-2">
+          <Button variant="outline" size="sm" onClick={handlePrint} className="gap-2">
+            Print
+          </Button>
+          <Button size="sm" onClick={handleDownloadPdf} className="gap-2">
             <Download className="h-4 w-4" /> Export PDF
           </Button>
         </div>
