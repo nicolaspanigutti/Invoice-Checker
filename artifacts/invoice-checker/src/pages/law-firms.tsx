@@ -440,12 +440,14 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
   const createMutation = useCreateLawFirm();
   const requestUploadUrl = useRequestUploadUrl();
   const extractInfoMutation = useExtractLawFirmInfo();
+  const extractTermsMutation = useExtractLawFirmTermsFromTc();
   const [form, setForm] = useState<FormData>(emptyForm);
-  const [step, setStep] = useState<"upload" | "review" | "tc-upload">("upload");
-  const [createdFirm, setCreatedFirm] = useState<{ id: number; name: string } | null>(null);
+  const [step, setStep] = useState<"upload" | "review">("upload");
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [uploadedPath, setUploadedPath] = useState<string | null>(null);
+  const [uploadedMimeType, setUploadedMimeType] = useState<string>("application/pdf");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const ACCEPTED = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "text/plain"];
@@ -469,9 +471,12 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
     if (!selectedFile) return;
     setUploading(true);
     try {
-      const urlData = await requestUploadUrl.mutateAsync({ data: { name: selectedFile.name, size: selectedFile.size, contentType: selectedFile.type || "application/pdf" } });
-      await fetch(urlData.uploadURL, { method: "PUT", body: selectedFile, headers: { "Content-Type": selectedFile.type || "application/pdf" } });
-      const extracted = await extractInfoMutation.mutateAsync({ data: { storagePath: urlData.objectPath, mimeType: selectedFile.type || "application/pdf" } });
+      const mimeType = selectedFile.type || "application/pdf";
+      const urlData = await requestUploadUrl.mutateAsync({ data: { name: selectedFile.name, size: selectedFile.size, contentType: mimeType } });
+      await fetch(urlData.uploadURL, { method: "PUT", body: selectedFile, headers: { "Content-Type": mimeType } });
+      setUploadedPath(urlData.objectPath);
+      setUploadedMimeType(mimeType);
+      const extracted = await extractInfoMutation.mutateAsync({ data: { storagePath: urlData.objectPath, mimeType } });
       const info = extracted as { name?: string | null; firmType?: string | null; contactName?: string | null; contactEmail?: string | null; contactPhone?: string | null; relationshipPartner?: string | null; jurisdictions?: string[]; practiceAreas?: string[]; notes?: string | null };
       setForm({
         name: info.name ?? "",
@@ -500,8 +505,15 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
       onSuccess: (result) => {
         queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
         const created = result as { id: number; name: string };
-        setCreatedFirm({ id: created.id, name: created.name });
-        setStep("tc-upload");
+        if (uploadedPath) {
+          extractTermsMutation.mutateAsync({ id: created.id, data: { storagePath: uploadedPath, mimeType: uploadedMimeType } })
+            .then(() => {
+              queryClient.invalidateQueries({ queryKey: ["law-firms", created.id] });
+              queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+            })
+            .catch(() => {});
+        }
+        onClose();
       },
       onError: (err: CreateLawFirmMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to create firm." })
     });
@@ -510,13 +522,11 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
   const STEP_TITLES: Record<typeof step, string> = {
     upload: "Add Law Firm",
     review: "Review Firm Details",
-    "tc-upload": "Upload T&C Document",
   };
 
   const STEP_SUBTITLES: Partial<Record<typeof step, React.ReactNode>> = {
     upload: "Upload a document to auto-fill the fields with AI, or skip to enter details manually.",
     review: "Review and edit the extracted details before creating the firm.",
-    "tc-upload": createdFirm ? <span><span className="text-emerald-600 font-medium">✓ {createdFirm.name} created.</span> Optionally upload their T&C to extract commercial terms.</span> : null,
   };
 
   return (
@@ -545,10 +555,7 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
                 <span className="font-medium text-foreground">Upload document</span>
                 <span className="flex-1 h-px bg-border" />
                 <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted font-bold text-[10px]">2</span>
-                <span>Review details</span>
-                <span className="flex-1 h-px bg-border" />
-                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted font-bold text-[10px]">3</span>
-                <span>Upload T&amp;C</span>
+                <span>Review &amp; create</span>
               </div>
 
               {/* Drop zone */}
@@ -622,10 +629,7 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
                 <span className="text-muted-foreground">Upload document</span>
                 <span className="flex-1 h-px bg-border" />
                 <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground font-bold text-[10px]">2</span>
-                <span className="font-medium text-foreground">Review details</span>
-                <span className="flex-1 h-px bg-border" />
-                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted font-bold text-[10px]">3</span>
-                <span>Upload T&amp;C</span>
+                <span className="font-medium text-foreground">Review &amp; create</span>
               </div>
               <FirmFormFields data={form} onChange={(f, v) => setForm(prev => ({ ...prev, [f]: v }))} />
               <div className="flex gap-3 justify-end pt-2">
@@ -637,10 +641,7 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
             </form>
           )}
 
-          {/* Step 3: T&C upload */}
-          {step === "tc-upload" && createdFirm && (
-            <TcUploadStep firmId={createdFirm.id} firmName={createdFirm.name} onDone={onClose} />
-          )}
+
         </div>
       </div>
     </div>
