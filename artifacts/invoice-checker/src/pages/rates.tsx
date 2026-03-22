@@ -7,6 +7,8 @@ import {
   useUpdatePanelBaselineDocumentStatus,
   useExtractRatesFromFile,
   useRequestUploadUrl,
+  useListLawFirms,
+  useGetLawFirm,
   getListPanelBaselineDocumentsQueryKey,
   getListPanelRatesQueryKey,
   type PanelBaselineDocument,
@@ -14,6 +16,7 @@ import {
   type ExtractedRateRow,
   type CreatePanelBaselineDocumentMutationError,
   type UpdatePanelBaselineDocumentStatusMutationError,
+  type LawFirm,
 } from "@workspace/api-client-react";
 import {
   DollarSign, Plus, Search, X, FileText, Trash2,
@@ -311,166 +314,116 @@ function AddRatesDocumentModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function AddTCDocumentModal({ onClose }: { onClose: () => void }) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const createMutation = useCreatePanelBaselineDocument();
-  const [versionLabel, setVersionLabel] = useState("");
-  const [fileName, setFileName] = useState("");
+const TC_TERM_LABELS: Record<string, string> = {
+  billing_type_default: "Default Billing Type",
+  discount_type: "Discount Type",
+  discount_payment_type: "Discount Payment Method",
+  discount_thresholds_json: "Volume Discount Thresholds",
+  max_daily_hours_per_timekeeper: "Max Daily Hours (per timekeeper)",
+  getting_up_to_speed_billable: "Getting Up to Speed Billable?",
+  payment_terms_days: "Payment Terms (days)",
+  travel_policy: "Travel Policy",
+  expense_policy_json: "Expense Policy",
+  third_party_services_require_approval: "Third-party Services Require Approval?",
+  contract_start_date: "Contract Start Date",
+  contract_end_date: "Contract End Date",
+  best_friend_firms_json: "Best Friend Firms",
+};
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!versionLabel) { toast({ variant: "destructive", title: "Version label is required." }); return; }
-    createMutation.mutate({ data: {
-      documentKind: "terms_conditions",
-      versionLabel,
-      fileName: fileName || null,
-    }}, {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListPanelBaselineDocumentsQueryKey() });
-        toast({ title: "Panel T&C document created", description: `${versionLabel} saved as Draft. Verify and activate when ready.` });
-        onClose();
-      },
-      onError: (err: CreatePanelBaselineDocumentMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to create document." })
-    });
-  };
-
-  const inputClass = "w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary text-sm";
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-card border border-border rounded-3xl shadow-2xl w-full max-w-lg animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="text-xl font-display font-bold text-foreground">Add Panel T&C Document</h2>
-          <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <p className="text-sm text-muted-foreground">Register a Panel Terms &amp; Conditions document version. Once verified, you can activate it — activating a version will automatically archive the current active version.</p>
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-1.5">Version Label *</label>
-            <input value={versionLabel} onChange={e => setVersionLabel(e.target.value)} placeholder="e.g. Panel T&C 2025 v2.0" className={inputClass} />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-1.5">Source File Name</label>
-            <input value={fileName} onChange={e => setFileName(e.target.value)} placeholder="e.g. Panel_TC_2025_v2.pdf" className={inputClass} />
-          </div>
-          <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted text-sm font-medium">Cancel</button>
-            <button type="submit" disabled={createMutation.isPending} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-70 flex items-center gap-2">
-              {createMutation.isPending ? "Saving..." : <><Plus className="w-4 h-4" />Create Document</>}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+function formatTCTermValue(termKey: string, value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) {
+    if (termKey === "discount_thresholds_json") {
+      return (value as { threshold?: number; from?: number; to?: number | null; pct?: number }[])
+        .map(b => {
+          const from = b.from ?? b.threshold ?? 0;
+          const to = b.to != null ? b.to : "∞";
+          return `${from}–${to}: ${b.pct ?? 0}%`;
+        }).join(", ");
+    }
+    if (termKey === "best_friend_firms_json") return (value as string[]).join(", ");
+    return JSON.stringify(value);
+  }
+  if (typeof value === "object") {
+    if (termKey === "expense_policy_json") {
+      const p = value as { allowed?: string[]; not_allowed?: string[] };
+      const parts = [];
+      if (p.allowed?.length) parts.push(`Allowed: ${p.allowed.join(", ")}`);
+      if (p.not_allowed?.length) parts.push(`Not allowed: ${p.not_allowed.join(", ")}`);
+      return parts.join(" · ") || "—";
+    }
+    return JSON.stringify(value);
+  }
+  return "—";
 }
 
-function DocumentStatusActions({ doc, onUpdate }: { doc: PanelBaselineDocument; onUpdate: () => void }) {
-  const { toast } = useToast();
-  const updateStatus = useUpdatePanelBaselineDocumentStatus();
+function FirmTermCard({ firm }: { firm: LawFirm }) {
+  const { data: detail, isLoading } = useGetLawFirm(firm.id);
+  const terms = (detail as (typeof detail & { terms?: { termKey: string; termValue: unknown; verificationStatus: string }[] }) | undefined)?.terms ?? [];
 
-  const change = (status: DocStatus) => {
-    updateStatus.mutate({ id: doc.id, data: { status } }, {
-      onSuccess: () => {
-        toast({ title: `Document ${status === "active" ? "activated" : status}.`, description: status === "active" ? "Previous active version has been archived." : undefined });
-        onUpdate();
-      },
-      onError: (err: UpdatePanelBaselineDocumentStatusMutationError) =>
-        toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to update status." })
-    });
-  };
+  if (isLoading) {
+    return (
+      <div className="border border-border rounded-2xl p-5 bg-card">
+        <div className="h-4 w-40 bg-muted animate-pulse rounded mb-3" />
+        <div className="space-y-2">
+          {[1,2,3].map(i => <div key={i} className="h-3 bg-muted animate-pulse rounded w-full" />)}
+        </div>
+      </div>
+    );
+  }
 
-  const isPending = updateStatus.isPending;
+  if (!terms.length) return null;
 
   return (
-    <div className="flex flex-wrap gap-2 mt-3">
-      {doc.verificationStatus === "draft" && (
-        <button onClick={() => change("verified")} disabled={isPending} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-60 flex items-center gap-1.5 transition-colors">
-          <ShieldCheck className="w-3.5 h-3.5" />Verify
-        </button>
-      )}
-      {(doc.verificationStatus === "verified" || doc.verificationStatus === "draft") && (
-        <button onClick={() => change("active")} disabled={isPending} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 flex items-center gap-1.5 transition-colors">
-          <CheckCircle2 className="w-3.5 h-3.5" />Activate
-        </button>
-      )}
-      {doc.verificationStatus === "active" && (
-        <button onClick={() => change("archived")} disabled={isPending} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-muted text-muted-foreground hover:bg-muted disabled:opacity-60 flex items-center gap-1.5 transition-colors">
-          <Archive className="w-3.5 h-3.5" />Archive
-        </button>
-      )}
-      {doc.verificationStatus === "archived" && (
-        <button onClick={() => change("active")} disabled={isPending} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-60 flex items-center gap-1.5 transition-colors">
-          <CheckCircle2 className="w-3.5 h-3.5" />Re-activate
-        </button>
-      )}
+    <div className="border border-border rounded-2xl bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-border bg-muted/30">
+        <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+        <span className="font-semibold text-sm text-foreground">{firm.name}</span>
+        <span className="ml-auto text-xs text-muted-foreground">{terms.length} terms</span>
+      </div>
+      <div className="divide-y divide-border">
+        {terms.map(term => (
+          <div key={term.termKey} className="flex items-start justify-between gap-4 px-5 py-2.5">
+            <span className="text-xs text-muted-foreground">{TC_TERM_LABELS[term.termKey] ?? term.termKey}</span>
+            <span className="text-xs text-foreground font-medium text-right max-w-[220px]">
+              {formatTCTermValue(term.termKey, term.termValue)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 function PanelTCSection() {
-  const queryClient = useQueryClient();
-  const [showCreate, setShowCreate] = useState(false);
-  const { data: docs = [], isLoading } = useListPanelBaselineDocuments(
-    { documentKind: "terms_conditions" },
-    { query: { queryKey: getListPanelBaselineDocumentsQueryKey({ documentKind: "terms_conditions" }) } }
-  );
-
-  const activeDoc = docs.find(d => d.verificationStatus === "active");
-
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListPanelBaselineDocumentsQueryKey() });
+  const { data: allFirms = [], isLoading } = useListLawFirms();
+  const firmsWithPotentialTerms = (allFirms as LawFirm[]).filter(f => (f.firmType as string) === "panel");
 
   return (
-    <div className="bg-card border border-border rounded-2xl overflow-hidden">
-      <div className="flex items-center justify-between p-5 border-b border-border">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-emerald-600" />
-          <h2 className="text-sm font-semibold text-foreground">Panel Terms &amp; Conditions</h2>
-          {activeDoc && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
-              <CheckCircle2 className="w-3 h-3" />Active: {activeDoc.versionLabel}
-            </span>
-          )}
-        </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary/80 transition-colors">
-          <Plus className="w-3.5 h-3.5" />Add Version
-        </button>
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 pb-1">
+        <ShieldCheck className="w-5 h-5 text-emerald-600" />
+        <h2 className="text-sm font-semibold text-foreground">Panel Terms &amp; Conditions</h2>
+        <span className="text-xs text-muted-foreground ml-1">— Commercial terms extracted from each firm's T&amp;C at onboarding</span>
       </div>
 
       {isLoading ? (
-        <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
-      ) : docs.length === 0 ? (
-        <div className="p-8 flex flex-col items-center text-center">
+        <div className="p-8 text-center text-muted-foreground text-sm">Loading firms...</div>
+      ) : firmsWithPotentialTerms.length === 0 ? (
+        <div className="p-8 flex flex-col items-center text-center border border-border rounded-2xl bg-card">
           <AlertCircle className="w-8 h-8 text-muted-foreground/30 mb-2" />
-          <p className="text-sm text-muted-foreground">No Panel T&C documents yet.</p>
-          <p className="text-xs text-muted-foreground mt-1">Add a version, verify it, and activate it to use in invoice analysis.</p>
+          <p className="text-sm text-muted-foreground">No panel firms found.</p>
+          <p className="text-xs text-muted-foreground mt-1">Add panel firms with a T&amp;C document to see extracted commercial terms here.</p>
         </div>
       ) : (
-        <div className="divide-y divide-border">
-          {docs.map(doc => (
-            <div key={doc.id} className="p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="text-sm font-semibold text-foreground">{doc.versionLabel}</p>
-                    <StatusBadge status={doc.verificationStatus as DocStatus} />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {doc.fileName && <span>{doc.fileName} · </span>}
-                    Added {new Date(doc.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                    {doc.activatedAt && <span> · Activated {new Date(doc.activatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>}
-                  </p>
-                </div>
-              </div>
-              <DocumentStatusActions doc={doc} onUpdate={invalidate} />
-            </div>
+        <div className="space-y-4">
+          {firmsWithPotentialTerms.map(firm => (
+            <FirmTermCard key={firm.id} firm={firm} />
           ))}
         </div>
       )}
-
-      {showCreate && <AddTCDocumentModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 }
