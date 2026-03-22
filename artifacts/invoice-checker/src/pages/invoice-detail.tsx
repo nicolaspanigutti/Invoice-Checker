@@ -461,7 +461,7 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
 function IssuesPanel({ invoiceId, currency, userRole }: { invoiceId: number; currency: string | null; userRole: string | null }) {
   const queryClient = useQueryClient();
   const { data: issues, isLoading } = useListInvoiceIssues(invoiceId);
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(true);
 
   if (isLoading) {
     return (
