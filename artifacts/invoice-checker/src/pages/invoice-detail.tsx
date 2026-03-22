@@ -713,7 +713,7 @@ export default function InvoiceDetail() {
     }
   }
   const hasIssues = (issues ?? []).length > 0;
-  const allItems = items ?? [];
+  const allItems = (items ?? []).slice().sort((a, b) => a.lineNo - b.lineNo);
   const displayItemsModal = (hasIssues && !showAllLinesModal && flaggedItemIds.size > 0)
     ? allItems.filter(item => flaggedItemIds.has(item.id))
     : allItems;
