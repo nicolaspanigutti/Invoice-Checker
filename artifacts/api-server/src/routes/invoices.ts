@@ -685,9 +685,14 @@ router.get("/invoices/:id/issues", requireRole("super_admin", "legal_ops", "inte
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const analysisRunId = req.query.analysisRunId ? parseInt(String(req.query.analysisRunId), 10) : undefined;
+  const [inv] = await db.select({ currentAnalysisRunId: invoicesTable.currentAnalysisRunId }).from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
+  if (!inv) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  const explicitRunId = req.query.analysisRunId ? parseInt(String(req.query.analysisRunId), 10) : undefined;
+  const effectiveRunId = (explicitRunId && !isNaN(explicitRunId)) ? explicitRunId : (inv.currentAnalysisRunId ?? undefined);
+
   const conditions = [eq(issuesTable.invoiceId, id)];
-  if (analysisRunId && !isNaN(analysisRunId)) conditions.push(eq(issuesTable.analysisRunId, analysisRunId));
+  if (effectiveRunId) conditions.push(eq(issuesTable.analysisRunId, effectiveRunId));
 
   const issues = await db
     .select()
@@ -921,7 +926,7 @@ router.post("/invoices/:id/comments", requireRole("super_admin", "legal_ops", "i
     invoiceItemId?: number;
   };
 
-  const VALID_COMMENT_SCOPES = new Set(["general", "issue", "line_item"]);
+  const VALID_COMMENT_SCOPES = new Set(["general", "issue", "line_item", "issue_inline"]);
   if (!content?.trim()) { res.status(400).json({ error: "content is required" }); return; }
   if (!commentScope || !VALID_COMMENT_SCOPES.has(commentScope)) {
     res.status(400).json({ error: `commentScope must be one of: ${[...VALID_COMMENT_SCOPES].join(", ")}` });

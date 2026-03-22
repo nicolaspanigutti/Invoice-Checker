@@ -246,7 +246,7 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
       .filter(iss => {
         const sig = `${iss.ruleCode}::${iss.invoiceItemId ?? "invoice"}`;
         const stillFires = newIssueSignatures.has(sig);
-        const decidedStatuses: string[] = ["accepted_by_legal_ops", "rejected_by_legal_ops", "accepted_by_internal_lawyer", "rejected_by_internal_lawyer", "no_longer_applicable"];
+        const decidedStatuses: string[] = ["accepted_by_legal_ops", "rejected_by_legal_ops", "escalated_to_internal_lawyer", "accepted_by_internal_lawyer", "rejected_by_internal_lawyer", "no_longer_applicable"];
         const isDecided = decidedStatuses.includes(iss.issueStatus ?? "open");
         return !stillFires && !isDecided;
       })

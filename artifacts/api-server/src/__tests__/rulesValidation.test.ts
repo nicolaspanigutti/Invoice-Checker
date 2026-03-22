@@ -102,6 +102,7 @@ describe("Reconciliation logic — issue key composite and status transition", (
     "escalated_to_internal_lawyer",
     "accepted_by_internal_lawyer",
     "rejected_by_internal_lawyer",
+    "no_longer_applicable",
   ];
 
   function compositeKey(ruleCode: string, itemId: number | null): string {
@@ -153,6 +154,15 @@ describe("Reconciliation logic — issue key composite and status transition", (
       const transitions = reconcileIssues(prev, newKeys);
       expect(transitions).toHaveLength(0);
     }
+  });
+
+  it("escalated_to_internal_lawyer issue no longer firing → preserved (not overwritten)", () => {
+    const prev: MockIssue[] = [
+      { ruleCode: "SCOPE_CREEP", invoiceItemId: 5, issueStatus: "escalated_to_internal_lawyer" },
+    ];
+    const newKeys = new Set<string>();
+    const transitions = reconcileIssues(prev, newKeys);
+    expect(transitions).toHaveLength(0);
   });
 
   it("composite key correctly distinguishes same ruleCode with different line items", () => {
