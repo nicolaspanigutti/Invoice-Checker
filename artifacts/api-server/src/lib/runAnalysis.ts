@@ -73,7 +73,6 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
         .select({ r: panelRatesTable, d: panelBaselineDocumentsTable })
         .from(panelRatesTable)
         .innerJoin(panelBaselineDocumentsTable, eq(panelRatesTable.baselineDocumentId, panelBaselineDocumentsTable.id))
-        .where(eq(panelBaselineDocumentsTable.verificationStatus, "active"))
     : [];
 
   const allRulesConfig = await db.select().from(rulesConfigTable);

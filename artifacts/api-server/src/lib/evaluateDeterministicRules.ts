@@ -1,6 +1,21 @@
 import { KNOWN_ROLE_CODES } from "./roleNormaliser";
 import { issuesTable } from "@workspace/db";
 
+/**
+ * Flexible role matching: strips spaces from both sides, and treats any
+ * "AssociateNthYear" rate code as matching the canonical "Associate" label.
+ */
+function rolesMatch(rateCode: string, normalizedLabel: string | null): boolean {
+  if (!normalizedLabel) return false;
+  const strip = (s: string) => s.replace(/\s+/g, "").toLowerCase();
+  const nc = strip(rateCode);
+  const nl = strip(normalizedLabel);
+  if (nc === nl) return true;
+  // "Associate" label matches any "AssociateNthYear" rate code
+  if (nl === "associate" && nc.startsWith("associate")) return true;
+  return false;
+}
+
 type IssueInsert = typeof issuesTable.$inferInsert;
 
 export interface EvalItem {
@@ -570,7 +585,7 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
     for (const [timekeeper, data] of timekeeperRates.entries()) {
       if (data.rates.size >= 2) {
         const panelRate = panelRates.find(pr =>
-          pr.r.roleCode === data.roleNorm && pr.r.jurisdiction === invoice.jurisdiction && pr.r.currency === invoice.currency
+          rolesMatch(pr.r.roleCode, data.roleNorm) && pr.r.jurisdiction === invoice.jurisdiction && pr.r.currency === invoice.currency
         );
         const maxApproved = panelRate ? n(panelRate.r.maxRate) : null;
         const ratesAboveMin = items.filter(i => i.timekeeperLabel === timekeeper && n(i.rateCharged) > data.minRate);
@@ -612,7 +627,7 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
       const allMatchingRates = panelRates.filter(pr =>
         pr.r.lawFirmName === firm.name
         && pr.r.jurisdiction === invoice.jurisdiction
-        && pr.r.roleCode === item.roleNormalized
+        && rolesMatch(pr.r.roleCode, item.roleNormalized)
         && pr.r.currency === invoice.currency
       );
       const validMatchingRates = invoiceDateMs
@@ -698,7 +713,7 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
       if (item.isExpenseLine || rolesMismatched.has(item.lineNo) || !item.roleNormalized || !item.rateCharged) continue;
       const applicableRates = panelRates.filter(pr =>
         pr.r.lawFirmName === firm?.name
-        && pr.r.roleCode === item.roleNormalized
+        && rolesMatch(pr.r.roleCode, item.roleNormalized)
         && pr.r.jurisdiction === invoice.jurisdiction
         && pr.r.currency === invoice.currency
         && (!invoice.invoiceDate || !pr.r.validFrom || pr.r.validFrom <= invoice.invoiceDate)
