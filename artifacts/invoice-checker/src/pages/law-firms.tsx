@@ -15,7 +15,7 @@ import {
 import {
   Building2, Plus, Search, ChevronRight,
   CheckCircle, Globe, Briefcase, X, Pencil, Save,
-  Upload, FileText, Sparkles, CheckCircle2
+  Upload, FileText, Sparkles, CheckCircle2, Clock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -541,11 +541,21 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
                         <div className="flex items-start gap-2 flex-shrink-0">
                           <div className="text-foreground text-right text-xs max-w-[200px]">{formatTermValue(term.termKey, term.termValue)}</div>
                           {term.verificationStatus === "verified"
-                            ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                            : <div className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 flex-shrink-0 mt-0.5" />}
+                            ? <span title="Verified manually"><CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" /></span>
+                            : <span title="AI-extracted — pending manual verification"><Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" /></span>}
                         </div>
                       </div>
                     ))}
+                    <div className="pt-2 mt-1 border-t border-border/50 flex items-center gap-4 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3 text-emerald-500" />
+                        Verified manually
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        AI-extracted, pending verification
+                      </span>
+                    </div>
                   </div>
                 )}
                 {(!typedFirm.terms || typedFirm.terms.length === 0) && !showTcUpload && (
