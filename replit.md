@@ -13,9 +13,9 @@
 ### Auth
 
 Email/password authentication with server-side session cookies (`express-session` + `connect-pg-simple`). Session table: `user_sessions`. Seed credentials:
-- `admin@arcturusgroup.com` — password: `Arcturus2026!` (super_admin)
-- `daniel.whitfield@arcturusgroup.com` — password: see seed (legal_ops)
-- `sophie.cartwright@arcturusgroup.com` — password: see seed (internal_lawyer)
+- `admin@company.com` — password: `company2026` (super_admin)
+- `daniel.whitfield@arcturusgroup.com` — password: `company2026` (legal_ops)
+- `sophie.cartwright@arcturusgroup.com` — password: `company2026` (internal_lawyer)
 
 ---
 

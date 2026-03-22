@@ -14,7 +14,7 @@ async function seed() {
   `);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "IDX_user_sessions_expire" ON user_sessions (expire)`);
 
-  const password = await bcrypt.hash("password123", 12);
+  const password = await bcrypt.hash("company2026", 12);
 
   await db.execute(sql`TRUNCATE TABLE 
     audit_events, comments, issue_decisions, issues, analysis_runs,
@@ -27,7 +27,7 @@ async function seed() {
   const [adminUser, legalOpsUser, lawyerUser] = await db.insert(usersTable).values([
     {
       displayName: "Alexandra Morgan",
-      email: "admin@arcturusgroup.com",
+      email: "admin@company.com",
       passwordHash: password,
       role: "super_admin",
       isActive: true,
@@ -136,9 +136,9 @@ async function seed() {
 
   console.log("Seed completed successfully.");
   console.log("\nTest credentials:");
-  console.log("  Super Admin: admin@arcturusgroup.com / password123");
-  console.log("  Legal Ops:   daniel.whitfield@arcturusgroup.com / password123");
-  console.log("  Int. Lawyer: sophie.cartwright@arcturusgroup.com / password123");
+  console.log("  Super Admin: admin@company.com / company2026");
+  console.log("  Legal Ops:   daniel.whitfield@arcturusgroup.com / company2026");
+  console.log("  Int. Lawyer: sophie.cartwright@arcturusgroup.com / company2026");
 
   process.exit(0);
 }
