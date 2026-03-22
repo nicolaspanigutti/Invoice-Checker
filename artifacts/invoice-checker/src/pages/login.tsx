@@ -18,19 +18,18 @@ function CrownDocumentIcon() {
   return (
     <div className="w-28 h-28 bg-white rounded-3xl flex items-center justify-center shadow-2xl">
       <svg viewBox="0 0 80 80" className="w-20 h-20" fill="none" xmlns="http://www.w3.org/2000/svg">
-        {/* Crown */}
-        <path
-          d="M20 36L28 24L40 32L52 24L60 36H20Z"
-          fill="#EC0000"
-        />
-        {/* Crown base bar */}
-        <rect x="20" y="35" width="40" height="6" rx="2" fill="#EC0000" />
-        {/* Document body */}
-        <rect x="24" y="43" width="32" height="26" rx="3" fill="#EC0000" opacity="0.9" />
-        {/* Document lines */}
-        <rect x="30" y="50" width="20" height="3" rx="1.5" fill="white" opacity="0.9" />
-        <rect x="30" y="57" width="20" height="3" rx="1.5" fill="white" opacity="0.9" />
-        <rect x="30" y="64" width="12" height="3" rx="1.5" fill="white" opacity="0.9" />
+        {/* Rook battlements — 3 teeth */}
+        <rect x="18"   y="8"  width="11" height="14" rx="2" fill="#EC0000" />
+        <rect x="35"   y="8"  width="11" height="14" rx="2" fill="#EC0000" />
+        <rect x="52"   y="8"  width="11" height="14" rx="2" fill="#EC0000" />
+        {/* Rook neck — connects teeth to body */}
+        <rect x="18" y="20" width="45" height="7" fill="#EC0000" />
+        {/* Rook / document body — the invoice */}
+        <rect x="18" y="28" width="45" height="44" rx="5" fill="#EC0000" />
+        {/* Invoice lines */}
+        <rect x="26" y="38" width="29" height="4" rx="2" fill="white" opacity="0.9" />
+        <rect x="26" y="48" width="29" height="4" rx="2" fill="white" opacity="0.9" />
+        <rect x="26" y="58" width="18" height="4" rx="2" fill="white" opacity="0.9" />
       </svg>
     </div>
   );

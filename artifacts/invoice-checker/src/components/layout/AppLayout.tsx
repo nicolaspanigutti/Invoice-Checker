@@ -11,26 +11,19 @@ import {
 
 function InvoiceCheckerLogo({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 40 40"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-    >
-      {/* Crown */}
-      <path
-        d="M10 18L14 12L20 16L26 12L30 18H10Z"
-        fill="currentColor"
-        strokeLinejoin="round"
-      />
-      {/* Crown base bar */}
-      <rect x="10" y="17.5" width="20" height="3" rx="1" fill="currentColor" />
-      {/* Document body */}
-      <rect x="12" y="22" width="16" height="13" rx="1.5" fill="currentColor" opacity="0.9" />
-      {/* Document lines */}
-      <rect x="15" y="25" width="10" height="1.5" rx="0.75" fill="white" opacity="0.85" />
-      <rect x="15" y="28" width="10" height="1.5" rx="0.75" fill="white" opacity="0.85" />
-      <rect x="15" y="31" width="6" height="1.5" rx="0.75" fill="white" opacity="0.85" />
+    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      {/* Rook battlements — 3 teeth */}
+      <rect x="9"    y="4" width="5.5" height="7" rx="1" fill="currentColor" />
+      <rect x="17.5" y="4" width="5.5" height="7" rx="1" fill="currentColor" />
+      <rect x="26"   y="4" width="5.5" height="7" rx="1" fill="currentColor" />
+      {/* Rook neck — connects teeth to body */}
+      <rect x="9" y="10" width="22" height="3.5" fill="currentColor" />
+      {/* Rook/document body — the invoice */}
+      <rect x="9" y="14" width="22" height="22" rx="2.5" fill="currentColor" />
+      {/* Invoice lines (white notches on the document) */}
+      <rect x="13" y="19" width="14" height="2" rx="1" fill="white" opacity="0.85" />
+      <rect x="13" y="24" width="14" height="2" rx="1" fill="white" opacity="0.85" />
+      <rect x="13" y="29" width="9"  height="2" rx="1" fill="white" opacity="0.85" />
     </svg>
   );
 }
