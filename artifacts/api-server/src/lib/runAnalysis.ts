@@ -367,40 +367,87 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     const invoiceFees = n(invoice.totalAmount);
     const cumulativeWithInvoice = cumulativeYtd + invoiceFees;
 
-    for (const band of discountThresholds) {
-      if (cumulativeWithInvoice >= band.threshold && cumulativeYtd < band.threshold) {
-        const method = band.method ?? "step";
-        const expectedDiscount = method === "step"
-          ? band.pct / 100 * invoiceFees
-          : band.pct / 100 * (cumulativeWithInvoice - band.threshold);
+    // Sort thresholds ascending so we can process bands in order
+    const sortedBands = [...discountThresholds].sort((a, b) => a.threshold - b.threshold);
 
-        if (expectedDiscount > 0.01) {
-          issues.push({
-            invoiceId,
-            analysisRunId: run.id,
-            ruleCode: "VOLUME_DISCOUNT_NOT_APPLIED",
-            ruleType: "objective",
-            severity: "error",
-            evaluatorType: "deterministic",
-            issueStatus: "open",
-            routeToRole: "legal_ops",
-            explanationText: `Cumulative fees billed by ${firm?.name ?? "this firm"} in ${year} prior to this invoice total ${invoice.currency} ${cumulativeYtd.toFixed(2)}. With this invoice (${invoice.currency} ${invoiceFees.toFixed(2)}), cumulative total reaches ${invoice.currency} ${cumulativeWithInvoice.toFixed(2)}, which crosses the ${invoice.currency} ${band.threshold} discount threshold. Under the ${method} discount method, a ${band.pct}% discount should be applied. Expected discount: ${invoice.currency} ${expectedDiscount.toFixed(2)}. No discount was found on this invoice.`,
-            evidenceJson: {
-              law_firm: firm?.name,
-              calendar_year: year,
-              cumulative_fees_ytd: cumulativeYtd,
-              invoice_fees: invoiceFees,
-              cumulative_with_invoice: cumulativeWithInvoice,
-              applicable_threshold_band: band.threshold,
-              discount_pct: band.pct,
-              discount_method: method,
-              expected_discount: expectedDiscount,
-            },
-            suggestedAction: "Accept | Reject",
-            recoverableAmount: expectedDiscount.toFixed(2),
-            recoveryGroupKey: `volume_discount_${invoice.lawFirmId}_${year}`,
-          });
+    // Determine discount method from first band (contract-level, consistent across bands)
+    const discountMethod = sortedBands[0]?.method ?? "step";
+
+    // Only proceed if cumulative total (including this invoice) crosses at least one threshold
+    const lowestThreshold = sortedBands[0]?.threshold ?? Infinity;
+    if (cumulativeWithInvoice >= lowestThreshold) {
+      let expectedDiscount = 0;
+      let applicableBands: { threshold: number; pct: number; amountInBand: number; bandDiscount: number }[] = [];
+
+      if (discountMethod === "step") {
+        // Step method: find the highest threshold crossed by cumulativeWithInvoice;
+        // that rate applies to the ENTIRE invoice amount.
+        let highestRate = 0;
+        let highestThreshold = 0;
+        for (const band of sortedBands) {
+          if (cumulativeWithInvoice >= band.threshold) {
+            highestRate = band.pct / 100;
+            highestThreshold = band.threshold;
+          }
         }
+        expectedDiscount = highestRate * invoiceFees;
+        applicableBands = [{ threshold: highestThreshold, pct: highestRate * 100, amountInBand: invoiceFees, bandDiscount: expectedDiscount }];
+      } else {
+        // Tiered method: each portion of the invoice is discounted at the rate
+        // of the band it falls into. Accumulate across all bands crossed.
+        // Bands: [T0=0 → T1): no discount, [T1 → T2): rate1, [T2 → T3): rate2, etc.
+        for (let i = 0; i < sortedBands.length; i++) {
+          const band = sortedBands[i];
+          const nextThreshold = sortedBands[i + 1]?.threshold ?? Infinity;
+
+          // Amount of this invoice that falls within this band
+          const bandStart = band.threshold;
+          const bandEnd = nextThreshold;
+          const invoiceStart = cumulativeYtd;
+          const invoiceEnd = cumulativeWithInvoice;
+
+          // Overlap of invoice range [invoiceStart, invoiceEnd) with band [bandStart, bandEnd)
+          const overlapStart = Math.max(invoiceStart, bandStart);
+          const overlapEnd = Math.min(invoiceEnd, bandEnd);
+          const amountInBand = Math.max(0, overlapEnd - overlapStart);
+
+          if (amountInBand > 0) {
+            const bandDiscount = band.pct / 100 * amountInBand;
+            expectedDiscount += bandDiscount;
+            applicableBands.push({ threshold: band.threshold, pct: band.pct, amountInBand, bandDiscount });
+          }
+        }
+      }
+
+      if (expectedDiscount > 0.01) {
+        const bandSummary = applicableBands.map(b =>
+          `${invoice.currency} ${b.amountInBand.toFixed(2)} @ ${b.pct}% = ${invoice.currency} ${b.bandDiscount.toFixed(2)} (threshold: ${invoice.currency} ${b.threshold})`
+        ).join("; ");
+
+        issues.push({
+          invoiceId,
+          analysisRunId: run.id,
+          ruleCode: "VOLUME_DISCOUNT_NOT_APPLIED",
+          ruleType: "objective",
+          severity: "error",
+          evaluatorType: "deterministic",
+          issueStatus: "open",
+          routeToRole: "legal_ops",
+          explanationText: `Cumulative fees billed by ${firm?.name ?? "this firm"} in ${year} (excluding this invoice) total ${invoice.currency} ${cumulativeYtd.toFixed(2)}. With this invoice (${invoice.currency} ${invoiceFees.toFixed(2)}), cumulative total reaches ${invoice.currency} ${cumulativeWithInvoice.toFixed(2)}. Under the ${discountMethod} discount method, a total discount of ${invoice.currency} ${expectedDiscount.toFixed(2)} is owed. Bands: ${bandSummary}. No matching discount was found on this invoice.`,
+          evidenceJson: {
+            law_firm: firm?.name,
+            calendar_year: year,
+            cumulative_fees_ytd: cumulativeYtd,
+            invoice_fees: invoiceFees,
+            cumulative_with_invoice: cumulativeWithInvoice,
+            discount_method: discountMethod,
+            applicable_bands: applicableBands,
+            expected_discount: expectedDiscount,
+          },
+          suggestedAction: "Accept | Reject",
+          recoverableAmount: expectedDiscount.toFixed(2),
+          recoveryGroupKey: `volume_discount_${invoice.lawFirmId}_${year}`,
+        });
       }
     }
   }
