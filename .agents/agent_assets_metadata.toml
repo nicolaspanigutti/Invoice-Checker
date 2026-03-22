@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "5tZJozpSf4ebQmROHgXKA"
+uri = "file://demo/Caldwell_Pryce_LLP_INV-2026-0148_Demo.pdf"
+type = "pdf"
+title = "Factura Demo – Caldwell & Pryce LLP (INV-2026-0148)"
