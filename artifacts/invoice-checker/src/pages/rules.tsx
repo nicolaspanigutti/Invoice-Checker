@@ -74,7 +74,7 @@ function RuleRow({
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{rule.description}</p>
         </div>
         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-          {rule.hasConfig && isSuperAdmin && rule.isActive && (
+          {rule.hasConfig && isSuperAdmin && (
             <Button
               variant="ghost"
               size="sm"
