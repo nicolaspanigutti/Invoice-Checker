@@ -11,13 +11,13 @@ title = "Factura Demo – Caldwell & Pryce LLP (INV-2026-0148)"
 id = "gDaL-VdJE6JwgOVDKMTst"
 uri = "file://demo/Caldwell_Pryce_LLP_INV-2026-0148.pdf"
 type = "pdf"
-title = "Factura actualizada – Caldwell & Pryce LLP INV-2026-0148"
+title = "Factura v3 – 27 líneas, EUR 38,747.50"
 
 [[outputs]]
 id = "RZjSURyPE6kITkzTRgxn2"
 uri = "file://demo/Caldwell_Pryce_LLP_INV-2026-0148_Demo_Guide.pdf"
 type = "pdf"
-title = "Guía de errores plantados (para presentador)"
+title = "Guía de errores (presentador)"
 
 [[outputs]]
 id = "8ApSgaQm9ncv7XFl8ksWY"

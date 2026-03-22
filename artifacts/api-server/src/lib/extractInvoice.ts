@@ -87,6 +87,7 @@ const EXTRACTION_PROMPT = `Extract all the following fields from this law firm i
 
 Important rules:
 - Monetary amounts: extract as plain decimal strings (e.g. "12345.67"), no currency symbols, no thousands separators
+- For line item "amount": extract EXACTLY the number printed in the invoice's amount/total column for that row — do NOT compute or verify hours × rate. Arithmetic errors are deliberate and must be preserved as stated.
 - Dates: always YYYY-MM-DD format. If only month/year are present, use the first day
 - If a field is not present or cannot be determined, use null
 - lineItems should contain one entry per billing line. If no line items are found, use an empty array

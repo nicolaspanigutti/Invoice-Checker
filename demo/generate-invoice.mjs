@@ -55,163 +55,187 @@ const INVOICE = {
 //   Associate 2yr    EUR 445/h
 //   Legal Trainee    EUR 275/h
 
-// DELIBERATE BILLING ERRORS introduced:
+// DELIBERATE BILLING ERRORS introduced — one issue per error:
 //
-//  [1] RATE_EXCESS         – H. Ashworth (Partner) billed @ EUR 820 (panel max EUR 720) → +EUR 100/h
-//  [2] RATE_EXCESS         – J. Sinclair (Sr. Associate) billed @ EUR 650 (panel max EUR 580) → +EUR 70/h
-//  [3] MEETING_OVERSTAFFING– 4 timekeepers on same conference call (2026-01-12)
-//  [4] DAILY_HOURS_EXCEEDED– J. Sinclair bills 11.0 h on 2026-01-15 (max 10 h/day)
-//  [5] DUPLICATE_LINE      – E. Montague line repeated identically on 2026-01-16
-//  [6] ARITHMETIC_ERROR    – T. Whitfield: 4.0 h × EUR 275 shown as EUR 1,200 (should be EUR 1,100)
-//  [7] INCONSISTENT_RATE   – H. Ashworth charged EUR 850/h on 2026-01-20 (all other lines EUR 820)
+//  [1] RATE_EXCESS                     – H. Ashworth (Partner): ONE line @ EUR 820 (panel max EUR 720). All other H. Ashworth lines at EUR 720.
+//  [2] RATE_EXCESS                     – J. Sinclair (Sr. Assoc): ONE line @ EUR 650 (panel max EUR 580). All other J. Sinclair lines at EUR 580.
+//  [3] MEETING_OVERSTAFFING            – 4 timekeepers on same conference call (2026-01-12), identical description.
+//  [4] DAILY_HOURS_EXCEEDED            – J. Sinclair bills 11.0 h total on 2026-01-15 (panel max 8 h/day). All at correct rate EUR 580.
+//  [5] DUPLICATE_LINE                  – E. Montague line repeated identically on 2026-01-16 (same date/hours/rate/description).
+//  [6] ARITHMETIC_ERROR                – T. Whitfield: 4.0 h × EUR 275 = EUR 1,100 but line states EUR 1,200.00.
+//  [7] INCONSISTENT_RATE_FOR_SAME_TK   – T. Whitfield billed at EUR 250/h on one line, EUR 275/h on all others (both below max; no RATE_EXCESS).
 
 const LINES = [
-  // --- Week 1: 6–10 Jan ------------------------------------------------
+  // ── Week 1: 6–10 Jan ─────────────────────────────────────────────────────
+
+  // H. Ashworth correct rate
   {
-    date: "06 Jan 2026", tk: "H. Ashworth",    role: "Partner",
-    hours: 2.0, rate: 820.00, amount: 1640.00,  // [1] rate excess
-    desc: "Initial review of project Solaris target information memorandum; call with client M&A team regarding deal structure and timetable.",
+    date: "06 Jan 2026", tk: "H. Ashworth", role: "Partner",
+    hours: 2.0, rate: 720.00, amount: 1440.00,
+    desc: "Detailed review of Solaris Dynamics Ltd information memorandum and financial projections; strategic advice to client on acquisition structure options.",
   },
+  // J. Sinclair correct rate
   {
-    date: "07 Jan 2026", tk: "J. Sinclair",    role: "Senior Associate",
-    hours: 3.5, rate: 650.00, amount: 2275.00,  // [2] rate excess
+    date: "07 Jan 2026", tk: "J. Sinclair", role: "Senior Associate",
+    hours: 3.5, rate: 580.00, amount: 2030.00,
     desc: "Review of Solaris Dynamics Ltd Companies House filings, corporate structure and share register; preparation of due diligence scope note.",
   },
+  // E. Montague correct rate
   {
-    date: "08 Jan 2026", tk: "E. Montague",    role: "Associate 2nd Year",
+    date: "08 Jan 2026", tk: "E. Montague", role: "Associate 2nd Year",
     hours: 4.0, rate: 445.00, amount: 1780.00,
     desc: "Research on sector-specific regulatory approvals; competition law pre-assessment for proposed acquisition under EU Merger Regulation.",
   },
+  // T. Whitfield correct rate
   {
-    date: "09 Jan 2026", tk: "T. Whitfield",   role: "Legal Trainee",
-    hours: 2.5, rate: 275.00, amount:  687.50,
+    date: "09 Jan 2026", tk: "T. Whitfield", role: "Legal Trainee",
+    hours: 2.5, rate: 275.00, amount: 687.50,
     desc: "Preparation of due diligence tracker; collation of target company public documents and initial indexing of disclosure materials.",
   },
+  // [1] RATE_EXCESS – H. Ashworth billed at EUR 820 (max EUR 720); only line at excess rate
   {
-    date: "10 Jan 2026", tk: "H. Ashworth",    role: "Partner",
-    hours: 1.5, rate: 820.00, amount: 1230.00,  // [1] rate excess
-    desc: "Call with client (Head of M&A, CFO) regarding deal timetable and preliminary valuation mechanics; review of SPA heads of terms.",
+    date: "10 Jan 2026", tk: "H. Ashworth", role: "Partner",
+    hours: 2.0, rate: 820.00, amount: 1640.00,                       // ← [1] RATE_EXCESS
+    desc: "Attendance at client board meeting; advice on directors' fiduciary duties and obligations in context of proposed acquisition.",
   },
 
-  // --- Week 2: 12–17 Jan -----------------------------------------------
-  // [3] MEETING_OVERSTAFFING – 4 timekeepers, same call, same day
+  // ── Week 2: 12–17 Jan ────────────────────────────────────────────────────
+
+  // [3] MEETING_OVERSTAFFING – 4 timekeepers, identical call, same date
   {
-    date: "12 Jan 2026", tk: "H. Ashworth",    role: "Partner",
-    hours: 2.0, rate: 820.00, amount: 1640.00,  // [1] rate excess
-    desc: "Conference call with Solaris management team re: acquisition structure, representations and key conditions precedent.",
+    date: "12 Jan 2026", tk: "H. Ashworth", role: "Partner",
+    hours: 2.0, rate: 720.00, amount: 1440.00,
+    desc: "Conference call with Solaris management team re: acquisition structure, key representations and conditions precedent.",
   },
   {
-    date: "12 Jan 2026", tk: "J. Sinclair",    role: "Senior Associate",
-    hours: 2.0, rate: 650.00, amount: 1300.00,  // [2] rate excess
-    desc: "Conference call with Solaris management team re: acquisition structure, representations and key conditions precedent.",
+    date: "12 Jan 2026", tk: "J. Sinclair", role: "Senior Associate",
+    hours: 2.0, rate: 580.00, amount: 1160.00,
+    desc: "Conference call with Solaris management team re: acquisition structure, key representations and conditions precedent.",
   },
   {
-    date: "12 Jan 2026", tk: "E. Montague",    role: "Associate 2nd Year",
-    hours: 2.0, rate: 445.00, amount:  890.00,
-    desc: "Conference call with Solaris management team re: acquisition structure, representations and key conditions precedent.",
+    date: "12 Jan 2026", tk: "E. Montague", role: "Associate 2nd Year",
+    hours: 2.0, rate: 445.00, amount: 890.00,
+    desc: "Conference call with Solaris management team re: acquisition structure, key representations and conditions precedent.",
   },
   {
-    date: "12 Jan 2026", tk: "T. Whitfield",   role: "Legal Trainee",
-    hours: 2.0, rate: 275.00, amount:  550.00,
-    desc: "Conference call with Solaris management team re: acquisition structure, representations and key conditions precedent.",
+    date: "12 Jan 2026", tk: "T. Whitfield", role: "Legal Trainee",
+    hours: 2.0, rate: 275.00, amount: 550.00,
+    desc: "Conference call with Solaris management team re: acquisition structure, key representations and conditions precedent.",
   },
+
+  // J. Sinclair correct rate
   {
-    date: "13 Jan 2026", tk: "J. Sinclair",    role: "Senior Associate",
-    hours: 3.0, rate: 650.00, amount: 1950.00,  // [2] rate excess
-    desc: "First review of draft Share Purchase Agreement received from seller's counsel (Mercer Voss & Partners); mark-up of key commercial provisions.",
+    date: "13 Jan 2026", tk: "J. Sinclair", role: "Senior Associate",
+    hours: 3.0, rate: 580.00, amount: 1740.00,
+    desc: "First review of draft Share Purchase Agreement received from seller's counsel (Mercer Voss and Partners); mark-up of key commercial provisions.",
   },
+  // E. Montague correct rate
   {
-    date: "14 Jan 2026", tk: "E. Montague",    role: "Associate 2nd Year",
+    date: "14 Jan 2026", tk: "E. Montague", role: "Associate 2nd Year",
     hours: 3.5, rate: 445.00, amount: 1557.50,
-    desc: "Preparation of competition clearance filing checklist; review of target's EU and UK market share data for merger control analysis.",
+    desc: "Preparation of competition clearance filing checklist; review of target EU and UK market share data for merger control analysis.",
   },
-  // [4] DAILY_HOURS_EXCEEDED – J. Sinclair 11.0 h on 15 Jan
+
+  // [4] DAILY_HOURS_EXCEEDED – J. Sinclair 11.0 h on 15 Jan at correct rate EUR 580
   {
-    date: "15 Jan 2026", tk: "J. Sinclair",    role: "Senior Associate",
-    hours: 4.0, rate: 650.00, amount: 2600.00,  // [2] rate excess
-    desc: "Review of Solaris Dynamics disclosure bundle (Volumes 1–4); preparation of due diligence issues list – commercial contracts section.",
-  },
-  {
-    date: "15 Jan 2026", tk: "J. Sinclair",    role: "Senior Associate",
-    hours: 4.5, rate: 650.00, amount: 2925.00,  // [2][4] rate excess + daily hours
-    desc: "Analysis of MAC clauses, material adverse change definition and closing conditions precedent; drafting negotiation note for client.",
+    date: "15 Jan 2026", tk: "J. Sinclair", role: "Senior Associate",
+    hours: 4.0, rate: 580.00, amount: 2320.00,
+    desc: "Review of Solaris Dynamics disclosure bundle (Volumes 1-4); preparation of due diligence issues list for commercial contracts section.",
   },
   {
-    date: "15 Jan 2026", tk: "J. Sinclair",    role: "Senior Associate",
-    hours: 2.5, rate: 650.00, amount: 1625.00,  // [2][4] rate excess + daily hours
+    date: "15 Jan 2026", tk: "J. Sinclair", role: "Senior Associate",
+    hours: 4.5, rate: 580.00, amount: 2610.00,
+    desc: "Analysis of MAC clauses, material adverse change definitions and closing conditions precedent; drafting negotiation note for client.",
+  },
+  {
+    date: "15 Jan 2026", tk: "J. Sinclair", role: "Senior Associate",
+    hours: 2.5, rate: 580.00, amount: 1450.00,                        // ← [4] completes 11.0 h total on 15 Jan
     desc: "Drafting first draft representations and warranties schedule; cross-referencing with disclosure letter template.",
   },
-  // [5] DUPLICATE_LINE – identical entries on 16 Jan
+
+  // [5] DUPLICATE_LINE – E. Montague, two identical entries on 16 Jan
   {
-    date: "16 Jan 2026", tk: "E. Montague",    role: "Associate 2nd Year",
+    date: "16 Jan 2026", tk: "E. Montague", role: "Associate 2nd Year",
     hours: 3.5, rate: 445.00, amount: 1557.50,
-    desc: "Review of competition clearance requirements and regulatory filings; drafting CMA pre-notification submission outline.",
+    desc: "Review of competition clearance requirements and regulatory filings; preparation of CMA pre-notification submission outline.",
   },
   {
-    date: "16 Jan 2026", tk: "E. Montague",    role: "Associate 2nd Year",
-    hours: 3.5, rate: 445.00, amount: 1557.50,  // [5] duplicate
-    desc: "Review of competition clearance requirements and regulatory filings; drafting CMA pre-notification submission outline.",
-  },
-  {
-    date: "17 Jan 2026", tk: "T. Whitfield",   role: "Legal Trainee",
-    hours: 3.0, rate: 275.00, amount:  825.00,
-    desc: "Updating due diligence tracker with findings from weeks 1–2; preparation of outstanding document request list for data room.",
+    date: "16 Jan 2026", tk: "E. Montague", role: "Associate 2nd Year",
+    hours: 3.5, rate: 445.00, amount: 1557.50,                        // ← [5] DUPLICATE_LINE
+    desc: "Review of competition clearance requirements and regulatory filings; preparation of CMA pre-notification submission outline.",
   },
 
-  // --- Week 3: 20–24 Jan -----------------------------------------------
-  // [7] INCONSISTENT_RATE – H. Ashworth at EUR 850 (all other lines EUR 820)
+  // [7] INCONSISTENT_RATE – T. Whitfield billed at EUR 250 (all other T. Whitfield lines EUR 275)
   {
-    date: "20 Jan 2026", tk: "H. Ashworth",    role: "Partner",
-    hours: 1.5, rate: 850.00, amount: 1275.00,  // [1][7] rate excess + inconsistent rate
-    desc: "Review and approval of SPA negotiation strategy memo; call with client General Counsel on key risk areas and deal protections.",
+    date: "17 Jan 2026", tk: "T. Whitfield", role: "Legal Trainee",
+    hours: 3.0, rate: 250.00, amount: 750.00,                         // ← [7] INCONSISTENT_RATE (EUR 250 vs EUR 275 elsewhere)
+    desc: "Updating due diligence tracker with findings from weeks 1-2; preparation of outstanding document request list for data room.",
   },
+
+  // ── Week 3: 20–24 Jan ────────────────────────────────────────────────────
+
+  // H. Ashworth correct rate
   {
-    date: "21 Jan 2026", tk: "J. Sinclair",    role: "Senior Associate",
-    hours: 4.0, rate: 650.00, amount: 2600.00,  // [2] rate excess
-    desc: "Negotiation of SPA representations and warranties with counterpart (Mercer Voss); preparation of negotiation call agenda.",
+    date: "20 Jan 2026", tk: "H. Ashworth", role: "Partner",
+    hours: 1.5, rate: 720.00, amount: 1080.00,
+    desc: "Review of SPA negotiation strategy memorandum; advice to client General Counsel on key risk areas and recommended deal protections.",
   },
+  // [2] RATE_EXCESS – J. Sinclair billed at EUR 650 (max EUR 580); only line at excess rate
   {
-    date: "22 Jan 2026", tk: "E. Montague",    role: "Associate 2nd Year",
+    date: "21 Jan 2026", tk: "J. Sinclair", role: "Senior Associate",
+    hours: 4.0, rate: 650.00, amount: 2600.00,                        // ← [2] RATE_EXCESS
+    desc: "Negotiation of SPA representations and warranties with counterpart; attendance at all-parties negotiation meeting at Mercer Voss offices.",
+  },
+  // E. Montague correct rate
+  {
+    date: "22 Jan 2026", tk: "E. Montague", role: "Associate 2nd Year",
     hours: 2.5, rate: 445.00, amount: 1112.50,
-    desc: "Preparation of Phase 1 CMA filing draft; review of Solaris market position analysis and preparation of competitive effects assessment.",
+    desc: "Preparation of Phase 1 CMA filing draft; review of Solaris market position analysis and competitive effects assessment.",
   },
-  // [6] ARITHMETIC_ERROR – 4.0h × 275 = EUR 1,100 but billed as EUR 1,200
+  // [6] ARITHMETIC_ERROR – T. Whitfield 4.0 h × EUR 275 = EUR 1,100 but stated as EUR 1,200.00
   {
-    date: "23 Jan 2026", tk: "T. Whitfield",   role: "Legal Trainee",
-    hours: 4.0, rate: 275.00, amount: 1200.00,  // [6] arithmetic error (should be 1,100)
+    date: "23 Jan 2026", tk: "T. Whitfield", role: "Legal Trainee",
+    hours: 4.0, rate: 275.00, amount: 1200.00,                        // ← [6] ARITHMETIC_ERROR (correct: EUR 1,100.00)
     desc: "Research on target company pension liabilities; review of Solaris employee benefits documentation and preparation of benefits summary.",
   },
+  // H. Ashworth correct rate
   {
-    date: "24 Jan 2026", tk: "H. Ashworth",    role: "Partner",
-    hours: 2.5, rate: 820.00, amount: 2050.00,  // [1] rate excess
-    desc: "Client update call; preparation of risk matrix and deal timetable; review of revised SPA draft received from seller's counsel.",
+    date: "24 Jan 2026", tk: "H. Ashworth", role: "Partner",
+    hours: 2.5, rate: 720.00, amount: 1800.00,
+    desc: "Client progress update on due diligence findings; advice on transaction risk matrix and revised deal timetable.",
   },
 
-  // --- Week 4: 27–31 Jan -----------------------------------------------
+  // ── Week 4: 27–31 Jan ────────────────────────────────────────────────────
+
+  // J. Sinclair correct rate
   {
-    date: "27 Jan 2026", tk: "J. Sinclair",    role: "Senior Associate",
-    hours: 3.5, rate: 650.00, amount: 2275.00,  // [2] rate excess
+    date: "27 Jan 2026", tk: "J. Sinclair", role: "Senior Associate",
+    hours: 3.5, rate: 580.00, amount: 2030.00,
     desc: "Mark-up of revised SPA; drafting client negotiation note on indemnities, limitations of liability and W&I insurance provisions.",
   },
+  // E. Montague correct rate
   {
-    date: "28 Jan 2026", tk: "E. Montague",    role: "Associate 2nd Year",
+    date: "28 Jan 2026", tk: "E. Montague", role: "Associate 2nd Year",
     hours: 3.0, rate: 445.00, amount: 1335.00,
     desc: "Finalisation of CMA pre-notification submission; review of supporting economic evidence and preparation of filing timetable.",
   },
+  // H. Ashworth correct rate
   {
-    date: "29 Jan 2026", tk: "H. Ashworth",    role: "Partner",
-    hours: 1.0, rate: 820.00, amount:  820.00,  // [1] rate excess
-    desc: "Review and sign-off of CMA filing; call with client on final deal timetable and remaining open SPA points.",
+    date: "29 Jan 2026", tk: "H. Ashworth", role: "Partner",
+    hours: 1.0, rate: 720.00, amount: 720.00,
+    desc: "Participation in final SPA negotiation session; advice to client on closing conditions, escrow mechanics and signing logistics.",
   },
+  // T. Whitfield correct rate
   {
-    date: "30 Jan 2026", tk: "T. Whitfield",   role: "Legal Trainee",
-    hours: 2.0, rate: 275.00, amount:  550.00,
+    date: "30 Jan 2026", tk: "T. Whitfield", role: "Legal Trainee",
+    hours: 2.0, rate: 275.00, amount: 550.00,
     desc: "Preparation of signing checklist and conditions precedent tracker; collation of corporate authorisation documents.",
   },
+  // J. Sinclair correct rate
   {
-    date: "31 Jan 2026", tk: "J. Sinclair",    role: "Senior Associate",
-    hours: 2.0, rate: 650.00, amount: 1300.00,  // [2] rate excess
-    desc: "Review of final agreed SPA; preparation of execution copy and closing memorandum; updating matter file for handover.",
+    date: "31 Jan 2026", tk: "J. Sinclair", role: "Senior Associate",
+    hours: 2.0, rate: 580.00, amount: 1160.00,
+    desc: "Review of final agreed SPA; preparation of execution copy and closing memorandum; completion of matter file for handover.",
   },
 
 ];
@@ -515,7 +539,7 @@ function buildGuide() {
 
   guide.fontSize(8).font("Helvetica").fillColor(DARK)
        .text(
-         "The invoice file (Caldwell_Pryce_LLP_INV-2026-0148.pdf) contains 7 deliberate billing errors across its 29 line items. " +
+         "The invoice file (Caldwell_Pryce_LLP_INV-2026-0148.pdf) contains 7 deliberate billing errors across its 27 line items. " +
          "Upload that file to Invoice Checker and run the analysis — the tool should independently detect each of the issues listed below.",
          50, 66, { width: GW }
        );
@@ -524,44 +548,44 @@ function buildGuide() {
     {
       rule:  "RATE_EXCESS",
       sev:   "Error",
-      desc:  "H. Ashworth (Partner) billed at EUR 820/h on multiple dates. Panel agreed max = EUR 720/h. Overcharge = EUR 100/h.",
-      lines: "Affected lines: 06 Jan, 10 Jan, 12 Jan, 24 Jan, 29 Jan",
+      desc:  "H. Ashworth (Partner) billed at EUR 820/h on line 5 (10 Jan 2026). Panel agreed max = EUR 720/h. Overcharge = EUR 100/h x 2.0 h = EUR 200. All other H. Ashworth lines correctly bill at EUR 720.",
+      lines: "Affected line: H. Ashworth, 10 Jan 2026 only",
     },
     {
       rule:  "RATE_EXCESS",
       sev:   "Error",
-      desc:  "J. Sinclair (Senior Associate) billed at EUR 650/h throughout the invoice. Panel agreed max = EUR 580/h. Overcharge = EUR 70/h.",
-      lines: "Affected lines: 07 Jan, 12 Jan, 13 Jan, 15 Jan (×3), 21 Jan, 27 Jan, 31 Jan",
+      desc:  "J. Sinclair (Senior Associate) billed at EUR 650/h on line 19 (21 Jan 2026). Panel agreed max = EUR 580/h. Overcharge = EUR 70/h x 4.0 h = EUR 280. All other J. Sinclair lines correctly bill at EUR 580.",
+      lines: "Affected line: J. Sinclair, 21 Jan 2026 only",
     },
     {
       rule:  "MEETING_OVERSTAFFING",
       sev:   "Warning",
-      desc:  "On 12 Jan 2026, four timekeepers (Partner, Senior Associate, Associate, Legal Trainee) each billed 2.0 h for an identically described conference call. Panel policy threshold = 3 attendees.",
-      lines: "Affected lines: all four 12 Jan 2026 entries",
+      desc:  "On 12 Jan 2026, four timekeepers (Partner, Senior Associate, Associate 2nd Year, Legal Trainee) each billed 2.0 h for an identically described conference call. Panel policy threshold = 3 attendees.",
+      lines: "Affected lines: all four 12 Jan 2026 entries (lines 6-9)",
     },
     {
       rule:  "DAILY_HOURS_EXCEEDED",
       sev:   "Error",
-      desc:  "J. Sinclair billed 4.0 + 4.5 + 2.5 = 11.0 hours on 15 January 2026 in three separate entries. Panel max = 8 hours per timekeeper per day.",
-      lines: "Affected lines: the three J. Sinclair entries on 15 Jan 2026",
+      desc:  "J. Sinclair billed 4.0 + 4.5 + 2.5 = 11.0 hours on 15 January 2026 across three separate entries. Panel max = 8 hours per timekeeper per day. Excess: 3.0 h at EUR 580 = EUR 1,740.",
+      lines: "Affected lines: the three J. Sinclair entries on 15 Jan 2026 (lines 12-14)",
     },
     {
       rule:  "DUPLICATE_LINE",
       sev:   "Error",
-      desc:  "E. Montague has two line items on 16 Jan 2026 with identical hours (3.5 h), rate (EUR 445/h), amount (EUR 1,557.50) and description. One is a duplicated charge.",
-      lines: "Affected lines: rows 15 and 16 (both dated 16 Jan 2026, E. Montague)",
+      desc:  "E. Montague has two identical line items on 16 Jan 2026: same date, same hours (3.5 h), same rate (EUR 445/h), same amount (EUR 1,557.50) and identical description. One is a duplicated charge.",
+      lines: "Affected lines: the two E. Montague entries on 16 Jan 2026 (lines 15 and 16)",
     },
     {
       rule:  "ARITHMETIC_ERROR",
       sev:   "Error",
-      desc:  "T. Whitfield on 23 Jan 2026: 4.0 hours × EUR 275/h should equal EUR 1,100.00. The invoice states EUR 1,200.00. Overcharge = EUR 100.00.",
-      lines: "Affected line: T. Whitfield, 23 Jan 2026",
+      desc:  "T. Whitfield on 23 Jan 2026: 4.0 hours x EUR 275/h should equal EUR 1,100.00. The invoice states EUR 1,200.00. Overcharge = EUR 100.00.",
+      lines: "Affected line: T. Whitfield, 23 Jan 2026 (line 21)",
     },
     {
       rule:  "INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER",
       sev:   "Error",
-      desc:  "H. Ashworth is charged at EUR 820/h on all lines except 20 Jan 2026, where the stated rate is EUR 850/h. Same timekeeper, same role, different rate within one invoice.",
-      lines: "Affected line: H. Ashworth, 20 Jan 2026",
+      desc:  "T. Whitfield (Legal Trainee) is billed at EUR 250/h on 17 Jan 2026, but EUR 275/h on all other dates. Same timekeeper, same role, different rate within one invoice. Panel max = EUR 275/h (both rates are at or below max, so no rate excess — but the inconsistency is suspicious).",
+      lines: "Affected lines: T. Whitfield 17 Jan (EUR 250) vs all other T. Whitfield lines (EUR 275)",
     },
   ];
 
@@ -606,11 +630,12 @@ function buildGuide() {
   gStream.on("finish", () => {
     console.log(`✅  Guide PDF:    ${OUT_GUIDE}`);
     console.log(`\n   7 errors embedded across ${LINES.length} lines · Total: ${fmtMoney(TOTAL)}`);
-    console.log(`   [1] RATE_EXCESS (×2)             – H. Ashworth EUR 820-850 (max EUR 720); J. Sinclair EUR 650 (max EUR 580)`);
-    console.log(`   [3] MEETING_OVERSTAFFING          – 4 timekeepers on same call (12 Jan)`);
-    console.log(`   [4] DAILY_HOURS_EXCEEDED          – J. Sinclair 11.0 h on 15 Jan`);
-    console.log(`   [5] DUPLICATE_LINE                – E. Montague repeated (16 Jan)`);
-    console.log(`   [6] ARITHMETIC_ERROR              – T. Whitfield 4×275 shown as 1,200`);
-    console.log(`   [7] INCONSISTENT_RATE             – H. Ashworth EUR 820 vs EUR 850 (20 Jan)\n`);
+    console.log(`   [1] RATE_EXCESS               – H. Ashworth 10 Jan only: EUR 820/h (max EUR 720) → +EUR 200`);
+    console.log(`   [2] RATE_EXCESS               – J. Sinclair 21 Jan only: EUR 650/h (max EUR 580) → +EUR 280`);
+    console.log(`   [3] MEETING_OVERSTAFFING      – 4 timekeepers on same call (12 Jan)`);
+    console.log(`   [4] DAILY_HOURS_EXCEEDED      – J. Sinclair 11.0 h on 15 Jan (max 8 h/day)`);
+    console.log(`   [5] DUPLICATE_LINE            – E. Montague repeated (16 Jan) → EUR 1,557.50`);
+    console.log(`   [6] ARITHMETIC_ERROR          – T. Whitfield 23 Jan: 4×275 stated as EUR 1,200 (correct: EUR 1,100)`);
+    console.log(`   [7] INCONSISTENT_RATE         – T. Whitfield: EUR 250/h on 17 Jan vs EUR 275/h all other lines\n`);
   });
 }
