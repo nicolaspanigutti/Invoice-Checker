@@ -21,14 +21,14 @@ const RULE_TYPE_LABELS: Record<string, string> = {
   objective: "Objective",
   gray: "Grey Area",
   configurable: "Configurable",
-  metadata: "Metadata",
+  warning: "Warning",
 };
 
 const RULE_TYPE_COLORS: Record<string, string> = {
   objective: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
   gray: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
   configurable: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-  metadata: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300",
+  warning: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300",
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
