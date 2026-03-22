@@ -437,7 +437,8 @@ export default function InvoiceDetail() {
   const canRunAnalysis = completeness?.canRunAnalysis ?? false;
   const blockingIssues = completeness?.blockingIssues ?? [];
 
-  const showIssuesPanel = analysisRan || (invoice.invoiceStatus !== "extracting_data" && invoice.invoiceStatus !== "in_review");
+  const serverHasIssues = (issues ?? []).length > 0;
+  const showIssuesPanel = analysisRan || serverHasIssues || (invoice.invoiceStatus !== "extracting_data" && invoice.invoiceStatus !== "in_review");
 
   const flaggedItemIds = new Set<number>(
     (issues ?? []).map(iss => iss.invoiceItemId).filter((itemId): itemId is number => itemId != null)

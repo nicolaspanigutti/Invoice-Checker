@@ -268,6 +268,34 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     }
   }
 
+  if (invoice.billingType !== "fixed_scope" && invoice.billingType !== "closed_scope") {
+    const hasEL = docs.some(d => d.documentKind === "engagement_letter");
+    const hasBudget = docs.some(d => d.documentKind === "budget_estimate");
+    const hasRateCard = firm?.firmType === "panel" && panelRates.length > 0;
+    const hasAnySource = hasEL || hasBudget || hasRateCard;
+    if (!hasAnySource) {
+      issues.push({
+        invoiceId,
+        analysisRunId: run.id,
+        ruleCode: "REQUIRED_SOURCE_MISSING",
+        ruleType: "objective",
+        severity: "error",
+        evaluatorType: "deterministic",
+        issueStatus: "open",
+        routeToRole: "legal_ops",
+        explanationText: `No source document (Engagement Letter, Budget Estimate, or active Panel Rate Card) has been linked to this invoice. Without at least one source document, it is not possible to verify rates, scope compliance, or billing terms. Please upload the relevant document(s) before analysis can be completed reliably.`,
+        evidenceJson: {
+          billing_type: invoice.billingType,
+          has_engagement_letter: hasEL,
+          has_budget_estimate: hasBudget,
+          has_panel_rate_card: hasRateCard,
+          documents_present: docs.map(d => d.documentKind),
+        },
+        suggestedAction: "Upload Engagement Letter, Budget Estimate, or confirm Panel Rate Card is active",
+      });
+    }
+  }
+
   const taxAmount = n(invoice.taxAmount);
   const subtotal = n(invoice.subtotalAmount);
   const total = n(invoice.totalAmount);
@@ -625,16 +653,33 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     if (seenMissingCombinations.has(combKey)) continue;
 
     if (firm?.firmType === "panel" && invoice.jurisdiction) {
-      const matchingRates = panelRates.filter(pr =>
+      const invoiceDateMs = invoice.invoiceDate ? new Date(invoice.invoiceDate).getTime() : null;
+      const allMatchingRates = panelRates.filter(pr =>
         pr.r.lawFirmName === firm.name
         && pr.r.jurisdiction === invoice.jurisdiction
         && pr.r.roleCode === item.roleNormalizedComputed
         && pr.r.currency === invoice.currency
       );
 
-      if (matchingRates.length === 0) {
+      const validMatchingRates = invoiceDateMs
+        ? allMatchingRates.filter(pr => {
+            const from = pr.r.validFrom ? new Date(pr.r.validFrom).getTime() : 0;
+            const to = pr.r.validTo ? new Date(pr.r.validTo).getTime() : Infinity;
+            return from <= invoiceDateMs && invoiceDateMs <= to;
+          })
+        : allMatchingRates;
+
+      if (allMatchingRates.length === 0 || validMatchingRates.length === 0) {
         seenMissingCombinations.add(combKey);
         const affectedLines = items.filter(i => i.roleNormalizedComputed === item.roleNormalizedComputed).map(i => i.lineNo);
+        const latestValidTo = allMatchingRates.length > 0
+          ? allMatchingRates
+              .map(pr => pr.r.validTo)
+              .filter((d): d is string => d !== null)
+              .sort()
+              .reverse()[0] ?? null
+          : null;
+        const reason = allMatchingRates.length === 0 ? "missing" : "expired";
         issues.push({
           invoiceId,
           analysisRunId: run.id,
@@ -644,13 +689,14 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
           evaluatorType: "deterministic",
           issueStatus: "open",
           routeToRole: "legal_ops",
-          explanationText: `No active rate entry was found for ${firm.name} in jurisdiction ${invoice.jurisdiction} for role ${item.roleNormalizedComputed} as at ${invoice.invoiceDate ?? "invoice date"}. Either the rate card does not cover this combination or the applicable version has expired. Analysis cannot proceed reliably for ${affectedLines.length} line(s) affected by this gap.`,
+          explanationText: `Rate card ${reason} for ${firm.name} in jurisdiction ${invoice.jurisdiction} for role ${item.roleNormalizedComputed} as at ${invoice.invoiceDate ?? "invoice date"}. ${reason === "expired" ? `The rate card expired on ${latestValidTo}.` : "No rate entry covers this firm/jurisdiction/role/currency combination."} Analysis cannot proceed reliably for ${affectedLines.length} line(s) affected by this gap.`,
           evidenceJson: {
             law_firm: firm.name,
             jurisdiction: invoice.jurisdiction,
             role_normalized: item.roleNormalizedComputed,
             invoice_date: invoice.invoiceDate,
-            latest_valid_to_in_system: null,
+            reason,
+            latest_valid_to_in_system: latestValidTo,
             affected_line_nos: affectedLines,
           },
           suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
@@ -1235,6 +1281,6 @@ Return valid JSON only. No markdown, no explanation.`;
     return greyIssues;
   } catch (err) {
     console.error("Grey rules AI call failed:", err);
-    return [];
+    throw new Error(`Grey rule AI evaluation failed: ${String(err)}`);
   }
 }
