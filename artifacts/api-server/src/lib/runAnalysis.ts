@@ -96,28 +96,8 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
   const inputHash = createHash("sha256").update(inputHashSource).digest("hex");
 
   const prevRuns = await db.select({ id: analysisRunsTable.id }).from(analysisRunsTable).where(eq(analysisRunsTable.invoiceId, invoiceId));
+  const prevRunIds = prevRuns.map(r => r.id);
   const versionNo = prevRuns.length + 1;
-
-  const completeness = await checkCompleteness(invoiceId);
-  if (!completeness.canRunAnalysis) {
-    return {
-      analysisRunId: -1,
-      issueCount: 0,
-      outcome: null,
-      amountAtRisk: null,
-      status: "gate_failed",
-    };
-  }
-
-  if (prevRuns.length > 0) {
-    const prevRunIds = prevRuns.map(r => r.id);
-    await db.update(analysisRunsTable)
-      .set({ status: "obsolete" })
-      .where(eq(analysisRunsTable.invoiceId, invoiceId));
-    await db.update(issuesTable)
-      .set({ issueStatus: "no_longer_applicable" })
-      .where(inArray(issuesTable.analysisRunId, prevRunIds));
-  }
 
   const [run] = await db.insert(analysisRunsTable).values({
     invoiceId,
@@ -130,6 +110,28 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
     extractionPromptVersion: EXTRACTION_PROMPT_VERSION,
     heuristicPromptVersion: HEURISTIC_PROMPT_VERSION,
   }).returning();
+
+  const completeness = await checkCompleteness(invoiceId);
+  if (!completeness.canRunAnalysis) {
+    await db.update(analysisRunsTable).set({
+      status: "failed",
+      finishedAt: new Date(),
+      summaryJson: { reason: "gate_failed", blockingIssues: completeness.blockingIssues },
+    }).where(eq(analysisRunsTable.id, run.id));
+    return {
+      analysisRunId: run.id,
+      issueCount: 0,
+      outcome: null,
+      amountAtRisk: null,
+      status: "gate_failed",
+    };
+  }
+
+  if (prevRunIds.length > 0) {
+    await db.update(analysisRunsTable)
+      .set({ status: "obsolete" })
+      .where(inArray(analysisRunsTable.id, prevRunIds));
+  }
 
   try {
   const issues: IssueInsert[] = [];
@@ -907,6 +909,22 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
   }
 
   issues.push(...greyIssues);
+
+  if (prevRunIds.length > 0) {
+    const newRuleCodes = new Set(issues.map(iss => iss.ruleCode));
+    const oldIssues = await db
+      .select({ id: issuesTable.id, ruleCode: issuesTable.ruleCode })
+      .from(issuesTable)
+      .where(inArray(issuesTable.analysisRunId, prevRunIds));
+    const staleIssueIds = oldIssues
+      .filter(iss => !newRuleCodes.has(iss.ruleCode))
+      .map(iss => iss.id);
+    if (staleIssueIds.length > 0) {
+      await db.update(issuesTable)
+        .set({ issueStatus: "no_longer_applicable" })
+        .where(inArray(issuesTable.id, staleIssueIds));
+    }
+  }
 
   if (issues.length > 0) {
     for (const issue of issues) {

@@ -188,3 +188,73 @@ export function detectRateExcess(
   const tolerance = approved * tolerancePct;
   return charged > approved + tolerance;
 }
+
+export interface BillingPeriodIssue {
+  id: number;
+  workDate: string;
+  elStartDate: string;
+  elEndDate: string;
+}
+
+export function detectBillingOutsideElPeriod(
+  items: LineItem[],
+  elStartDate: string | null,
+  elEndDate: string | null
+): BillingPeriodIssue[] {
+  if (!elStartDate && !elEndDate) return [];
+  const issues: BillingPeriodIssue[] = [];
+  for (const item of items) {
+    if (!item.workDate) continue;
+    const d = item.workDate;
+    if (elStartDate && d < elStartDate) {
+      issues.push({ id: item.id, workDate: d, elStartDate, elEndDate: elEndDate ?? "" });
+    } else if (elEndDate && d > elEndDate) {
+      issues.push({ id: item.id, workDate: d, elStartDate: elStartDate ?? "", elEndDate });
+    }
+  }
+  return issues;
+}
+
+export function detectLineItemsInFixedScope(
+  billingType: string | null,
+  items: LineItem[]
+): boolean {
+  if (billingType !== "fixed_scope" && billingType !== "closed_scope") return false;
+  return items.some(item => !item.isExpenseLine && (parseAmount(item.hours) > 0 || parseAmount(item.rateCharged) > 0));
+}
+
+export function detectMissingDocumentsFixedScope(
+  billingType: string | null,
+  hasEngagementLetter: boolean
+): boolean {
+  if (billingType !== "fixed_scope" && billingType !== "closed_scope") return false;
+  return !hasEngagementLetter;
+}
+
+export function detectUnauthorizedExpense(
+  items: LineItem[],
+  authorizedExpenseTypes: string[]
+): { id: number; expenseType: string }[] {
+  const authorized = new Set(authorizedExpenseTypes.map(t => t.toLowerCase().trim()));
+  const issues: { id: number; expenseType: string }[] = [];
+  for (const item of items) {
+    if (!item.isExpenseLine || !item.expenseType) continue;
+    const norm = item.expenseType.toLowerCase().trim();
+    if (!authorized.has(norm)) {
+      issues.push({ id: item.id, expenseType: item.expenseType });
+    }
+  }
+  return issues;
+}
+
+export function detectMissingLineDetail(items: LineItem[]): boolean {
+  if (items.length === 0) return false;
+  return !items.some(i => i.workDate !== null || i.hours !== null || i.rateCharged !== null);
+}
+
+export function detectJurisdictionUnclear(
+  invoiceJurisdiction: string | null,
+  firmJurisdictions: string[]
+): boolean {
+  return !invoiceJurisdiction && firmJurisdictions.length > 1;
+}

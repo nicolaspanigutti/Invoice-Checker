@@ -598,12 +598,24 @@ router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), asyn
   try {
     const result = await runAnalysis(id, actorId, reason);
     if (result.status === "gate_failed") {
+      await db.update(invoicesTable)
+        .set({ invoiceStatus: oldStatus })
+        .where(eq(invoicesTable.id, id));
+      await db.insert(auditEventsTable).values({
+        entityType: "invoice",
+        entityId: id,
+        eventType: "state_change",
+        actorId,
+        beforeJson: { status: "extracting_data" },
+        afterJson: { status: oldStatus },
+        reason: "Completeness gate failed — invoice status restored",
+      });
       await db.insert(auditEventsTable).values({
         entityType: "invoice",
         entityId: id,
         eventType: "analysis_failed",
         actorId,
-        afterJson: { reason: "gate_failed" },
+        afterJson: { reason: "gate_failed", analysisRunId: result.analysisRunId },
         reason: "Completeness gate failed",
       });
       res.status(422).json({
