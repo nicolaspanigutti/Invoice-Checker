@@ -293,7 +293,7 @@ export default function InvoiceReportPage() {
                   <p className="font-semibold">{report.reviewOutcome ? (OUTCOME_LABELS[report.reviewOutcome] ?? report.reviewOutcome) : "In Progress"}</p>
                 </div>
                 <div className="border border-amber-200 bg-amber-50 rounded-xl px-4 py-3">
-                  <p className="text-xs font-medium text-amber-700 uppercase tracking-wider mb-1">Amount at Risk</p>
+                  <p className="text-xs font-medium text-amber-700 uppercase tracking-wider mb-1">Pending Decision</p>
                   <p className="font-semibold text-amber-800">{fmt(report.amountAtRisk, report.currency)}</p>
                 </div>
                 <div className="border border-red-200 bg-red-50 rounded-xl px-4 py-3">
