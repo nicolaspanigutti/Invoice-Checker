@@ -18,3 +18,9 @@ id = "RZjSURyPE6kITkzTRgxn2"
 uri = "file://demo/Caldwell_Pryce_LLP_INV-2026-0148_Demo_Guide.pdf"
 type = "pdf"
 title = "Guía del presentador – errores esperados"
+
+[[outputs]]
+id = "8ApSgaQm9ncv7XFl8ksWY"
+uri = "file://demo/Caldwell_Pryce_LLP_Engagement_Letter_ACQ2026.pdf"
+type = "pdf"
+title = "Carta de Encargo – Caldwell & Pryce LLP / Acme Industrial Group plc"
