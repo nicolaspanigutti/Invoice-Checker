@@ -15,8 +15,9 @@ import {
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { createHash } from "crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
-import { normaliseRole, isUnauthorizedRole, KNOWN_ROLE_CODES } from "./roleNormaliser";
+import { normaliseRole, isUnauthorizedRole } from "./roleNormaliser";
 import { checkCompleteness } from "./completenessGate";
+import { evaluateDeterministicRules, type EvalContext } from "./evaluateDeterministicRules";
 
 const HEURISTIC_PROMPT_VERSION = "v1.0";
 const EXTRACTION_PROMPT_VERSION = "v1.0";
@@ -134,8 +135,6 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
   }
 
   try {
-  const issues: IssueInsert[] = [];
-
   const items: (InvoiceItem & { roleNormalizedComputed: string | null; isUnauthorized: boolean })[] = rawItems.map(item => ({
     ...item,
     roleNormalizedComputed: normaliseRole(item.roleRaw),
@@ -150,752 +149,76 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
     }
   }
 
-  const hasLineDetail = items.some(i => i.workDate !== null || i.hours !== null || i.rateCharged !== null);
-  const hasAllDates = items.every(i => i.workDate !== null);
-  const hasAllHours = items.every(i => i.hours !== null);
-  const hasAllRates = items.every(i => i.isExpenseLine || i.rateCharged !== null);
-
-  if (!hasLineDetail && items.length > 0 && isRuleActive("MISSING_LINE_DETAIL")) {
-    issues.push({
-      invoiceId,
-      analysisRunId: run.id,
-      ruleCode: "MISSING_LINE_DETAIL",
-      ruleType: "warning",
-      severity: "warning",
-      evaluatorType: "deterministic",
-      issueStatus: "open",
-      routeToRole: "legal_ops",
-      explanationText: `This invoice does not contain a per-line breakdown with individual dates, hours, and rates per timekeeper. Only summary-level information is available. The following rules cannot be evaluated at line level and will be skipped or applied at summary level only: RATE_EXCESS, DUPLICATE_LINE, ARITHMETIC_ERROR, DAILY_HOURS_EXCEEDED, PARALLEL_BILLING, HOURS_DISPROPORTIONATE.`,
-      evidenceJson: {
-        line_item_count: items.length,
-        has_dates: hasAllDates,
-        has_hours: hasAllHours,
-        has_rates: hasAllRates,
-        summary_only: true,
-      },
-      suggestedAction: "Request detailed timesheet from law firm",
-    });
-  }
-
-  const firmHasMultipleJurisdictions = (firm?.jurisdictionsJson as string[] | null ?? []).length > 1;
-  if (!invoice.jurisdiction && firmHasMultipleJurisdictions && isRuleActive("JURISDICTION_UNCLEAR")) {
-    issues.push({
-      invoiceId,
-      analysisRunId: run.id,
-      ruleCode: "JURISDICTION_UNCLEAR",
-      ruleType: "warning",
-      severity: "warning",
-      evaluatorType: "deterministic",
-      issueStatus: "open",
-      routeToRole: "legal_ops",
-      explanationText: `The jurisdiction or applicable law for this invoice could not be determined from the invoice or supporting documents. This information is required to correctly apply the rate schedule (${firm?.name ?? "this firm"} has rates varying by jurisdiction). Rules that may be affected: RATE_EXCESS, RATE_CARD_EXPIRED_OR_MISSING.`,
-      evidenceJson: {
-        jurisdiction_extracted: invoice.jurisdiction,
-        applicable_law_extracted: invoice.applicableLaw,
-        affected_rules: ["RATE_EXCESS", "RATE_CARD_EXPIRED_OR_MISSING"],
-      },
-      suggestedAction: "Complete jurisdiction field manually and re-run",
-    });
-  }
-
-  const agreedCurrency = (getTerm(firmTerms, "agreed_currency") as string | null)
-    ?? (elData?.currency as string | null);
-  if (agreedCurrency && invoice.currency && agreedCurrency.toUpperCase() !== invoice.currency.toUpperCase() && isRuleActive("WRONG_CURRENCY")) {
-    const sourceDoc = elData ? "Engagement Letter" : "Panel T&C";
-    issues.push({
-      invoiceId,
-      analysisRunId: run.id,
-      ruleCode: "WRONG_CURRENCY",
-      ruleType: "objective",
-      severity: "error",
-      evaluatorType: "deterministic",
-      issueStatus: "open",
-      routeToRole: "legal_ops",
-      explanationText: `The invoice is denominated in ${invoice.currency}, but the agreed billing currency for ${firm?.name ?? "this firm"} under ${sourceDoc} is ${agreedCurrency}. This discrepancy must be resolved before payment can be approved.`,
-      evidenceJson: {
-        invoice_currency: invoice.currency,
-        agreed_currency: agreedCurrency,
-        source_document: sourceDoc,
-        law_firm: firm?.name,
-      },
-      suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-    });
-  }
-
-  if (invoice.billingType === "fixed_scope" || invoice.billingType === "closed_scope") {
-    const hasEL = docs.some(d => d.documentKind === "engagement_letter");
-    if (!hasEL && isRuleActive("MISSING_DOCUMENTS_FIXED_SCOPE")) {
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        ruleCode: "MISSING_DOCUMENTS_FIXED_SCOPE",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `This invoice is billed as Fixed / Closed Scope but no Engagement Letter has been uploaded. An Engagement Letter specifying the agreed fixed fee is mandatory before this invoice can be analysed or approved.`,
-        evidenceJson: {
-          billing_type: invoice.billingType,
-          invoice_documents_present: docs.map(d => d.documentKind),
-        },
-        suggestedAction: "Reject",
-      });
-    }
-
-    const agreedFee = n(elData?.totalAmount as string | null);
-    const invoiceTotal = n(invoice.totalAmount);
-    if (agreedFee > 0 && invoiceTotal > agreedFee && isRuleActive("FIXED_SCOPE_AMOUNT_MISMATCH")) {
-      const excess = invoiceTotal - agreedFee;
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        ruleCode: "FIXED_SCOPE_AMOUNT_MISMATCH",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `This invoice is for a Fixed / Closed Scope engagement. The agreed fixed fee for ${elData?.matterName ?? invoice.matterName ?? "this matter"} under the Engagement Letter dated ${elData?.invoiceDate ?? "N/A"} is ${invoice.currency} ${agreedFee.toLocaleString("en-GB", { minimumFractionDigits: 2 })}. The invoice total is ${invoice.currency} ${invoiceTotal.toLocaleString("en-GB", { minimumFractionDigits: 2 })}, which exceeds the agreed fee by ${invoice.currency} ${excess.toLocaleString("en-GB", { minimumFractionDigits: 2 })}. No variation to the fixed fee was pre-approved by Arcturus.`,
-        evidenceJson: {
-          billing_type: invoice.billingType,
-          agreed_fee: agreedFee,
-          el_date: elData?.invoiceDate,
-          scope_description: elData?.matterName ?? invoice.matterName,
-          invoice_total: invoiceTotal,
-          excess_amount: excess,
-        },
-        suggestedAction: "Accept | Reject",
-        recoverableAmount: excess.toFixed(2),
-        recoveryGroupKey: `fixed_scope_excess_${invoiceId}`,
-      });
-    }
-
-    if (items.length > 0 && isRuleActive("LINE_ITEMS_IN_FIXED_SCOPE")) {
-      const lineItemsWithHours = items.filter(i => !i.isExpenseLine && i.hours !== null);
-      if (lineItemsWithHours.length > 0) {
-        issues.push({
-          invoiceId,
-          analysisRunId: run.id,
-          ruleCode: "LINE_ITEMS_IN_FIXED_SCOPE",
-          ruleType: "objective",
-          severity: "error",
-          evaluatorType: "deterministic",
-          issueStatus: "open",
-          routeToRole: "legal_ops",
-          explanationText: `This invoice is billed as Fixed / Closed Scope, but contains ${lineItemsWithHours.length} line items with individual hours and rates. Fixed scope invoices should not include a time-based breakdown unless expressly requested by Arcturus. The presence of hourly lines may indicate that the firm is attempting to bill on a time and materials basis.`,
-          evidenceJson: {
-            billing_type: invoice.billingType,
-            line_item_count: lineItemsWithHours.length,
-            sample_line_nos: lineItemsWithHours.slice(0, 5).map(i => i.lineNo),
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        });
-      }
-    }
-  }
-
-
-  const taxAmount = n(invoice.taxAmount);
-  const subtotal = n(invoice.subtotalAmount);
-  const total = n(invoice.totalAmount);
-  if (subtotal > 0 && taxAmount >= 0 && isRuleActive("TAX_OR_VAT_MISMATCH")) {
-    const expectedTotal = subtotal + taxAmount;
-    const diff = Math.abs(total - expectedTotal);
-    if (diff > 0.01) {
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        ruleCode: "TAX_OR_VAT_MISMATCH",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `A tax or VAT discrepancy was detected on this invoice. The stated subtotal is ${invoice.currency} ${subtotal.toFixed(2)} and tax is ${invoice.currency} ${taxAmount.toFixed(2)}, which should total ${invoice.currency} ${expectedTotal.toFixed(2)}. The invoice total is ${invoice.currency} ${total.toFixed(2)}. Difference: ${invoice.currency} ${diff.toFixed(2)}.`,
-        evidenceJson: {
-          tax_label: "VAT/Tax",
-          stated_tax_amount: taxAmount,
-          expected_tax_amount: taxAmount,
-          tax_rate: null,
-          subtotal_amount: subtotal,
-          basis_of_calculation: "subtotal + tax",
-          difference: diff,
-        },
-        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        recoverableAmount: total > expectedTotal ? (total - expectedTotal).toFixed(2) : null,
-        recoveryGroupKey: `tax_mismatch_${invoiceId}`,
-      });
-    }
-  }
-
-  const discountThresholds = getTerm(firmTerms, "discount_thresholds_json") as { threshold: number; pct: number; method?: string }[] | null;
-  if (discountThresholds && discountThresholds.length > 0 && invoice.invoiceDate && isRuleActive("VOLUME_DISCOUNT_NOT_APPLIED")) {
+  // Pre-fetch cumulative YTD fees for VOLUME_DISCOUNT rule (must be done before pure evaluation)
+  const discountThresholds = firmTerms.find(t => t.termKey === "discount_thresholds_json")?.termValueJson as { threshold: number; pct: number; method?: string }[] | null;
+  let cumulativeYtdFees = 0;
+  if (discountThresholds && discountThresholds.length > 0 && invoice.invoiceDate && isRuleActive("VOLUME_DISCOUNT_NOT_APPLIED") && invoice.lawFirmId) {
     const year = new Date(invoice.invoiceDate).getFullYear();
-    const priorInvoicesResult = await db.execute(sql`
+    const priorResult = await db.execute(sql`
       SELECT COALESCE(SUM(CAST(total_amount AS DECIMAL)), 0) as total
-      FROM invoices 
+      FROM invoices
       WHERE law_firm_id = ${invoice.lawFirmId}
         AND EXTRACT(YEAR FROM COALESCE(invoice_date::date, created_at::date)) = ${year}
         AND invoice_status = 'accepted'
         AND id != ${invoiceId}
     `);
-    const cumulativeYtd = parseFloat((priorInvoicesResult.rows[0] as { total: string }).total ?? "0");
-    const invoiceFees = n(invoice.totalAmount);
-    const cumulativeWithInvoice = cumulativeYtd + invoiceFees;
-
-    // Sort thresholds ascending so we can process bands in order
-    const sortedBands = [...discountThresholds].sort((a, b) => a.threshold - b.threshold);
-
-    // Determine discount method from first band (contract-level, consistent across bands)
-    const discountMethod = sortedBands[0]?.method ?? "step";
-
-    // Only proceed if cumulative total (including this invoice) crosses at least one threshold
-    const lowestThreshold = sortedBands[0]?.threshold ?? Infinity;
-    if (cumulativeWithInvoice >= lowestThreshold) {
-      let expectedDiscount = 0;
-      let applicableBands: { threshold: number; pct: number; amountInBand: number; bandDiscount: number }[] = [];
-
-      if (discountMethod === "step") {
-        // Step method: find the highest threshold crossed by cumulativeWithInvoice;
-        // that rate applies to the ENTIRE invoice amount.
-        let highestRate = 0;
-        let highestThreshold = 0;
-        for (const band of sortedBands) {
-          if (cumulativeWithInvoice >= band.threshold) {
-            highestRate = band.pct / 100;
-            highestThreshold = band.threshold;
-          }
-        }
-        expectedDiscount = highestRate * invoiceFees;
-        applicableBands = [{ threshold: highestThreshold, pct: highestRate * 100, amountInBand: invoiceFees, bandDiscount: expectedDiscount }];
-      } else {
-        // Tiered method: each portion of the invoice is discounted at the rate
-        // of the band it falls into. Accumulate across all bands crossed.
-        // Bands: [T0=0 → T1): no discount, [T1 → T2): rate1, [T2 → T3): rate2, etc.
-        for (let i = 0; i < sortedBands.length; i++) {
-          const band = sortedBands[i];
-          const nextThreshold = sortedBands[i + 1]?.threshold ?? Infinity;
-
-          // Amount of this invoice that falls within this band
-          const bandStart = band.threshold;
-          const bandEnd = nextThreshold;
-          const invoiceStart = cumulativeYtd;
-          const invoiceEnd = cumulativeWithInvoice;
-
-          // Overlap of invoice range [invoiceStart, invoiceEnd) with band [bandStart, bandEnd)
-          const overlapStart = Math.max(invoiceStart, bandStart);
-          const overlapEnd = Math.min(invoiceEnd, bandEnd);
-          const amountInBand = Math.max(0, overlapEnd - overlapStart);
-
-          if (amountInBand > 0) {
-            const bandDiscount = band.pct / 100 * amountInBand;
-            expectedDiscount += bandDiscount;
-            applicableBands.push({ threshold: band.threshold, pct: band.pct, amountInBand, bandDiscount });
-          }
-        }
-      }
-
-      if (expectedDiscount > 0.01) {
-        const bandSummary = applicableBands.map(b =>
-          `${invoice.currency} ${b.amountInBand.toFixed(2)} @ ${b.pct}% = ${invoice.currency} ${b.bandDiscount.toFixed(2)} (threshold: ${invoice.currency} ${b.threshold})`
-        ).join("; ");
-
-        issues.push({
-          invoiceId,
-          analysisRunId: run.id,
-          ruleCode: "VOLUME_DISCOUNT_NOT_APPLIED",
-          ruleType: "objective",
-          severity: "error",
-          evaluatorType: "deterministic",
-          issueStatus: "open",
-          routeToRole: "legal_ops",
-          explanationText: `Cumulative fees billed by ${firm?.name ?? "this firm"} in ${year} (excluding this invoice) total ${invoice.currency} ${cumulativeYtd.toFixed(2)}. With this invoice (${invoice.currency} ${invoiceFees.toFixed(2)}), cumulative total reaches ${invoice.currency} ${cumulativeWithInvoice.toFixed(2)}. Under the ${discountMethod} discount method, a total discount of ${invoice.currency} ${expectedDiscount.toFixed(2)} is owed. Bands: ${bandSummary}. No matching discount was found on this invoice.`,
-          evidenceJson: {
-            law_firm: firm?.name,
-            calendar_year: year,
-            cumulative_fees_ytd: cumulativeYtd,
-            invoice_fees: invoiceFees,
-            cumulative_with_invoice: cumulativeWithInvoice,
-            discount_method: discountMethod,
-            applicable_bands: applicableBands,
-            expected_discount: expectedDiscount,
-          },
-          suggestedAction: "Accept | Reject",
-          recoverableAmount: expectedDiscount.toFixed(2),
-          recoveryGroupKey: `volume_discount_${invoice.lawFirmId}_${year}`,
-        });
-      }
-    }
+    cumulativeYtdFees = parseFloat(((priorResult.rows[0] ?? {}) as { total?: string }).total ?? "0");
   }
 
-  const expensePolicy = getTerm(firmTerms, "expense_policy_json") as Record<string, { cap?: number; allowed?: boolean }> | null;
-  const authorisedTypes = expensePolicy ? Object.keys(expensePolicy) : [];
+  const evalCtx: EvalContext = {
+    invoiceId,
+    runId: run.id,
+    invoice: {
+      currency: invoice.currency,
+      billingType: invoice.billingType,
+      totalAmount: invoice.totalAmount,
+      subtotalAmount: invoice.subtotalAmount,
+      taxAmount: invoice.taxAmount,
+      invoiceDate: invoice.invoiceDate,
+      jurisdiction: invoice.jurisdiction,
+      matterName: invoice.matterName,
+      applicableLaw: invoice.applicableLaw,
+      lawFirmId: invoice.lawFirmId,
+    },
+    items: items.map(item => ({
+      id: item.id,
+      lineNo: item.lineNo,
+      workDate: item.workDate,
+      timekeeperLabel: item.timekeeperLabel,
+      hours: item.hours,
+      rateCharged: item.rateCharged,
+      amount: item.amount,
+      isExpenseLine: item.isExpenseLine,
+      expenseType: item.expenseType,
+      description: item.description,
+      roleRaw: item.roleRaw,
+      roleNormalized: item.roleNormalizedComputed,
+      isUnauthorized: item.isUnauthorized,
+    })),
+    firm: firm ? {
+      name: firm.name,
+      firmType: firm.firmType,
+      jurisdictionsJson: (firm.jurisdictionsJson as string[] | null),
+    } : null,
+    firmTerms,
+    panelRates: panelRates.map(pr => ({ r: {
+      roleCode: pr.r.roleCode,
+      lawFirmName: pr.r.lawFirmName,
+      jurisdiction: pr.r.jurisdiction,
+      currency: pr.r.currency,
+      maxRate: pr.r.maxRate,
+      validFrom: pr.r.validFrom,
+      validTo: pr.r.validTo,
+    }})),
+    docKinds: docs.map(d => d.documentKind),
+    elData,
+    cumulativeYtdFees,
+    meetingMinAttendees,
+    meetingMaxAttendees,
+    isRuleActive,
+  };
 
-  for (const item of items) {
-    if (!item.isExpenseLine) continue;
-    const expType = (item.expenseType ?? "").toLowerCase();
-    const amount = n(item.amount);
-
-    if (!expType || authorisedTypes.length === 0) continue;
-
-    const found = authorisedTypes.find(t => expType.includes(t.toLowerCase()));
-    if (!found && isRuleActive("UNAUTHORIZED_EXPENSE_TYPE")) {
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        invoiceItemId: item.id,
-        ruleCode: "UNAUTHORIZED_EXPENSE_TYPE",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `Line ${item.lineNo} records an expense of type "${item.expenseType}" for ${invoice.currency} ${amount.toFixed(2)}. This expense type was not found in the list of authorised expenses under Panel T&C, or no prior authorisation from Arcturus was recorded. Common non-reimbursable items include: secretarial time, photocopying, telephone charges, meals (outside approved travel), and third-party professional services (experts, local counsel, eDiscovery platforms) without prior written approval.`,
-        evidenceJson: {
-          line_no: item.lineNo,
-          expense_type: item.expenseType,
-          amount,
-          description: item.description,
-          source_document: "Panel T&C",
-          authorised_types_in_source: authorisedTypes,
-        },
-        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        recoverableAmount: amount.toFixed(2),
-        recoveryGroupKey: `unauth_expense_${item.lineNo}`,
-      });
-    } else if (found && expensePolicy![found]?.cap !== undefined && isRuleActive("EXPENSE_CAP_EXCEEDED")) {
-      const cap = expensePolicy![found].cap!;
-      if (amount > cap) {
-        const excess = amount - cap;
-        issues.push({
-          invoiceId,
-          analysisRunId: run.id,
-          invoiceItemId: item.id,
-          ruleCode: "EXPENSE_CAP_EXCEEDED",
-          ruleType: "objective",
-          severity: "error",
-          evaluatorType: "deterministic",
-          issueStatus: "open",
-          routeToRole: "legal_ops",
-          explanationText: `Line ${item.lineNo} records an expense of type "${item.expenseType}" for ${invoice.currency} ${amount.toFixed(2)}. The applicable cap for this expense type under Panel T&C is ${invoice.currency} ${cap.toFixed(2)}. The excess is ${invoice.currency} ${excess.toFixed(2)}.`,
-          evidenceJson: {
-            line_no: item.lineNo,
-            expense_type: item.expenseType,
-            amount_charged: amount,
-            cap_amount: cap,
-            source_document: "Panel T&C",
-            excess_amount: excess,
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-          recoverableAmount: excess.toFixed(2),
-          recoveryGroupKey: `expense_cap_${item.lineNo}`,
-        });
-      }
-    }
-  }
-
-  const seenPairs = new Set<string>();
-  if (isRuleActive("DUPLICATE_LINE")) for (let i = 0; i < items.length; i++) {
-    for (let j = i + 1; j < items.length; j++) {
-      const a = items[i];
-      const b = items[j];
-      const descSimilar = (d1: string | null, d2: string | null): boolean => {
-        if (!d1 || !d2) return true;
-        const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
-        const n1 = normalize(d1);
-        const n2 = normalize(d2);
-        if (n1 === n2) return true;
-        const shorter = n1.length < n2.length ? n1 : n2;
-        const longer = n1.length < n2.length ? n2 : n1;
-        return longer.includes(shorter) || (shorter.length > 10 && longer.startsWith(shorter.slice(0, Math.floor(shorter.length * 0.8))));
-      };
-      if (!a.isExpenseLine && !b.isExpenseLine
-        && a.workDate && b.workDate && a.workDate === b.workDate
-        && a.timekeeperLabel && b.timekeeperLabel && a.timekeeperLabel === b.timekeeperLabel
-        && a.hours !== null && b.hours !== null && a.hours === b.hours
-        && a.rateCharged !== null && b.rateCharged !== null && a.rateCharged === b.rateCharged
-        && descSimilar(a.description, b.description)) {
-        const pairKey = `${a.lineNo}_${b.lineNo}`;
-        if (!seenPairs.has(pairKey)) {
-          seenPairs.add(pairKey);
-          const amount = n(b.amount);
-          issues.push({
-            invoiceId,
-            analysisRunId: run.id,
-            invoiceItemId: b.id,
-            ruleCode: "DUPLICATE_LINE",
-            ruleType: "objective",
-            severity: "error",
-            evaluatorType: "deterministic",
-            issueStatus: "open",
-            routeToRole: "legal_ops",
-            explanationText: `Line ${b.lineNo} appears to be a duplicate of line ${a.lineNo}. Both share the same date (${a.workDate}), timekeeper (${a.timekeeperLabel}), hours (${a.hours}), rate (${a.rateCharged}) and a near-identical description. The duplicate line represents ${invoice.currency} ${amount.toFixed(2)}.`,
-            evidenceJson: {
-              line_no_a: a.lineNo,
-              line_no_b: b.lineNo,
-              date: a.workDate,
-              timekeeper_label: a.timekeeperLabel,
-              hours: a.hours,
-              rate: a.rateCharged,
-              description_a: a.description,
-              description_b: b.description,
-              amount,
-            },
-            suggestedAction: "Accept | Reject",
-            recoverableAmount: amount.toFixed(2),
-            recoveryGroupKey: `duplicate_${a.lineNo}_${b.lineNo}`,
-          });
-        }
-      }
-    }
-  }
-
-  if (isRuleActive("ARITHMETIC_ERROR")) for (const item of items) {
-    if (item.isExpenseLine || !item.hours || !item.rateCharged || !item.amount) continue;
-    const expected = n(item.hours) * n(item.rateCharged);
-    const actual = n(item.amount);
-    const diff = Math.abs(actual - expected);
-    if (diff > 0.01) {
-      const direction = actual > expected ? "overbilling" : "underbilling";
-      const recoverable = actual > expected ? (actual - expected).toFixed(2) : null;
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        invoiceItemId: item.id,
-        ruleCode: "ARITHMETIC_ERROR",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `Line ${item.lineNo} records ${item.hours}h at ${item.rateCharged} ${invoice.currency}/h, which should total ${invoice.currency} ${expected.toFixed(2)}. The invoiced amount is ${invoice.currency} ${actual.toFixed(2)}. The discrepancy is ${invoice.currency} ${diff.toFixed(2)} (${direction}).`,
-        evidenceJson: {
-          line_no: item.lineNo,
-          hours: item.hours,
-          rate_charged: item.rateCharged,
-          expected_amount: expected,
-          actual_amount: actual,
-          difference: diff,
-        },
-        suggestedAction: "Accept | Reject",
-        recoverableAmount: recoverable,
-        recoveryGroupKey: recoverable ? `arithmetic_${item.lineNo}` : null,
-      });
-    }
-  }
-
-  const maxDailyHours = (getTerm(firmTerms, "max_daily_hours_per_timekeeper") as number | null) ?? 8;
-  const dailyMap = new Map<string, { total: number; lineNos: number[]; role: string | null }>();
-  if (isRuleActive("DAILY_HOURS_EXCEEDED")) for (const item of items) {
-    if (item.isExpenseLine || !item.workDate || !item.timekeeperLabel || !item.hours) continue;
-    const key = `${item.timekeeperLabel}|${item.workDate}`;
-    const existing = dailyMap.get(key) ?? { total: 0, lineNos: [], role: item.roleRaw };
-    existing.total += n(item.hours);
-    existing.lineNos.push(item.lineNo);
-    dailyMap.set(key, existing);
-  }
-  for (const [key, data] of dailyMap.entries()) {
-    if (data.total > maxDailyHours) {
-      const [timekeeper, date] = key.split("|");
-      const excess = data.total - maxDailyHours;
-      const tcSource = firmTerms.some(t => t.termKey === "max_daily_hours_per_timekeeper") ? "Panel T&C" : "default cap";
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        ruleCode: "DAILY_HOURS_EXCEEDED",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `${timekeeper} (${data.role ?? "unknown role"}) billed ${data.total.toFixed(1)}h on ${date} across ${data.lineNos.length} line(s), exceeding the daily cap of ${maxDailyHours}h set in ${tcSource}. Excess: ${excess.toFixed(1)}h. No prior written approval from Arcturus was recorded.`,
-        evidenceJson: {
-          timekeeper_label: timekeeper,
-          role_raw: data.role,
-          date,
-          total_hours_on_date: data.total,
-          daily_cap: maxDailyHours,
-          excess_hours: excess,
-          affected_line_nos: data.lineNos,
-          source_document: tcSource,
-        },
-        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-      });
-    }
-  }
-
-  const elStart = elData?.billingPeriodStart as string | null;
-  const elEnd = elData?.billingPeriodEnd as string | null;
-  if (elStart && elEnd && isRuleActive("BILLING_PERIOD_OUTSIDE_EL")) {
-    const outOfPeriod = items.filter(item =>
-      !item.isExpenseLine && item.workDate &&
-      (item.workDate < elStart || item.workDate > elEnd)
-    );
-    if (outOfPeriod.length > 0) {
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        ruleCode: "BILLING_PERIOD_OUTSIDE_EL",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `${outOfPeriod.length} line(s) are dated outside the Engagement Letter period (${elStart} to ${elEnd}). Work billed outside the agreed engagement period requires specific authorisation. Affected lines: ${outOfPeriod.map(i => i.lineNo).join(", ")}.`,
-        evidenceJson: {
-          el_start: elStart,
-          el_end: elEnd,
-          affected_line_nos: outOfPeriod.map(i => i.lineNo),
-          sample_work_dates: outOfPeriod.slice(0, 3).map(i => ({ line_no: i.lineNo, work_date: i.workDate })),
-        },
-        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-      });
-    }
-  }
-
-  const timekeeperRates = new Map<string, { rates: Set<string>; roleNorm: string | null; lineNos: number[]; minRate: number; maxRate: number }>();
-  for (const item of items) {
-    if (item.isExpenseLine || !item.timekeeperLabel || !item.rateCharged) continue;
-    const existing = timekeeperRates.get(item.timekeeperLabel) ?? {
-      rates: new Set(), roleNorm: item.roleNormalizedComputed, lineNos: [], minRate: Infinity, maxRate: -Infinity
-    };
-    existing.rates.add(item.rateCharged);
-    existing.lineNos.push(item.lineNo);
-    const r = n(item.rateCharged);
-    if (r < existing.minRate) existing.minRate = r;
-    if (r > existing.maxRate) existing.maxRate = r;
-    timekeeperRates.set(item.timekeeperLabel, existing);
-  }
-
-  if (isRuleActive("INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER")) for (const [timekeeper, data] of timekeeperRates.entries()) {
-    if (data.rates.size >= 2) {
-      const panelRate = panelRates.find(pr =>
-        pr.r.roleCode === data.roleNorm && pr.r.jurisdiction === invoice.jurisdiction && pr.r.currency === invoice.currency
-      );
-      const maxApproved = panelRate ? n(panelRate.r.maxRate) : null;
-      const ratesAboveMin = data.lineNos
-        .map(ln => items.find(i => i.lineNo === ln))
-        .filter((i): i is typeof items[0] => i !== undefined && n(i.rateCharged) > data.minRate);
-      const excessAmount = ratesAboveMin.reduce((sum, i) => sum + (n(i.rateCharged) - data.minRate) * n(i.hours), 0);
-
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        ruleCode: "INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `${timekeeper} (${data.roleNorm ?? "unknown role"}) appears on ${data.lineNos.length} lines with inconsistent rates: ${Array.from(data.rates).join(", ")} ${invoice.currency}/h. ${maxApproved ? `The maximum approved rate for this role and jurisdiction is ${invoice.currency} ${maxApproved.toFixed(2)}.` : ""} Estimated excess (lines above minimum): ${invoice.currency} ${excessAmount.toFixed(2)}.`,
-        evidenceJson: {
-          timekeeper_label: timekeeper,
-          role_normalized: data.roleNorm,
-          rates_observed: Array.from(data.rates),
-          max_approved_rate: maxApproved,
-          affected_line_nos: data.lineNos,
-          excess_amount: excessAmount,
-        },
-        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        recoverableAmount: excessAmount > 0 ? excessAmount.toFixed(2) : null,
-        recoveryGroupKey: `inconsistent_rate_${timekeeper}`,
-      });
-    }
-  }
-
-  const seenMissingCombinations = new Set<string>();
-  for (const item of items) {
-    if (item.isExpenseLine || item.roleNormalizedComputed === null) continue;
-    const combKey = `${firm?.name}|${invoice.jurisdiction}|${item.roleNormalizedComputed}|${invoice.currency}`;
-    if (seenMissingCombinations.has(combKey)) continue;
-
-    if (firm?.firmType === "panel" && invoice.jurisdiction) {
-      const invoiceDateMs = invoice.invoiceDate ? new Date(invoice.invoiceDate).getTime() : null;
-      const allMatchingRates = panelRates.filter(pr =>
-        pr.r.lawFirmName === firm.name
-        && pr.r.jurisdiction === invoice.jurisdiction
-        && pr.r.roleCode === item.roleNormalizedComputed
-        && pr.r.currency === invoice.currency
-      );
-
-      const validMatchingRates = invoiceDateMs
-        ? allMatchingRates.filter(pr => {
-            const from = pr.r.validFrom ? new Date(pr.r.validFrom).getTime() : 0;
-            const to = pr.r.validTo ? new Date(pr.r.validTo).getTime() : Infinity;
-            return from <= invoiceDateMs && invoiceDateMs <= to;
-          })
-        : allMatchingRates;
-
-      if ((allMatchingRates.length === 0 || validMatchingRates.length === 0) && isRuleActive("RATE_CARD_EXPIRED_OR_MISSING")) {
-        seenMissingCombinations.add(combKey);
-        const affectedLines = items.filter(i => i.roleNormalizedComputed === item.roleNormalizedComputed).map(i => i.lineNo);
-        const latestValidTo = allMatchingRates.length > 0
-          ? allMatchingRates
-              .map(pr => pr.r.validTo)
-              .filter((d): d is string => d !== null)
-              .sort()
-              .reverse()[0] ?? null
-          : null;
-        const reason = allMatchingRates.length === 0 ? "missing" : "expired";
-        issues.push({
-          invoiceId,
-          analysisRunId: run.id,
-          ruleCode: "RATE_CARD_EXPIRED_OR_MISSING",
-          ruleType: "objective",
-          severity: "error",
-          evaluatorType: "deterministic",
-          issueStatus: "open",
-          routeToRole: "legal_ops",
-          explanationText: `Rate card ${reason} for ${firm.name} in jurisdiction ${invoice.jurisdiction} for role ${item.roleNormalizedComputed} as at ${invoice.invoiceDate ?? "invoice date"}. ${reason === "expired" ? `The rate card expired on ${latestValidTo}.` : "No rate entry covers this firm/jurisdiction/role/currency combination."} Analysis cannot proceed reliably for ${affectedLines.length} line(s) affected by this gap.`,
-          evidenceJson: {
-            law_firm: firm.name,
-            jurisdiction: invoice.jurisdiction,
-            role_normalized: item.roleNormalizedComputed,
-            invoice_date: invoice.invoiceDate,
-            reason,
-            latest_valid_to_in_system: latestValidTo,
-            affected_line_nos: affectedLines,
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        });
-      }
-    }
-  }
-
-  const missingRoleLines = items.filter(item =>
-    !item.isExpenseLine && item.roleRaw !== null && item.roleNormalizedComputed === null
-  );
-  if (isRuleActive("LAWYER_ROLE_MISMATCH")) for (const item of missingRoleLines) {
-    const isUnauth = item.isUnauthorized;
-    const recoverableAmt = isUnauth && item.amount ? n(item.amount) : null;
-    issues.push({
-      invoiceId,
-      analysisRunId: run.id,
-      invoiceItemId: item.id,
-      ruleCode: "LAWYER_ROLE_MISMATCH",
-      ruleType: "objective",
-      severity: "error",
-      evaluatorType: "deterministic",
-      issueStatus: "open",
-      routeToRole: "legal_ops",
-      explanationText: isUnauth
-        ? `Line ${item.lineNo} records a non-human or unauthorised role ("${item.roleRaw}") billed as a timekeeper for ${invoice.currency} ${n(item.amount).toFixed(2)}. Machine translation tools, AI software, and similar non-human resources are not authorised as billable timekeepers under the Panel T&C.`
-        : `The role label "${item.roleRaw}" on line ${item.lineNo} for ${item.timekeeperLabel ?? "unknown timekeeper"} could not be mapped to any approved role in the rate schedule applicable to this matter. As a result, no maximum rate check can be performed for this line. Please clarify the correct role or confirm whether this timekeeper is authorised.`,
-      evidenceJson: {
-        line_no: item.lineNo,
-        timekeeper_label: item.timekeeperLabel,
-        role_raw: item.roleRaw,
-        is_unauthorised_role: isUnauth,
-        normalisation_attempted: true,
-        available_roles_in_source: KNOWN_ROLE_CODES,
-        amount: item.amount,
-      },
-      suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-      recoverableAmount: recoverableAmt !== null ? recoverableAmt.toFixed(2) : undefined,
-      recoveryGroupKey: isUnauth ? `unauth_timekeeper_${item.lineNo}` : undefined,
-    });
-  }
-
-  const rolesMismatched = new Set(missingRoleLines.map(i => i.lineNo));
-
-  if (isRuleActive("RATE_EXCESS")) for (const item of items) {
-    if (item.isExpenseLine || rolesMismatched.has(item.lineNo) || !item.roleNormalizedComputed || !item.rateCharged) continue;
-
-    const applicableRates = panelRates.filter(pr =>
-      pr.r.lawFirmName === firm?.name
-      && pr.r.roleCode === item.roleNormalizedComputed
-      && pr.r.jurisdiction === invoice.jurisdiction
-      && pr.r.currency === invoice.currency
-      && (!invoice.invoiceDate || pr.r.validFrom <= invoice.invoiceDate)
-      && (!pr.r.validTo || !invoice.invoiceDate || pr.r.validTo >= invoice.invoiceDate)
-    );
-
-    if (applicableRates.length > 0) {
-      const maxRate = Math.max(...applicableRates.map(pr => n(pr.r.maxRate)));
-      const rateCharged = n(item.rateCharged);
-      if (rateCharged > maxRate) {
-        const excessPerHour = rateCharged - maxRate;
-        const hours = n(item.hours);
-        const recoverableAmount = excessPerHour * hours;
-        issues.push({
-          invoiceId,
-          analysisRunId: run.id,
-          invoiceItemId: item.id,
-          ruleCode: "RATE_EXCESS",
-          ruleType: "objective",
-          severity: "error",
-          evaluatorType: "deterministic",
-          issueStatus: "open",
-          routeToRole: "legal_ops",
-          explanationText: `The hourly rate charged for ${item.timekeeperLabel ?? "unknown"} (${item.roleNormalizedComputed}) on line ${item.lineNo} is ${invoice.currency} ${rateCharged.toFixed(2)}, which exceeds the maximum approved rate of ${invoice.currency} ${maxRate.toFixed(2)} for this role and jurisdiction (${invoice.jurisdiction}). Excess per hour: ${invoice.currency} ${excessPerHour.toFixed(2)}. Total excess on this line: ${invoice.currency} ${recoverableAmount.toFixed(2)}.`,
-          evidenceJson: {
-            line_no: item.lineNo,
-            timekeeper_label: item.timekeeperLabel,
-            role_raw: item.roleRaw,
-            role_normalized: item.roleNormalizedComputed,
-            rate_charged: rateCharged,
-            max_rate: maxRate,
-            jurisdiction: invoice.jurisdiction,
-            hours,
-            excess_per_hour: excessPerHour,
-            excess_total: recoverableAmount,
-            source_document: "Active Panel Rates",
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-          recoverableAmount: recoverableAmount.toFixed(2),
-          recoveryGroupKey: `rate_excess_line_${item.lineNo}`,
-        });
-      }
-    }
-  }
-
-  const meetingKeywords = ["meeting", "call", "conference", "hearing", "session", "videoconference", "teleconference", "webinar"];
-  const dateGroups = new Map<string, Map<string, InvoiceItem[]>>();
-  if (isRuleActive("MEETING_OVERSTAFFING")) for (const item of items) {
-    if (!item.workDate || !item.description) continue;
-    const descLower = item.description.toLowerCase();
-    const isMeeting = meetingKeywords.some(kw => descLower.includes(kw));
-    if (!isMeeting) continue;
-    const dayKey = item.workDate;
-    const descKey = item.description.split(/[,;.]/)[0].trim().toLowerCase();
-    if (!dateGroups.has(dayKey)) dateGroups.set(dayKey, new Map());
-    const dayMap = dateGroups.get(dayKey)!;
-    if (!dayMap.has(descKey)) dayMap.set(descKey, []);
-    dayMap.get(descKey)!.push(item);
-  }
-  for (const [date, descMap] of dateGroups.entries()) {
-    for (const [desc, groupItems] of descMap.entries()) {
-      const uniqueTimekeepers = new Set(groupItems.map(i => i.timekeeperLabel).filter(Boolean));
-      if (uniqueTimekeepers.size > meetingMaxAttendees) {
-        const total = groupItems.reduce((sum, i) => sum + n(i.amount), 0);
-        issues.push({
-          invoiceId,
-          analysisRunId: run.id,
-          ruleCode: "MEETING_OVERSTAFFING",
-          ruleType: "configurable",
-          severity: "warning",
-          evaluatorType: "deterministic",
-          issueStatus: "open",
-          routeToRole: "legal_ops",
-          explanationText: `On ${date}, ${uniqueTimekeepers.size} timekeepers billed for attendance at what appears to be the same meeting or call: ${Array.from(uniqueTimekeepers).join(", ")}. This exceeds the configured maximum of ${meetingMaxAttendees} attendees (expected normal range: ${meetingMinAttendees}–${meetingMaxAttendees}). Total amount for these lines: ${invoice.currency} ${total.toFixed(2)}.`,
-          evidenceJson: {
-            date,
-            meeting_description: desc,
-            timekeeper_list: Array.from(uniqueTimekeepers),
-            attendee_count: uniqueTimekeepers.size,
-            hours_each: groupItems.map(i => ({ timekeeper: i.timekeeperLabel, hours: i.hours })),
-            amounts_each: groupItems.map(i => ({ timekeeper: i.timekeeperLabel, amount: i.amount })),
-            total_amount: total,
-            min_attendees_threshold: meetingMinAttendees,
-            max_attendees_threshold: meetingMaxAttendees,
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-          configSnapshotJson: { min_attendees: meetingMinAttendees, max_attendees: meetingMaxAttendees },
-        });
-      }
-    }
-  }
+  const issues: IssueInsert[] = evaluateDeterministicRules(evalCtx);
 
   let greyIssues: IssueInsert[] = [];
   let greyRulesFailed = false;
@@ -1145,6 +468,17 @@ For each grey rule below, determine if it should fire based on the evidence. Ret
       "description": "...",
       "heuristic_reasoning": "..."
     }
+  ],
+  "TIMEKEEPER_NOT_APPROVED": [
+    {
+      "fires": true/false,
+      "line_no": number,
+      "timekeeper_label": "...",
+      "role_normalized": "...",
+      "hours": number,
+      "amount": number,
+      "heuristic_reasoning": "..."
+    }
   ]
 }
 
@@ -1156,6 +490,7 @@ Rules:
 - SENIORITY_OVERKILL: Only fires when a senior timekeeper (Partner, Senior Partner) bills for clearly administrative or routine tasks.
 - ESTIMATE_EXCESS: Only fires if a budget estimate amount is available and cumulative billing clearly exceeds it.
 - INTERNAL_COORDINATION: Only fires when a line description clearly indicates internal firm coordination billed to the client.
+- TIMEKEEPER_NOT_APPROVED: Only fires if EL is available and contains a staffing annex or approved timekeeper list, and a timekeeper on the invoice is not listed. Be conservative — do not fire if no staffing list is available.
 
 Return valid JSON only. No markdown, no explanation.`;
 
@@ -1364,6 +699,36 @@ Return valid JSON only. No markdown, no explanation.`;
             amount: ic.amount,
             description: ic.description,
             heuristic_reasoning: ic.heuristic_reasoning,
+          },
+          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+        });
+      }
+    }
+
+    const timekeeperNotApproved = parsed["TIMEKEEPER_NOT_APPROVED"] as Array<{ fires?: boolean; line_no?: number; timekeeper_label?: string; role_normalized?: string; hours?: number; amount?: number; heuristic_reasoning?: string }> | null;
+    if (Array.isArray(timekeeperNotApproved) && isRuleActive("TIMEKEEPER_NOT_APPROVED")) {
+      for (const tna of timekeeperNotApproved) {
+        if (!tna.fires || !tna.line_no) continue;
+        const lineItem = items.find(i => i.lineNo === tna.line_no);
+        greyIssues.push({
+          invoiceId,
+          analysisRunId: runId,
+          invoiceItemId: lineItem?.id,
+          ruleCode: "TIMEKEEPER_NOT_APPROVED",
+          ruleType: "gray",
+          severity: "warning",
+          evaluatorType: "heuristic",
+          issueStatus: "open",
+          routeToRole: "internal_lawyer",
+          explanationText: `Line ${tna.line_no}: ${tna.timekeeper_label} (${tna.role_normalized ?? "unknown"}) does not appear in the approved staffing list in the Engagement Letter. Billing by unapproved timekeepers requires prior authorisation from Arcturus. ${tna.heuristic_reasoning ?? ""}`,
+          evidenceJson: {
+            line_no: tna.line_no,
+            timekeeper_label: tna.timekeeper_label,
+            role_normalized: tna.role_normalized,
+            hours: tna.hours,
+            amount: tna.amount,
+            heuristic_reasoning: tna.heuristic_reasoning,
+            source_document: "Engagement Letter (staffing annex)",
           },
           suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
         });
