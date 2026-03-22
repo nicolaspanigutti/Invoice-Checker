@@ -143,6 +143,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /law-firms/extract-info:
+    post:
+      operationId: extractLawFirmInfo
+      tags: [lawFirms]
+      summary: Extract law firm details from a document using AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExtractLawFirmInfoRequest"
+      responses:
+        "200":
+          description: Extracted law firm information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractedLawFirmInfo"
+        "422":
+          description: Could not extract text from document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /law-firms/{id}:
     get:
       operationId: getLawFirm
@@ -1882,6 +1907,54 @@ components:
           enum: [draft, verified]
       required:
         - termKey
+
+    ExtractLawFirmInfoRequest:
+      type: object
+      properties:
+        storagePath:
+          type: string
+        mimeType:
+          type: string
+          nullable: true
+      required:
+        - storagePath
+
+    ExtractedLawFirmInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        firmType:
+          type: string
+          enum: [panel, preferred, specialist, ad_hoc]
+          nullable: true
+        contactName:
+          type: string
+          nullable: true
+        contactEmail:
+          type: string
+          nullable: true
+        contactPhone:
+          type: string
+          nullable: true
+        relationshipPartner:
+          type: string
+          nullable: true
+        jurisdictions:
+          type: array
+          items:
+            type: string
+        practiceAreas:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+          nullable: true
+      required:
+        - jurisdictions
+        - practiceAreas
 
     PanelBaselineDocument:
       type: object

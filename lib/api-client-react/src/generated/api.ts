@@ -31,10 +31,12 @@ import type {
   DecideIssueRequest,
   EmailDraft,
   ErrorResponse,
+  ExtractLawFirmInfoRequest,
   ExtractLawFirmTermsFromTc200,
   ExtractLawFirmTermsFromTcBody,
   ExtractRatesFromFile200,
   ExtractRatesFromFileBody,
+  ExtractedLawFirmInfo,
   ExtractionResult,
   FirmTerm,
   HealthStatus,
@@ -568,6 +570,93 @@ export const useCreateLawFirm = <
   TContext
 > => {
   return useMutation(getCreateLawFirmMutationOptions(options));
+};
+
+/**
+ * @summary Extract law firm details from a document using AI
+ */
+export const getExtractLawFirmInfoUrl = () => {
+  return `/api/law-firms/extract-info`;
+};
+
+export const extractLawFirmInfo = async (
+  extractLawFirmInfoRequest: ExtractLawFirmInfoRequest,
+  options?: RequestInit,
+): Promise<ExtractedLawFirmInfo> => {
+  return customFetch<ExtractedLawFirmInfo>(getExtractLawFirmInfoUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(extractLawFirmInfoRequest),
+  });
+};
+
+export const getExtractLawFirmInfoMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractLawFirmInfo>>,
+    TError,
+    { data: BodyType<ExtractLawFirmInfoRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extractLawFirmInfo>>,
+  TError,
+  { data: BodyType<ExtractLawFirmInfoRequest> },
+  TContext
+> => {
+  const mutationKey = ["extractLawFirmInfo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extractLawFirmInfo>>,
+    { data: BodyType<ExtractLawFirmInfoRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return extractLawFirmInfo(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtractLawFirmInfoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extractLawFirmInfo>>
+>;
+export type ExtractLawFirmInfoMutationBody =
+  BodyType<ExtractLawFirmInfoRequest>;
+export type ExtractLawFirmInfoMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Extract law firm details from a document using AI
+ */
+export const useExtractLawFirmInfo = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractLawFirmInfo>>,
+    TError,
+    { data: BodyType<ExtractLawFirmInfoRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof extractLawFirmInfo>>,
+  TError,
+  { data: BodyType<ExtractLawFirmInfoRequest> },
+  TContext
+> => {
+  return useMutation(getExtractLawFirmInfoMutationOptions(options));
 };
 
 /**

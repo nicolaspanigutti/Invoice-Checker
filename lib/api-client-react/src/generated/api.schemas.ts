@@ -429,6 +429,34 @@ export interface UpsertTermItem {
   verificationStatus?: UpsertTermItemVerificationStatus;
 }
 
+export interface ExtractLawFirmInfoRequest {
+  storagePath: string;
+  mimeType?: string | null;
+}
+
+export type ExtractedLawFirmInfoFirmType =
+  | (typeof ExtractedLawFirmInfoFirmType)[keyof typeof ExtractedLawFirmInfoFirmType]
+  | null;
+
+export const ExtractedLawFirmInfoFirmType = {
+  panel: "panel",
+  preferred: "preferred",
+  specialist: "specialist",
+  ad_hoc: "ad_hoc",
+} as const;
+
+export interface ExtractedLawFirmInfo {
+  name?: string | null;
+  firmType?: ExtractedLawFirmInfoFirmType;
+  contactName?: string | null;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  relationshipPartner?: string | null;
+  jurisdictions: string[];
+  practiceAreas: string[];
+  notes?: string | null;
+}
+
 export type PanelBaselineDocumentDocumentKind =
   (typeof PanelBaselineDocumentDocumentKind)[keyof typeof PanelBaselineDocumentDocumentKind];
 

@@ -5,6 +5,7 @@ import { requireRole } from "../middleware/auth";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer } from "../lib/extractText";
 import { extractLawFirmTermsFromText, termsToUpsertPayload } from "../lib/extractLawFirmTerms";
+import { extractLawFirmInfoFromText } from "../lib/extractLawFirmInfo";
 
 const objectStorage = new ObjectStorageService();
 
@@ -78,6 +79,31 @@ router.post("/law-firms", requireRole("super_admin", "legal_ops"), async (req: R
   }).returning();
 
   res.status(201).json(firmToResponse(firm));
+});
+
+router.post("/law-firms/extract-info", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
+  const { storagePath, mimeType } = req.body as { storagePath?: string; mimeType?: string };
+  if (!storagePath) { res.status(400).json({ error: "storagePath is required" }); return; }
+
+  let fileBuffer: Buffer;
+  try {
+    const file = await objectStorage.getObjectEntityFile(storagePath);
+    const fileResponse = await objectStorage.downloadObject(file);
+    const ab = await fileResponse.arrayBuffer();
+    fileBuffer = Buffer.from(ab);
+  } catch {
+    res.status(422).json({ error: "Failed to download the document from storage. Please re-upload." });
+    return;
+  }
+
+  const rawText = await extractTextFromBuffer(fileBuffer, mimeType ?? "application/pdf");
+  if (!rawText.trim()) {
+    res.status(422).json({ error: "Could not extract readable text from this document. Please upload a readable PDF or DOCX file." });
+    return;
+  }
+
+  const extracted = await extractLawFirmInfoFromText(rawText);
+  res.json(extracted);
 });
 
 router.get("/law-firms/:id", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {

@@ -6,6 +6,7 @@ import {
   useUpdateLawFirm,
   useGetLawFirm,
   useExtractLawFirmTermsFromTc,
+  useExtractLawFirmInfo,
   useUpsertLawFirmTerms,
   useRequestUploadUrl,
   getListLawFirmsQueryKey,
@@ -322,9 +323,60 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const createMutation = useCreateLawFirm();
+  const requestUploadUrl = useRequestUploadUrl();
+  const extractInfoMutation = useExtractLawFirmInfo();
   const [form, setForm] = useState<FormData>(emptyForm);
-  const [step, setStep] = useState<"details" | "tc-upload">("details");
+  const [step, setStep] = useState<"upload" | "review" | "tc-upload">("upload");
   const [createdFirm, setCreatedFirm] = useState<{ id: number; name: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const ACCEPTED = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "text/plain"];
+
+  const handleFiles = useCallback((files: FileList | null) => {
+    if (!files?.length) return;
+    const file = files[0];
+    if (!ACCEPTED.includes(file.type)) {
+      toast({ variant: "destructive", title: "Unsupported file type", description: "Please upload a PDF, DOCX, or TXT file." });
+      return;
+    }
+    setSelectedFile(file);
+  }, [toast]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false);
+    handleFiles(e.dataTransfer.files);
+  }, [handleFiles]);
+
+  const handleExtract = async () => {
+    if (!selectedFile) return;
+    setUploading(true);
+    try {
+      const urlData = await requestUploadUrl.mutateAsync({ data: { name: selectedFile.name, size: selectedFile.size, contentType: selectedFile.type || "application/pdf" } });
+      await fetch(urlData.uploadURL, { method: "PUT", body: selectedFile, headers: { "Content-Type": selectedFile.type || "application/pdf" } });
+      const extracted = await extractInfoMutation.mutateAsync({ data: { storagePath: urlData.objectPath, mimeType: selectedFile.type || "application/pdf" } });
+      const info = extracted as { name?: string | null; firmType?: string | null; contactName?: string | null; contactEmail?: string | null; contactPhone?: string | null; relationshipPartner?: string | null; jurisdictions?: string[]; practiceAreas?: string[]; notes?: string | null };
+      setForm({
+        name: info.name ?? "",
+        firmType: (["panel", "preferred", "specialist", "ad_hoc"].includes(info.firmType ?? "") ? info.firmType : "panel") as FormData["firmType"],
+        contactName: info.contactName ?? "",
+        contactEmail: info.contactEmail ?? "",
+        contactPhone: info.contactPhone ?? "",
+        relationshipPartner: info.relationshipPartner ?? "",
+        jurisdictions: (info.jurisdictions ?? []).join(", "),
+        practiceAreas: (info.practiceAreas ?? []).join(", "),
+        notes: info.notes ?? "",
+      });
+      setStep("review");
+    } catch (err) {
+      const msg = (err as { data?: { error?: string } })?.data?.error ?? "Failed to extract. Please try again.";
+      toast({ variant: "destructive", title: "Extraction failed", description: msg });
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -340,40 +392,140 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
     });
   };
 
+  const STEP_TITLES: Record<typeof step, string> = {
+    upload: "Add Law Firm",
+    review: "Review Firm Details",
+    "tc-upload": "Upload T&C Document",
+  };
+
+  const STEP_SUBTITLES: Partial<Record<typeof step, React.ReactNode>> = {
+    upload: "Upload a document to auto-fill the fields with AI, or skip to enter details manually.",
+    review: "Review and edit the extracted details before creating the firm.",
+    "tc-upload": createdFirm ? <span><span className="text-emerald-600 font-medium">✓ {createdFirm.name} created.</span> Optionally upload their T&C to extract commercial terms.</span> : null,
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={step === "details" ? onClose : undefined} />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={step === "upload" ? onClose : undefined} />
       <div className="relative bg-card border border-border rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
+
+        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border sticky top-0 bg-card z-10">
           <div>
-            <h2 className="text-xl font-display font-bold text-foreground">
-              {step === "details" ? "Add Law Firm" : "Upload T&C Document"}
-            </h2>
-            {step === "tc-upload" && createdFirm && (
-              <p className="text-sm text-muted-foreground mt-0.5">
-                <span className="text-emerald-600 font-medium">✓ {createdFirm.name} created.</span> Optionally upload their T&C to extract commercial terms.
-              </p>
-            )}
+            <h2 className="text-xl font-display font-bold text-foreground">{STEP_TITLES[step]}</h2>
+            {STEP_SUBTITLES[step] && <p className="text-sm text-muted-foreground mt-0.5">{STEP_SUBTITLES[step]}</p>}
           </div>
-          {step === "details" && (
+          {step === "upload" && (
             <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
           )}
         </div>
 
         <div className="p-6">
-          {step === "details" ? (
+          {/* Step 1: Upload document for AI extraction */}
+          {step === "upload" && (
+            <div className="space-y-5">
+              {/* Step indicators */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground font-bold text-[10px]">1</span>
+                <span className="font-medium text-foreground">Upload document</span>
+                <span className="flex-1 h-px bg-border" />
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted font-bold text-[10px]">2</span>
+                <span>Review details</span>
+                <span className="flex-1 h-px bg-border" />
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted font-bold text-[10px]">3</span>
+                <span>Upload T&amp;C</span>
+              </div>
+
+              {/* Drop zone */}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+                className={cn(
+                  "border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-colors",
+                  dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/40"
+                )}
+              >
+                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={e => handleFiles(e.target.files)} />
+                <div className="flex flex-col items-center gap-3">
+                  {selectedFile ? (
+                    <>
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center">
+                        <FileText className="w-6 h-6 text-emerald-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm text-foreground">{selectedFile.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{(selectedFile.size / 1024).toFixed(0)} KB</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Click to change file</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center">
+                        <Upload className="w-6 h-6 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm text-foreground">Drop an engagement letter, pitch deck or any firm document</p>
+                        <p className="text-xs text-muted-foreground mt-1">PDF, DOCX, or TXT — AI will extract firm details automatically</p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setForm(emptyForm); setStep("review"); }}
+                  className="flex-1 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted text-sm font-medium transition-colors"
+                >
+                  Skip — enter manually
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExtract}
+                  disabled={!selectedFile || uploading}
+                  className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  {uploading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" />Extracting…</>
+                  ) : (
+                    <><Sparkles className="w-4 h-4" />Extract with AI</>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Review/edit details and create */}
+          {step === "review" && (
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Step indicators */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white font-bold text-[10px]">✓</span>
+                <span className="text-muted-foreground">Upload document</span>
+                <span className="flex-1 h-px bg-border" />
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground font-bold text-[10px]">2</span>
+                <span className="font-medium text-foreground">Review details</span>
+                <span className="flex-1 h-px bg-border" />
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-muted font-bold text-[10px]">3</span>
+                <span>Upload T&amp;C</span>
+              </div>
               <FirmFormFields data={form} onChange={(f, v) => setForm(prev => ({ ...prev, [f]: v }))} />
               <div className="flex gap-3 justify-end pt-2">
-                <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted transition-colors text-sm font-medium">Cancel</button>
+                <button type="button" onClick={() => setStep("upload")} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted transition-colors text-sm font-medium">Back</button>
                 <button type="submit" disabled={createMutation.isPending} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-70 transition-colors flex items-center gap-2">
-                  {createMutation.isPending ? "Adding..." : <><Plus className="w-4 h-4" />Add Firm</>}
+                  {createMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Creating…</> : <><Plus className="w-4 h-4" />Create Firm</>}
                 </button>
               </div>
             </form>
-          ) : createdFirm ? (
+          )}
+
+          {/* Step 3: T&C upload */}
+          {step === "tc-upload" && createdFirm && (
             <TcUploadStep firmId={createdFirm.id} firmName={createdFirm.name} onDone={onClose} />
-          ) : null}
+          )}
         </div>
       </div>
     </div>

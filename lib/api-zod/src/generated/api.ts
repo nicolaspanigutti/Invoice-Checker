@@ -93,6 +93,26 @@ export const CreateLawFirmBody = zod.object({
 });
 
 /**
+ * @summary Extract law firm details from a document using AI
+ */
+export const ExtractLawFirmInfoBody = zod.object({
+  storagePath: zod.string(),
+  mimeType: zod.string().nullish(),
+});
+
+export const ExtractLawFirmInfoResponse = zod.object({
+  name: zod.string().nullish(),
+  firmType: zod.enum(["panel", "preferred", "specialist", "ad_hoc"]).nullish(),
+  contactName: zod.string().nullish(),
+  contactEmail: zod.string().nullish(),
+  contactPhone: zod.string().nullish(),
+  relationshipPartner: zod.string().nullish(),
+  jurisdictions: zod.array(zod.string()),
+  practiceAreas: zod.array(zod.string()),
+  notes: zod.string().nullish(),
+});
+
+/**
  * @summary Get law firm
  */
 export const GetLawFirmParams = zod.object({
