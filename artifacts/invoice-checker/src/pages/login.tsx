@@ -136,7 +136,7 @@ export default function Login() {
                 </div>
                 <span className="text-lg font-display font-bold text-gray-900">Invoice Checker</span>
               </div>
-              <p className="text-xs font-semibold tracking-widest text-gray-400 uppercase ml-6">Legal Ops · HQ Platform</p>
+
             </div>
 
             <div className="bg-white border border-gray-200 rounded-2xl p-7 shadow-sm">
