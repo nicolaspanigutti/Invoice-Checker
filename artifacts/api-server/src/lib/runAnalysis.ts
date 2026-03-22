@@ -15,6 +15,7 @@ import { eq, and, sql, desc } from "drizzle-orm";
 import { createHash } from "crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { normaliseRole, isUnauthorizedRole, KNOWN_ROLE_CODES } from "./roleNormaliser";
+import { checkCompleteness } from "./completenessGate";
 
 const HEURISTIC_PROMPT_VERSION = "v1.0";
 const EXTRACTION_PROMPT_VERSION = "v1.0";
@@ -105,6 +106,22 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     extractionPromptVersion: EXTRACTION_PROMPT_VERSION,
     heuristicPromptVersion: HEURISTIC_PROMPT_VERSION,
   }).returning();
+
+  const completeness = await checkCompleteness(invoiceId);
+  if (!completeness.canRunAnalysis) {
+    await db.update(analysisRunsTable).set({
+      status: "failed",
+      finishedAt: new Date(),
+      summaryJson: { error: "completeness_gate_failed", blockingIssues: completeness.blockingIssues },
+    }).where(eq(analysisRunsTable.id, run.id));
+    return {
+      analysisRunId: run.id,
+      issueCount: 0,
+      outcome: null,
+      amountAtRisk: null,
+      status: "failed",
+    };
+  }
 
   try {
   const issues: IssueInsert[] = [];
@@ -453,11 +470,22 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     for (let j = i + 1; j < items.length; j++) {
       const a = items[i];
       const b = items[j];
+      const descSimilar = (d1: string | null, d2: string | null): boolean => {
+        if (!d1 || !d2) return true;
+        const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
+        const n1 = normalize(d1);
+        const n2 = normalize(d2);
+        if (n1 === n2) return true;
+        const shorter = n1.length < n2.length ? n1 : n2;
+        const longer = n1.length < n2.length ? n2 : n1;
+        return longer.includes(shorter) || (shorter.length > 10 && longer.startsWith(shorter.slice(0, Math.floor(shorter.length * 0.8))));
+      };
       if (!a.isExpenseLine && !b.isExpenseLine
         && a.workDate && b.workDate && a.workDate === b.workDate
         && a.timekeeperLabel && b.timekeeperLabel && a.timekeeperLabel === b.timekeeperLabel
         && a.hours !== null && b.hours !== null && a.hours === b.hours
-        && a.rateCharged !== null && b.rateCharged !== null && a.rateCharged === b.rateCharged) {
+        && a.rateCharged !== null && b.rateCharged !== null && a.rateCharged === b.rateCharged
+        && descSimilar(a.description, b.description)) {
         const pairKey = `${a.lineNo}_${b.lineNo}`;
         if (!seenPairs.has(pairKey)) {
           seenPairs.add(pairKey);
