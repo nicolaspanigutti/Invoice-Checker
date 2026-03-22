@@ -1283,6 +1283,37 @@ router.get("/invoices/:id/report/pdf", requireRole("super_admin", "legal_ops", "
     partially_rejected: "Partially Rejected", fully_rejected: "Fully Rejected",
   };
 
+  // Generate AI executive summary for the PDF
+  const rejectedForAI = rejectedIssues.map(i => ({
+    rule: i.ruleCode,
+    severity: i.severity,
+    explanation: i.explanationText,
+    recovery: i.recoverableAmount ? `${invoice.currency} ${parseFloat(i.recoverableAmount).toLocaleString()}` : null,
+  }));
+  const pdfAiPayload = {
+    invoice: invoice.invoiceNumber,
+    lawFirm: lawFirmName ?? "unknown",
+    matter: invoice.matterName ?? "unspecified",
+    totalInvoiced: invoice.totalAmount ? `${invoice.currency} ${parseFloat(invoice.totalAmount).toLocaleString()}` : "unknown",
+    reviewOutcome: invoice.reviewOutcome ?? "in_progress",
+    issueSummary: { total: allIssues.length, rejected: rejectedIssues.length, accepted: acceptedIssues.length, escalated: escalatedIssues.length, open: openIssues.length },
+    rejectedItems: rejectedForAI,
+  };
+  let executiveSummary = "";
+  try {
+    const aiResp = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      max_completion_tokens: 300,
+      messages: [
+        { role: "system", content: "You are a senior legal operations analyst. Write a concise 3-5 sentence executive summary for a law firm invoice review report. Use professional, plain English — no jargon, no internal metric names, no system codes. Output only the summary paragraph." },
+        { role: "user", content: JSON.stringify(pdfAiPayload) },
+      ],
+    });
+    executiveSummary = aiResp.choices[0]?.message?.content?.trim() ?? "";
+  } catch {
+    executiveSummary = `Review of invoice ${invoice.invoiceNumber} from ${lawFirmName ?? "the law firm"} identified ${allIssues.length} compliance issue(s). ${rejectedIssues.length} issue(s) were rejected for further action.`;
+  }
+
   const doc = new PDFDocument({ size: "A4", margin: 50 });
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="invoice-report-${invoice.invoiceNumber}.pdf"`);
@@ -1291,7 +1322,6 @@ router.get("/invoices/:id/report/pdf", requireRole("super_admin", "legal_ops", "
   const RED = "#EC0000";
   const DARK = "#1a1a2e";
   const GREY = "#64748B";
-  const LIGHT = "#F8F8F8";
 
   doc.rect(0, 0, doc.page.width, 100).fill(RED);
   doc.fillColor("white").fontSize(9).font("Helvetica").text("INVOICE REVIEW REPORT", 50, 25, { characterSpacing: 2 });
@@ -1309,6 +1339,12 @@ router.get("/invoices/:id/report/pdf", requireRole("super_admin", "legal_ops", "
     drawHRule();
     doc.fillColor(DARK).font("Helvetica").fontSize(10);
   };
+
+  if (executiveSummary) {
+    section("Executive Findings Summary");
+    doc.fontSize(10).font("Helvetica").fillColor(DARK).text(executiveSummary, { lineGap: 3 });
+    doc.moveDown(0.5);
+  }
 
   section("Invoice Summary");
   const col = (label: string, value: string) => {
