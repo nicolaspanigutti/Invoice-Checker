@@ -6,6 +6,7 @@ import {
   useUpdateLawFirm,
   useGetLawFirm,
   useExtractLawFirmTermsFromTc,
+  useUpsertLawFirmTerms,
   useRequestUploadUrl,
   getListLawFirmsQueryKey,
   type LawFirmDetail,
@@ -15,7 +16,7 @@ import {
 import {
   Building2, Plus, Search, ChevronRight,
   CheckCircle, Globe, Briefcase, X, Pencil, Save,
-  Upload, FileText, Sparkles, CheckCircle2, Clock
+  Upload, FileText, Sparkles, CheckCircle2, Clock, Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -384,9 +385,11 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const updateMutation = useUpdateLawFirm();
+  const upsertTerms = useUpsertLawFirmTerms();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<FormData>(emptyForm);
   const [showTcUpload, setShowTcUpload] = useState(false);
+  const [verifyingTermKey, setVerifyingTermKey] = useState<string | null>(null);
 
   const handleStartEdit = () => {
     if (!firm) return;
@@ -421,6 +424,31 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
         toast({ title: firm.isActive ? "Firm deactivated." : "Firm reactivated." });
       }
     });
+  };
+
+  const handleVerifyTerm = async (termKey: string) => {
+    const typedFirm = firm as LawFirmDetail & { terms?: Array<{ id: number; termKey: string; termValue: unknown; verificationStatus: string; sourceType: string }> };
+    if (!typedFirm.terms) return;
+    setVerifyingTermKey(termKey);
+    try {
+      await upsertTerms.mutateAsync({
+        id: firmId,
+        data: {
+          terms: typedFirm.terms.map(t => ({
+            termKey: t.termKey,
+            termValue: t.termValue,
+            verificationStatus: (t.termKey === termKey ? "verified" : t.verificationStatus) as "draft" | "verified",
+          })),
+        },
+      });
+      queryClient.invalidateQueries({ queryKey: ["law-firms", firmId] });
+      queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+      toast({ title: "Term verified", description: "The term has been marked as manually verified." });
+    } catch {
+      toast({ variant: "destructive", title: "Verification failed", description: "Could not verify term. Please try again." });
+    } finally {
+      setVerifyingTermKey(null);
+    }
   };
 
   if (isLoading || !firm) {
@@ -540,9 +568,24 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
                         <span className="text-muted-foreground min-w-0 flex-1 pt-0.5">{TERM_LABELS[term.termKey] ?? term.termKey}</span>
                         <div className="flex items-start gap-2 flex-shrink-0">
                           <div className="text-foreground text-right text-xs max-w-[200px]">{formatTermValue(term.termKey, term.termValue)}</div>
-                          {term.verificationStatus === "verified"
-                            ? <span title="Verified manually"><CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" /></span>
-                            : <span title="AI-extracted — pending manual verification"><Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" /></span>}
+                          {term.verificationStatus === "verified" ? (
+                            <span title="Verified manually"><CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" /></span>
+                          ) : (
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <span title="AI-extracted — pending manual verification"><Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" /></span>
+                              <button
+                                onClick={() => handleVerifyTerm(term.termKey)}
+                                disabled={verifyingTermKey === term.termKey}
+                                title="Click to verify this term"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-emerald-400 text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {verifyingTermKey === term.termKey
+                                  ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                  : <CheckCircle2 className="w-2.5 h-2.5" />}
+                                Verify
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
