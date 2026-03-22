@@ -49,8 +49,6 @@ import {
   Plus,
   Sparkles,
   Upload,
-  ChevronDown,
-  ChevronUp,
   Building2,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -179,7 +177,6 @@ export default function InvoiceDetail() {
   const queryClient = useQueryClient();
   const id = parseInt(params.id, 10);
   const [addDocOpen, setAddDocOpen] = useState(false);
-  const [showAllItems, setShowAllItems] = useState(false);
   const [extracting, setExtracting] = useState(false);
 
   const { data: invoice, isLoading } = useGetInvoice(id);
@@ -208,7 +205,7 @@ export default function InvoiceDetail() {
   const canRunAnalysis = completeness?.canRunAnalysis ?? false;
   const blockingIssues = completeness?.blockingIssues ?? [];
 
-  const displayItems = showAllItems ? (items ?? []) : (items ?? []).slice(0, 15);
+  const displayItems = items ?? [];
 
   const handleExtract = async () => {
     setExtracting(true);
@@ -351,13 +348,6 @@ export default function InvoiceDetail() {
                     </TableBody>
                   </Table>
                 </div>
-                {items.length > 15 && (
-                  <div className="px-6 py-3 border-t border-border">
-                    <Button variant="ghost" size="sm" className="gap-2" onClick={() => setShowAllItems(s => !s)}>
-                      {showAllItems ? <><ChevronUp className="h-4 w-4" /> Show less</> : <><ChevronDown className="h-4 w-4" /> Show all {items.length} lines</>}
-                    </Button>
-                  </div>
-                )}
               </>
             )}
           </div>

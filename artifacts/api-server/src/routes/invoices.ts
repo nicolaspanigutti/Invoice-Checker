@@ -208,7 +208,7 @@ router.patch("/invoices/:id", requireRole("super_admin", "legal_ops"), async (re
     return;
   }
 
-  const allowed = ["documentType", "billingType", "matterName", "projectReference", "jurisdiction", "applicableLaw", "currency", "invoiceDate", "dueDate", "totalAmount", "subtotalAmount", "taxAmount", "internalRequestorId", "assignedLegalOpsId", "assignedInternalLawyerId", "invoiceStatus"];
+  const allowed = ["documentType", "billingType", "matterName", "projectReference", "jurisdiction", "applicableLaw", "currency", "invoiceDate", "dueDate", "totalAmount", "subtotalAmount", "taxAmount", "billingPeriodStart", "billingPeriodEnd", "internalRequestorId", "assignedLegalOpsId", "assignedInternalLawyerId", "invoiceStatus"];
   const updates: Partial<typeof invoicesTable.$inferInsert> = {};
   for (const key of allowed) {
     if (key in req.body) {

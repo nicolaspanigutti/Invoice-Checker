@@ -803,8 +803,8 @@ export default function Invoices() {
               <TableRow className="hover:bg-transparent">
                 <TableHead>Invoice #</TableHead>
                 <TableHead>Law Firm</TableHead>
-                <TableHead>Matter</TableHead>
-                <TableHead>Jurisdiction</TableHead>
+                <TableHead>Project/Matter</TableHead>
+                <TableHead>Team/Area</TableHead>
                 <TableHead>Requestor</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Invoice Date</TableHead>
