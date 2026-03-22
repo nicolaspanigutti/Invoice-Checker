@@ -41,7 +41,7 @@ async function buildInvoiceSummary(invoice: typeof invoicesTable.$inferSelect, i
   const [issueCountResult] = await db
     .select({ c: count() })
     .from(sql`issues`)
-    .where(sql`invoice_id = ${invoice.id}`);
+    .where(sql`invoice_id = ${invoice.id} AND issue_status != 'no_longer_applicable'`);
   const issueCount = Number(issueCountResult?.c ?? 0);
 
   const summary = {
