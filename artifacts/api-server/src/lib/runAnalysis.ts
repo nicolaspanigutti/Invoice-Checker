@@ -15,6 +15,7 @@ import { eq, and, sql, desc } from "drizzle-orm";
 import { createHash } from "crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { normaliseRole, isUnauthorizedRole, KNOWN_ROLE_CODES } from "./roleNormaliser";
+import { checkCompleteness } from "./completenessGate";
 
 const HEURISTIC_PROMPT_VERSION = "v1.0";
 const EXTRACTION_PROMPT_VERSION = "v1.0";
@@ -107,6 +108,25 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     extractionPromptVersion: EXTRACTION_PROMPT_VERSION,
     heuristicPromptVersion: HEURISTIC_PROMPT_VERSION,
   }).returning();
+
+  const completeness = await checkCompleteness(invoiceId);
+  if (!completeness.canRunAnalysis) {
+    await db.update(analysisRunsTable).set({
+      status: "failed",
+      finishedAt: new Date(),
+      summaryJson: {
+        error: "completeness_gate_failed",
+        blockingIssues: completeness.blockingIssues,
+      },
+    }).where(eq(analysisRunsTable.id, run.id));
+    return {
+      analysisRunId: run.id,
+      issueCount: 0,
+      outcome: null,
+      amountAtRisk: null,
+      status: "gate_failed",
+    };
+  }
 
   try {
   const issues: IssueInsert[] = [];
@@ -822,7 +842,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   for (const [date, descMap] of dateGroups.entries()) {
     for (const [desc, groupItems] of descMap.entries()) {
       const uniqueTimekeepers = new Set(groupItems.map(i => i.timekeeperLabel).filter(Boolean));
-      if (uniqueTimekeepers.size > meetingMinAttendees) {
+      if (uniqueTimekeepers.size > meetingMaxAttendees) {
         const total = groupItems.reduce((sum, i) => sum + n(i.amount), 0);
         issues.push({
           invoiceId,
@@ -833,7 +853,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
           evaluatorType: "deterministic",
           issueStatus: "open",
           routeToRole: "legal_ops",
-          explanationText: `On ${date}, ${uniqueTimekeepers.size} timekeepers billed for attendance at what appears to be the same meeting or call: ${Array.from(uniqueTimekeepers).join(", ")}. The configured threshold range for this matter is ${meetingMinAttendees}–${meetingMaxAttendees} attendees (fires when > ${meetingMinAttendees}). Total amount for these lines: ${invoice.currency} ${total.toFixed(2)}.`,
+          explanationText: `On ${date}, ${uniqueTimekeepers.size} timekeepers billed for attendance at what appears to be the same meeting or call: ${Array.from(uniqueTimekeepers).join(", ")}. This exceeds the configured maximum of ${meetingMaxAttendees} attendees (expected normal range: ${meetingMinAttendees}–${meetingMaxAttendees}). Total amount for these lines: ${invoice.currency} ${total.toFixed(2)}.`,
           evidenceJson: {
             date,
             meeting_description: desc,
