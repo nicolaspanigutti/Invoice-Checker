@@ -15,6 +15,8 @@ import {
   useListInvoiceComments,
   usePostInvoiceComment,
   useListInvoiceAuditEvents,
+  useUpdateInvoice,
+  useListUsers,
   getListInvoiceCommentsQueryKey,
   getListInvoiceAuditEventsQueryKey,
   type InvoiceItem,
@@ -26,6 +28,7 @@ import {
   type ListInvoiceCommentsParams,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -82,6 +85,9 @@ import {
   Activity,
   UserCircle,
   Mail,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -628,6 +634,17 @@ export default function InvoiceDetail() {
   const [rerunOpen, setRerunOpen] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
   const [rerunReason, setRerunReason] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    billingType: "" as "" | "time_and_materials" | "fixed_scope",
+    matterName: "",
+    projectReference: "",
+    jurisdiction: "",
+    currency: "GBP",
+    invoiceDate: "",
+    dueDate: "",
+    internalRequestorId: "__none__",
+  });
 
   const { data: invoice, isLoading } = useGetInvoice(id);
   const { data: documents } = useListInvoiceDocuments(id);
@@ -635,8 +652,10 @@ export default function InvoiceDetail() {
   const { data: issues } = useListInvoiceIssues(id);
   const { data: me } = useGetMe();
   const { data: auditEvents } = useListInvoiceAuditEvents(id);
+  const { data: allUsers } = useListUsers();
   const runAnalysis = useRunInvoiceAnalysis();
   const rerunAnalysis = useRerunInvoiceAnalysis();
+  const updateInvoice = useUpdateInvoice();
 
   const userRole = me?.role ?? null;
 
@@ -720,6 +739,44 @@ export default function InvoiceDetail() {
       toast({ variant: "destructive", title: "Re-run failed", description: msg });
     } finally {
       setIsRerunning(false);
+    }
+  };
+
+  const handleEditStart = () => {
+    setEditForm({
+      billingType: (invoice.billingType as "" | "time_and_materials" | "fixed_scope") ?? "",
+      matterName: invoice.matterName ?? "",
+      projectReference: invoice.projectReference ?? "",
+      jurisdiction: invoice.jurisdiction ?? "",
+      currency: invoice.currency ?? "GBP",
+      invoiceDate: invoice.invoiceDate ? invoice.invoiceDate.slice(0, 10) : "",
+      dueDate: invoice.dueDate ? invoice.dueDate.slice(0, 10) : "",
+      internalRequestorId: invoice.internalRequestorId != null ? String(invoice.internalRequestorId) : "__none__",
+    });
+    setIsEditing(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      await updateInvoice.mutateAsync({
+        id,
+        data: {
+          billingType: editForm.billingType || undefined,
+          matterName: editForm.matterName || undefined,
+          projectReference: editForm.projectReference || undefined,
+          jurisdiction: editForm.jurisdiction || undefined,
+          currency: editForm.currency || undefined,
+          invoiceDate: editForm.invoiceDate || undefined,
+          dueDate: editForm.dueDate || undefined,
+          internalRequestorId: (editForm.internalRequestorId && editForm.internalRequestorId !== "__none__") ? parseInt(editForm.internalRequestorId) : undefined,
+        },
+      });
+      toast({ title: "Invoice updated", description: "Invoice details saved successfully." });
+      queryClient.invalidateQueries({ queryKey: getGetInvoiceQueryKey(id) });
+      queryClient.invalidateQueries({ queryKey: getListInvoiceIssuesQueryKey(id) });
+      setIsEditing(false);
+    } catch {
+      toast({ variant: "destructive", title: "Save failed", description: "Could not update invoice. Please try again." });
     }
   };
 
@@ -933,7 +990,24 @@ export default function InvoiceDetail() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <div className="border border-border rounded-3xl bg-card p-6 shadow-sm">
-            <h2 className="text-lg font-display font-semibold mb-5">Invoice Summary</h2>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-display font-semibold">Invoice Summary</h2>
+              {!isEditing ? (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={handleEditStart}>
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setIsEditing(false)}>
+                    <X className="h-3.5 w-3.5" /> Cancel
+                  </Button>
+                  <Button size="sm" className="gap-1.5 bg-red-600 hover:bg-red-700 text-white" onClick={handleSave} disabled={updateInvoice.isPending}>
+                    {updateInvoice.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                    Save
+                  </Button>
+                </div>
+              )}
+            </div>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Law Firm</dt>
@@ -945,35 +1019,125 @@ export default function InvoiceDetail() {
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Matter Name</dt>
-                <dd className="mt-1">{invoice.matterName ?? <span className="text-muted-foreground">—</span>}</dd>
+                <dd className="mt-1">
+                  {isEditing ? (
+                    <Input
+                      value={editForm.matterName}
+                      onChange={e => setEditForm(f => ({ ...f, matterName: e.target.value }))}
+                      placeholder="e.g. Acme Acquisition"
+                      className="h-8 text-sm"
+                    />
+                  ) : (
+                    invoice.matterName ?? <span className="text-muted-foreground">—</span>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Project Reference</dt>
-                <dd className="mt-1 font-mono text-sm">{invoice.projectReference ?? <span className="text-muted-foreground">—</span>}</dd>
+                <dd className="mt-1">
+                  {isEditing ? (
+                    <Input
+                      value={editForm.projectReference}
+                      onChange={e => setEditForm(f => ({ ...f, projectReference: e.target.value }))}
+                      placeholder="e.g. PRJ-2024-001"
+                      className="h-8 text-sm font-mono"
+                    />
+                  ) : (
+                    invoice.projectReference
+                      ? <span className="font-mono text-sm">{invoice.projectReference}</span>
+                      : <span className="text-muted-foreground">—</span>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Jurisdiction</dt>
-                <dd className="mt-1">{invoice.jurisdiction ?? <span className="text-muted-foreground">—</span>}</dd>
+                <dd className="mt-1">
+                  {isEditing ? (
+                    <Input
+                      value={editForm.jurisdiction}
+                      onChange={e => setEditForm(f => ({ ...f, jurisdiction: e.target.value }))}
+                      placeholder="e.g. England & Wales"
+                      className="h-8 text-sm"
+                    />
+                  ) : (
+                    invoice.jurisdiction ?? <span className="text-muted-foreground">—</span>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Billing Type</dt>
                 <dd className="mt-1">
-                  {invoice.billingType
-                    ? invoice.billingType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
-                    : <span className="text-muted-foreground">—</span>}
+                  {isEditing ? (
+                    <Select
+                      value={editForm.billingType}
+                      onValueChange={v => setEditForm(f => ({ ...f, billingType: v as "time_and_materials" | "fixed_scope" }))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select billing type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="time_and_materials">Time &amp; Materials</SelectItem>
+                        <SelectItem value="fixed_scope">Fixed Scope</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    invoice.billingType
+                      ? invoice.billingType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+                      : <span className="text-muted-foreground">—</span>
+                  )}
                 </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Date</dt>
-                <dd className="mt-1">{invoice.invoiceDate ? format(new Date(invoice.invoiceDate), "d MMM yyyy") : <span className="text-muted-foreground">—</span>}</dd>
+                <dd className="mt-1">
+                  {isEditing ? (
+                    <Input
+                      type="date"
+                      value={editForm.invoiceDate}
+                      onChange={e => setEditForm(f => ({ ...f, invoiceDate: e.target.value }))}
+                      className="h-8 text-sm"
+                    />
+                  ) : (
+                    invoice.invoiceDate ? format(new Date(invoice.invoiceDate), "d MMM yyyy") : <span className="text-muted-foreground">—</span>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Due Date</dt>
-                <dd className="mt-1">{invoice.dueDate ? format(new Date(invoice.dueDate), "d MMM yyyy") : <span className="text-muted-foreground">—</span>}</dd>
+                <dd className="mt-1">
+                  {isEditing ? (
+                    <Input
+                      type="date"
+                      value={editForm.dueDate}
+                      onChange={e => setEditForm(f => ({ ...f, dueDate: e.target.value }))}
+                      className="h-8 text-sm"
+                    />
+                  ) : (
+                    invoice.dueDate ? format(new Date(invoice.dueDate), "d MMM yyyy") : <span className="text-muted-foreground">—</span>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Currency</dt>
-                <dd className="mt-1 font-mono">{invoice.currency}</dd>
+                <dd className="mt-1">
+                  {isEditing ? (
+                    <Select
+                      value={editForm.currency}
+                      onValueChange={v => setEditForm(f => ({ ...f, currency: v }))}
+                    >
+                      <SelectTrigger className="h-8 text-sm font-mono">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {["GBP", "USD", "EUR", "CHF", "AUD", "CAD", "SGD", "HKD", "JPY", "AED"].map(c => (
+                          <SelectItem key={c} value={c} className="font-mono">{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <span className="font-mono">{invoice.currency}</span>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Amount</dt>
@@ -993,7 +1157,26 @@ export default function InvoiceDetail() {
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Internal Requestor</dt>
-                <dd className="mt-1">{invoice.internalRequestorName ?? <span className="text-muted-foreground">—</span>}</dd>
+                <dd className="mt-1">
+                  {isEditing ? (
+                    <Select
+                      value={editForm.internalRequestorId}
+                      onValueChange={v => setEditForm(f => ({ ...f, internalRequestorId: v }))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select requestor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">None</SelectItem>
+                        {(allUsers ?? []).map(u => (
+                          <SelectItem key={u.id} value={String(u.id)}>{u.displayName ?? u.email}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    invoice.internalRequestorName ?? <span className="text-muted-foreground">—</span>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Created</dt>
