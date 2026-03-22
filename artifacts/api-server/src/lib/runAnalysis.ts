@@ -742,30 +742,31 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
         invoiceId,
         analysisRunId: run.id,
         invoiceItemId: item.id,
-        ruleCode: "UNAUTHORIZED_EXPENSE_TYPE",
+        ruleCode: "UNAUTHORIZED_TIMEKEEPER_ROLE",
         ruleType: "objective",
         severity: "error",
         evaluatorType: "deterministic",
         issueStatus: "open",
         routeToRole: "legal_ops",
-        explanationText: `Line ${item.lineNo} records a non-human role ("${item.roleRaw}") for ${invoice.currency} ${amount.toFixed(2)}. Machine translation and software tools are not authorised as billable timekeepers.`,
+        explanationText: `Line ${item.lineNo} records a non-human or software role ("${item.roleRaw}") billed as a timekeeper for ${invoice.currency} ${amount.toFixed(2)}. Machine translation tools, AI software, and similar non-human resources are not authorised as billable timekeepers under the Panel T&C.`,
         evidenceJson: {
           line_no: item.lineNo,
-          expense_type: item.roleRaw,
+          role_raw: item.roleRaw,
           amount,
           description: item.description,
           source_document: "Role normalisation policy",
-          authorised_types_in_source: KNOWN_ROLE_CODES,
+          authorised_roles: KNOWN_ROLE_CODES,
         },
         suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
         recoverableAmount: amount.toFixed(2),
-        recoveryGroupKey: `unauth_expense_${item.lineNo}`,
+        recoveryGroupKey: `unauth_timekeeper_${item.lineNo}`,
       });
       continue;
     }
 
     const applicableRates = panelRates.filter(pr =>
-      pr.r.roleCode === item.roleNormalizedComputed
+      pr.r.lawFirmName === firm?.name
+      && pr.r.roleCode === item.roleNormalizedComputed
       && pr.r.jurisdiction === invoice.jurisdiction
       && pr.r.currency === invoice.currency
       && (!invoice.invoiceDate || pr.r.validFrom <= invoice.invoiceDate)
