@@ -121,23 +121,20 @@ function ConfidencePill({ score }: { score?: number }) {
 function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [step, setStep] = useState<"upload" | "details" | "review">("upload");
+  const [step, setStep] = useState<"upload" | "review">("upload");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [createdInvoiceId, setCreatedInvoiceId] = useState<number | null>(null);
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [reviewForm, setReviewForm] = useState<Partial<ExtractedInvoiceData>>({});
+  const [reviewExtras, setReviewExtras] = useState({
+    billingType: "" as "" | "time_and_materials" | "fixed_scope",
+    currency: "GBP",
+    internalRequestorId: "",
+  });
   const [form, setForm] = useState({
     lawFirmId: "",
     documentType: "invoice" as "invoice" | "proforma",
-    billingType: "" as "" | "time_and_materials" | "fixed_scope" | "closed_scope",
-    matterName: "",
-    projectReference: "",
-    jurisdiction: "",
-    currency: "GBP",
-    invoiceDate: "",
-    dueDate: "",
-    internalRequestorId: "",
   });
 
   const { data: lawFirms } = useListLawFirms();
@@ -162,7 +159,8 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
     setExtractionResult(null);
     setExtracting(false);
     setReviewForm({});
-    setForm({ lawFirmId: "", documentType: "invoice", billingType: "", matterName: "", projectReference: "", jurisdiction: "", currency: "GBP", invoiceDate: "", dueDate: "", internalRequestorId: "" });
+    setReviewExtras({ billingType: "", currency: "GBP", internalRequestorId: "" });
+    setForm({ lawFirmId: "", documentType: "invoice" });
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, kind: "invoice_file" | "engagement_letter" | "budget_estimate") => {
@@ -200,7 +198,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
     e.target.value = "";
   };
 
-  const handleSubmitDetails = () => {
+  const handleCreateAndExtract = () => {
     if (!form.lawFirmId) {
       toast({ variant: "destructive", title: "Required", description: "Please select a law firm." });
       return;
@@ -220,14 +218,14 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
         data: {
           lawFirmId: parseInt(form.lawFirmId, 10),
           documentType: form.documentType,
-          billingType: form.billingType || null,
-          matterName: form.matterName || null,
-          projectReference: form.projectReference || null,
-          jurisdiction: form.jurisdiction || null,
-          currency: form.currency,
-          invoiceDate: form.invoiceDate || null,
-          dueDate: form.dueDate || null,
-          internalRequestorId: form.internalRequestorId ? parseInt(form.internalRequestorId, 10) : null,
+          billingType: null,
+          matterName: null,
+          projectReference: null,
+          jurisdiction: null,
+          currency: "GBP",
+          invoiceDate: null,
+          dueDate: null,
+          internalRequestorId: null,
           documents,
         },
       },
@@ -257,19 +255,19 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                     billingPeriodStart: result.extracted.billingPeriodStart ?? undefined,
                     billingPeriodEnd: result.extracted.billingPeriodEnd ?? undefined,
                   });
+                  if (result.extracted.currency) {
+                    setReviewExtras(e => ({ ...e, currency: result.extracted.currency! }));
+                  }
                   setExtracting(false);
                 },
                 onError: () => {
                   setExtracting(false);
-                  toast({ variant: "destructive", title: "Extraction failed", description: "Could not extract data from the invoice file. You can fill in details manually on the invoice page." });
+                  toast({ variant: "destructive", title: "Extraction failed", description: "Could not extract data from the invoice. Fill in the details below manually." });
                 },
               }
             );
           } else {
-            toast({ title: "Invoice created", description: "Invoice has been created successfully." });
-            onClose();
-            resetModal();
-            navigate(`/invoices/${invoice.id}`);
+            setStep("review");
           }
         },
         onError: () => {
@@ -286,19 +284,21 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
       return;
     }
 
-    const patchData: Record<string, string | null> = {};
+    const patchData: Record<string, string | null | number> = {};
     if (reviewForm.invoiceDate !== undefined) patchData.invoiceDate = reviewForm.invoiceDate ?? null;
     if (reviewForm.dueDate !== undefined) patchData.dueDate = reviewForm.dueDate ?? null;
     if (reviewForm.totalAmount !== undefined) patchData.totalAmount = reviewForm.totalAmount ?? null;
     if (reviewForm.subtotalAmount !== undefined) patchData.subtotalAmount = reviewForm.subtotalAmount ?? null;
     if (reviewForm.taxAmount !== undefined) patchData.taxAmount = reviewForm.taxAmount ?? null;
-    if (reviewForm.currency) patchData.currency = reviewForm.currency;
     if (reviewForm.matterName !== undefined) patchData.matterName = reviewForm.matterName ?? null;
     if (reviewForm.projectReference !== undefined) patchData.projectReference = reviewForm.projectReference ?? null;
     if (reviewForm.jurisdiction !== undefined) patchData.jurisdiction = reviewForm.jurisdiction ?? null;
     if (reviewForm.applicableLaw !== undefined) patchData.applicableLaw = reviewForm.applicableLaw ?? null;
     if (reviewForm.billingPeriodStart !== undefined) patchData.billingPeriodStart = reviewForm.billingPeriodStart ?? null;
     if (reviewForm.billingPeriodEnd !== undefined) patchData.billingPeriodEnd = reviewForm.billingPeriodEnd ?? null;
+    patchData.currency = reviewExtras.currency || "GBP";
+    if (reviewExtras.billingType) patchData.billingType = reviewExtras.billingType;
+    if (reviewExtras.internalRequestorId) patchData.internalRequestorId = parseInt(reviewExtras.internalRequestorId, 10);
 
     const doNavigate = () => {
       navigate(`/invoices/${createdInvoiceId}`);
@@ -326,7 +326,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
   const anyUploading = uploadedFiles.some(f => f.uploading);
 
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+    <Dialog open={open} onOpenChange={v => { if (!v) { resetModal(); onClose(); } }}>
       <DialogContent
         className="max-w-2xl max-h-[90vh] overflow-y-auto"
         onInteractOutside={e => e.preventDefault()}
@@ -337,19 +337,17 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
         </DialogHeader>
 
         <div className="flex gap-2 mb-6">
-          {(["upload", "details", "review"] as const).map((s, i) => {
-            const labels = { upload: "Upload Files", details: "Invoice Details", review: "AI Review" };
+          {(["upload", "review"] as const).map((s, i) => {
+            const labels = { upload: "Upload & Create", review: "Review & Confirm" };
             const isActive = step === s;
-            const isPast = (step === "details" && s === "upload") || (step === "review" && (s === "upload" || s === "details"));
-            const canClick = s === "upload" && step === "details";
+            const isPast = step === "review" && s === "upload";
             return (
               <button
                 key={s}
-                onClick={() => { if (canClick) setStep(s); }}
-                disabled={!canClick && !isActive}
+                disabled={!isActive && !isPast}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${isActive ? "bg-primary text-primary-foreground" : isPast ? "text-muted-foreground" : "text-muted-foreground opacity-40"}`}
               >
-                <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${isActive ? "bg-white/20" : isPast ? "bg-muted" : "bg-muted"}`}>{i + 1}</span>
+                <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${isActive ? "bg-white/20" : "bg-muted"}`}>{i + 1}</span>
                 {labels[s]}
               </button>
             );
@@ -358,6 +356,32 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
 
         {step === "upload" && (
           <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 space-y-1.5">
+                <Label>Law Firm <span className="text-destructive">*</span></Label>
+                <Select value={form.lawFirmId} onValueChange={v => setForm(f => ({ ...f, lawFirmId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select law firm" /></SelectTrigger>
+                  <SelectContent>
+                    {lawFirms?.filter(f => f.isActive).map(f => (
+                      <SelectItem key={f.id} value={String(f.id)}>
+                        {f.name} <span className="text-muted-foreground text-xs">({f.firmType === "panel" ? "Panel" : "Non-panel"})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2 space-y-1.5">
+                <Label>Document Type <span className="text-destructive">*</span></Label>
+                <Select value={form.documentType} onValueChange={v => setForm(f => ({ ...f, documentType: v as "invoice" | "proforma" }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="invoice">Invoice</SelectItem>
+                    <SelectItem value="proforma">Proforma</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="space-y-3">
               <div className="border-2 border-dashed border-border rounded-2xl p-6 text-center bg-muted/20">
                 <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
@@ -402,120 +426,18 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
             )}
 
             <DialogFooter>
-              <Button variant="outline" onClick={onClose}>Cancel</Button>
-              <Button onClick={() => setStep("details")} disabled={anyUploading}>
-                Continue to Details
-              </Button>
-            </DialogFooter>
-          </div>
-        )}
-
-        {step === "details" && (
-          <div className="space-y-5">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2 space-y-1.5">
-                <Label>Law Firm <span className="text-destructive">*</span></Label>
-                <Select value={form.lawFirmId} onValueChange={v => setForm(f => ({ ...f, lawFirmId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select law firm" /></SelectTrigger>
-                  <SelectContent>
-                    {lawFirms?.filter(f => f.isActive).map(f => (
-                      <SelectItem key={f.id} value={String(f.id)}>
-                        {f.name} <span className="text-muted-foreground text-xs">({f.firmType === "panel" ? "Panel" : "Non-panel"})</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Document Type <span className="text-destructive">*</span></Label>
-                <Select value={form.documentType} onValueChange={v => setForm(f => ({ ...f, documentType: v as "invoice" | "proforma" }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="invoice">Invoice</SelectItem>
-                    <SelectItem value="proforma">Proforma</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Billing Type</Label>
-                <Select value={form.billingType} onValueChange={v => setForm(f => ({ ...f, billingType: v as "" | "time_and_materials" | "fixed_scope" | "closed_scope" }))}>
-                  <SelectTrigger><SelectValue placeholder="Select billing type" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="time_and_materials">Time & Materials</SelectItem>
-                    <SelectItem value="fixed_scope">Fixed Scope</SelectItem>
-                    <SelectItem value="closed_scope">Closed Scope</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="col-span-2 space-y-1.5">
-                <Label>Matter Name</Label>
-                <Input value={form.matterName} onChange={e => setForm(f => ({ ...f, matterName: e.target.value }))} placeholder="e.g. Acquisition of Meridian Corp" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Project Reference</Label>
-                <Input value={form.projectReference} onChange={e => setForm(f => ({ ...f, projectReference: e.target.value }))} placeholder="e.g. PROJ-2026-001" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Jurisdiction</Label>
-                <Input value={form.jurisdiction} onChange={e => setForm(f => ({ ...f, jurisdiction: e.target.value }))} placeholder="e.g. England & Wales" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Currency <span className="text-destructive">*</span></Label>
-                <Select value={form.currency} onValueChange={v => setForm(f => ({ ...f, currency: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {["GBP", "EUR", "USD", "CHF", "SGD", "AED"].map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Invoice Date</Label>
-                <Input type="date" value={form.invoiceDate} onChange={e => setForm(f => ({ ...f, invoiceDate: e.target.value }))} />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Due Date</Label>
-                <Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
-              </div>
-
-              <div className="col-span-2 space-y-1.5">
-                <Label>Internal Requestor</Label>
-                <Select value={form.internalRequestorId} onValueChange={v => setForm(f => ({ ...f, internalRequestorId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select requestor" /></SelectTrigger>
-                  <SelectContent>
-                    {lawyers.map(u => (
-                      <SelectItem key={u.id} value={String(u.id)}>{u.displayName} ({u.role.replace("_", " ")})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {!hasInvoiceFile && (
-              <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-amber-800">No invoice file uploaded. You can add documents after creation, but AI extraction won&apos;t run until an invoice file is present.</p>
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
-              <Button onClick={handleSubmitDetails} disabled={createInvoice.isPending || !form.lawFirmId}>
+              <Button variant="outline" onClick={() => { resetModal(); onClose(); }}>Cancel</Button>
+              <Button
+                onClick={handleCreateAndExtract}
+                disabled={anyUploading || !form.lawFirmId || createInvoice.isPending}
+              >
                 {createInvoice.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {hasInvoiceFile ? "Create & Extract" : "Create Invoice"}
               </Button>
             </DialogFooter>
           </div>
         )}
+
 
         {step === "review" && (
           <div className="space-y-5">
@@ -527,18 +449,58 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
               </div>
             )}
 
-            {!extracting && extractionResult && (
+            {!extracting && (
               <>
-                <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                  <CheckCircle2 className="h-4 w-4 text-blue-600 flex-shrink-0" />
-                  <p className="text-sm text-blue-800">AI extracted the following fields. Please review and correct any errors before proceeding.</p>
-                </div>
+                {extractionResult ? (
+                  <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                    <CheckCircle2 className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                    <p className="text-sm text-blue-800">AI extracted the following fields. Please review and correct any errors before confirming.</p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 p-3 bg-muted/40 border border-border rounded-xl">
+                    <AlertTriangle className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <p className="text-sm text-muted-foreground">No invoice file uploaded — fill in the details below. You can also add files from the invoice page later.</p>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
+                    <Label>Billing Type</Label>
+                    <Select value={reviewExtras.billingType} onValueChange={v => setReviewExtras(e => ({ ...e, billingType: v as "" | "time_and_materials" | "fixed_scope" }))}>
+                      <SelectTrigger><SelectValue placeholder="Select billing type" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="time_and_materials">Time &amp; Materials</SelectItem>
+                        <SelectItem value="fixed_scope">Fixed Scope</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Currency <span className="text-destructive">*</span></Label>
+                    <Select value={reviewExtras.currency} onValueChange={v => setReviewExtras(e => ({ ...e, currency: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {["GBP", "EUR", "USD", "CHF", "SGD", "AED"].map(c => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label>Internal Requestor</Label>
+                    <Select value={reviewExtras.internalRequestorId} onValueChange={v => setReviewExtras(e => ({ ...e, internalRequestorId: v }))}>
+                      <SelectTrigger><SelectValue placeholder="Select requestor (optional)" /></SelectTrigger>
+                      <SelectContent>
+                        {lawyers.map(u => (
+                          <SelectItem key={u.id} value={String(u.id)}>{u.displayName} ({u.role.replace(/_/g, " ")})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
                     <Label>
                       Invoice Date
-                      <ConfidencePill score={extractionResult.confidence?.invoiceDate} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.invoiceDate} />}
                     </Label>
                     <Input
                       type="date"
@@ -549,7 +511,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   <div className="space-y-1.5">
                     <Label>
                       Due Date
-                      <ConfidencePill score={extractionResult.confidence?.dueDate} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.dueDate} />}
                     </Label>
                     <Input
                       type="date"
@@ -560,7 +522,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   <div className="space-y-1.5">
                     <Label>
                       Total Amount
-                      <ConfidencePill score={extractionResult.confidence?.totalAmount} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.totalAmount} />}
                     </Label>
                     <Input
                       value={reviewForm.totalAmount ?? ""}
@@ -569,20 +531,19 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>
-                      Currency
-                      <ConfidencePill score={extractionResult.confidence?.currency} />
+                    <Label>Subtotal
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.subtotalAmount} />}
                     </Label>
                     <Input
-                      value={reviewForm.currency ?? ""}
-                      onChange={e => setReviewForm(f => ({ ...f, currency: e.target.value }))}
-                      placeholder="e.g. GBP"
+                      value={reviewForm.subtotalAmount ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, subtotalAmount: e.target.value }))}
+                      placeholder="e.g. 11000.00"
                     />
                   </div>
                   <div className="col-span-2 space-y-1.5">
                     <Label>
                       Matter Name
-                      <ConfidencePill score={extractionResult.confidence?.matterName} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.matterName} />}
                     </Label>
                     <Input
                       value={reviewForm.matterName ?? ""}
@@ -592,7 +553,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   <div className="space-y-1.5">
                     <Label>
                       Project Reference
-                      <ConfidencePill score={extractionResult.confidence?.projectReference} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.projectReference} />}
                     </Label>
                     <Input
                       value={reviewForm.projectReference ?? ""}
@@ -602,7 +563,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   <div className="space-y-1.5">
                     <Label>
                       Jurisdiction
-                      <ConfidencePill score={extractionResult.confidence?.jurisdiction} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.jurisdiction} />}
                     </Label>
                     <Input
                       value={reviewForm.jurisdiction ?? ""}
@@ -612,7 +573,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   <div className="col-span-2 space-y-1.5">
                     <Label>
                       Applicable Law
-                      <ConfidencePill score={extractionResult.confidence?.applicableLaw} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.applicableLaw} />}
                     </Label>
                     <Input
                       value={reviewForm.applicableLaw ?? ""}
@@ -622,19 +583,8 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   </div>
                   <div className="space-y-1.5">
                     <Label>
-                      Subtotal
-                      <ConfidencePill score={extractionResult.confidence?.subtotalAmount} />
-                    </Label>
-                    <Input
-                      value={reviewForm.subtotalAmount ?? ""}
-                      onChange={e => setReviewForm(f => ({ ...f, subtotalAmount: e.target.value }))}
-                      placeholder="e.g. 11000.00"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>
                       Tax Amount
-                      <ConfidencePill score={extractionResult.confidence?.taxAmount} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.taxAmount} />}
                     </Label>
                     <Input
                       value={reviewForm.taxAmount ?? ""}
@@ -645,7 +595,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   <div className="space-y-1.5">
                     <Label>
                       Billing Period Start
-                      <ConfidencePill score={extractionResult.confidence?.billingPeriodStart} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.billingPeriodStart} />}
                     </Label>
                     <Input
                       type="date"
@@ -656,7 +606,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   <div className="space-y-1.5">
                     <Label>
                       Billing Period End
-                      <ConfidencePill score={extractionResult.confidence?.billingPeriodEnd} />
+                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.billingPeriodEnd} />}
                     </Label>
                     <Input
                       type="date"
@@ -666,7 +616,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   </div>
                 </div>
 
-                {(extractionResult.extracted.lineItems ?? []).length > 0 && (
+                {extractionResult && (extractionResult.extracted.lineItems ?? []).length > 0 && (
                   <div className="p-3 bg-muted/30 rounded-xl">
                     <p className="text-sm font-medium mb-1">
                       {(extractionResult.extracted.lineItems ?? []).length} line item{(extractionResult.extracted.lineItems ?? []).length !== 1 ? "s" : ""} extracted
@@ -675,16 +625,6 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                   </div>
                 )}
               </>
-            )}
-
-            {!extracting && !extractionResult && (
-              <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-amber-800">Extraction failed</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">You can still open the invoice and fill in details manually.</p>
-                </div>
-              </div>
             )}
 
             {!extracting && completenessData && (
