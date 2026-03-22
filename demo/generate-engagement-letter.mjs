@@ -1,10 +1,12 @@
 import { createRequire } from "module";
 import { createWriteStream } from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
 
 const require = createRequire(import.meta.url);
-const PDFDocument = require("pdfkit");
+const PDFDocument = require("../artifacts/api-server/node_modules/pdfkit");
 
-const OUT = "./demo/Caldwell_Pryce_LLP_Engagement_Letter_ACQ2026.pdf";
+const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "Caldwell_Pryce_LLP_Engagement_Letter_ACQ2026.pdf");
 
 const RED   = "#8B0000";
 const DARK  = "#1A1A1A";

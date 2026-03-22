@@ -8,10 +8,10 @@ import { fileURLToPath } from "url";
 import path from "path";
 
 const require = createRequire(import.meta.url);
-const PDFDocument = require("../artifacts/api-server/node_modules/pdfkit");
+const PDFDocument = require("./artifacts/api-server/node_modules/pdfkit");
 
-const OUT       = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "Caldwell_Pryce_LLP_INV-2026-0148.pdf");
-const OUT_GUIDE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "Caldwell_Pryce_LLP_INV-2026-0148_Demo_Guide.pdf");
+const OUT       = "./demo/Caldwell_Pryce_LLP_INV-2026-0148.pdf";
+const OUT_GUIDE = "./demo/Caldwell_Pryce_LLP_INV-2026-0148_Demo_Guide.pdf";
 
 // ─── Palette ───────────────────────────────────────────────────────────────
 const RED    = "#8B0000";
