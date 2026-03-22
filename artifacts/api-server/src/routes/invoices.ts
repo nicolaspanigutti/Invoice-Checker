@@ -271,6 +271,15 @@ router.post("/invoices/:id/documents", requireRole("super_admin", "legal_ops"), 
     extractionStatus: "pending",
   }).returning();
 
+  await db.insert(auditEventsTable).values({
+    entityType: "invoice",
+    entityId: id,
+    eventType: "document_uploaded",
+    actorId: req.session.userId ?? null,
+    afterJson: { documentId: doc.id, documentKind, fileName },
+    reason: null,
+  });
+
   res.status(201).json({
     id: doc.id,
     invoiceId: doc.invoiceId,
@@ -465,15 +474,42 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
   const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
   if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
 
+  const actorId = req.session.userId!;
+
+  await db.insert(auditEventsTable).values({
+    entityType: "invoice",
+    entityId: id,
+    eventType: "analysis_started",
+    actorId,
+    afterJson: null,
+    reason: null,
+  });
+
   try {
-    const result = await runAnalysis(id, req.session.userId!);
+    const result = await runAnalysis(id, actorId);
     if (result.status === "gate_failed") {
+      await db.insert(auditEventsTable).values({
+        entityType: "invoice",
+        entityId: id,
+        eventType: "analysis_failed",
+        actorId,
+        afterJson: { reason: "gate_failed" },
+        reason: "Completeness gate failed",
+      });
       res.status(422).json({
         error: "Cannot run analysis: completeness gate failed. Check the invoice for missing required fields or documents.",
         analysisRunId: result.analysisRunId,
       });
       return;
     }
+    await db.insert(auditEventsTable).values({
+      entityType: "invoice",
+      entityId: id,
+      eventType: "analysis_completed",
+      actorId,
+      afterJson: { issueCount: result.issueCount, outcome: result.outcome, amountAtRisk: result.amountAtRisk },
+      reason: null,
+    });
     res.json({
       analysisRunId: result.analysisRunId,
       invoiceId: id,
@@ -626,6 +662,18 @@ router.post("/invoices/:id/issues/:issueId/decide", requireRole("super_admin", "
   if (!issue) { res.status(404).json({ error: "Issue not found" }); return; }
 
   const isLawyer = actorRole === "internal_lawyer";
+
+  const ACTIONABLE_STATUSES_FOR_ROLE: Record<string, string[]> = {
+    legal_ops: ["open"],
+    internal_lawyer: ["escalated_to_internal_lawyer"],
+    super_admin: ["open", "escalated_to_internal_lawyer"],
+  };
+  const actionableStatuses = ACTIONABLE_STATUSES_FOR_ROLE[actorRole] ?? [];
+  if (!actionableStatuses.includes(issue.issueStatus)) {
+    res.status(409).json({ error: `Cannot perform '${action}' on issue with current status '${issue.issueStatus}'` });
+    return;
+  }
+
   const statusMap = isLawyer ? ACTION_TO_STATUS_LAWYER : ACTION_TO_STATUS;
   const newIssueStatus = statusMap[action] ?? issue.issueStatus;
 

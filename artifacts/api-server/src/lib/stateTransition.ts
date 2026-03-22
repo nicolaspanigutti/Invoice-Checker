@@ -47,11 +47,11 @@ export async function evaluateInvoiceState(
   if (issues.length === 0) {
     newStatus = "ready_to_pay";
     outcome = "clean";
-  } else if (hasEscalated) {
-    newStatus = "waiting_internal_lawyer";
-    outcome = null;
   } else if (hasOpen) {
     newStatus = "in_review";
+    outcome = null;
+  } else if (hasEscalated) {
+    newStatus = "waiting_internal_lawyer";
     outcome = null;
   } else if (allDecided) {
     if (hasRejected) {

@@ -239,14 +239,6 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
   const latestDecision = issue.latestDecision ?? null;
   const hasDecision = latestDecision !== null;
 
-  const ROLE_PERMITTED_ACTIONS: Record<string, string[]> = {
-    legal_ops: ["accept", "reject", "delegate"],
-    internal_lawyer: ["accept", "reject", "return"],
-    super_admin: ["accept", "reject", "delegate", "return"],
-  };
-  const permitted = userRole ? (ROLE_PERMITTED_ACTIONS[userRole] ?? []) : [];
-
-  const canDecide = !hasDecision || (latestDecision?.action === "return") || (latestDecision?.action === "delegate" && userRole === "internal_lawyer");
 
   const handleDecide = async (action: string) => {
     if (action === "return" && !note.trim()) {
@@ -365,96 +357,75 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
             <IssueDecisionBadge action={latestDecision!.action} actorName={latestDecision!.actorName} note={latestDecision!.note} />
           )}
 
-          {canDecide && permitted.length > 0 && !hasDecision && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Your Decision</p>
-              <div className="flex flex-wrap gap-2">
-                {permitted.includes("accept") && (
-                  <Button size="sm" variant="outline" className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
-                    onClick={() => handleDecide("accept")} disabled={decideIssue.isPending}>
-                    <ThumbsUp className="h-3.5 w-3.5" /> Accept
-                  </Button>
-                )}
-                {permitted.includes("reject") && (
-                  <Button size="sm" variant="outline" className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
-                    onClick={() => handleDecide("reject")} disabled={decideIssue.isPending}>
-                    <ThumbsDown className="h-3.5 w-3.5" /> Reject
-                  </Button>
-                )}
-                {permitted.includes("delegate") && (
-                  <Button size="sm" variant="outline" className="gap-1.5 border-purple-300 text-purple-700 hover:bg-purple-50"
-                    onClick={() => handleDecide("delegate")} disabled={decideIssue.isPending}>
-                    <ArrowRightCircle className="h-3.5 w-3.5" /> Delegate
-                  </Button>
-                )}
-                {permitted.includes("return") && (
-                  <Button size="sm" variant="outline" className="gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50"
-                    onClick={() => { setShowNoteInput("return"); }} disabled={decideIssue.isPending}>
-                    <Undo2 className="h-3.5 w-3.5" /> Return
-                  </Button>
+          {(() => {
+            const currentIssueStatus = issue.issueStatus;
+            const isOpen = currentIssueStatus === "open";
+            const isEscalated = currentIssueStatus === "escalated_to_internal_lawyer";
+
+            const actionsForLegalOps = isOpen && (userRole === "legal_ops" || userRole === "super_admin")
+              ? (userRole === "legal_ops" ? ["accept", "reject", "delegate"] : ["accept", "reject", "delegate", "return"])
+              : [];
+            const actionsForLawyer = isEscalated && (userRole === "internal_lawyer" || userRole === "super_admin")
+              ? ["accept", "reject", "return"]
+              : [];
+            const availableActions = [...new Set([...actionsForLegalOps, ...actionsForLawyer])];
+
+            if (availableActions.length === 0) return null;
+
+            const sectionLabel = isEscalated && userRole === "internal_lawyer"
+              ? "Internal Lawyer Decision"
+              : hasDecision && latestDecision?.action === "return"
+              ? "Re-evaluate Issue"
+              : "Your Decision";
+
+            return (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{sectionLabel}</p>
+                <div className="flex flex-wrap gap-2">
+                  {availableActions.includes("accept") && (
+                    <Button size="sm" variant="outline" className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
+                      onClick={() => handleDecide("accept")} disabled={decideIssue.isPending}>
+                      <ThumbsUp className="h-3.5 w-3.5" /> Accept
+                    </Button>
+                  )}
+                  {availableActions.includes("reject") && (
+                    <Button size="sm" variant="outline" className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
+                      onClick={() => handleDecide("reject")} disabled={decideIssue.isPending}>
+                      <ThumbsDown className="h-3.5 w-3.5" /> Reject
+                    </Button>
+                  )}
+                  {availableActions.includes("delegate") && (
+                    <Button size="sm" variant="outline" className="gap-1.5 border-purple-300 text-purple-700 hover:bg-purple-50"
+                      onClick={() => handleDecide("delegate")} disabled={decideIssue.isPending}>
+                      <ArrowRightCircle className="h-3.5 w-3.5" /> Delegate
+                    </Button>
+                  )}
+                  {availableActions.includes("return") && (
+                    <Button size="sm" variant="outline" className="gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50"
+                      onClick={() => { setShowNoteInput("return"); }} disabled={decideIssue.isPending}>
+                      <Undo2 className="h-3.5 w-3.5" /> {isEscalated ? "Return to Legal Ops" : "Return"}
+                    </Button>
+                  )}
+                </div>
+                {showNoteInput && (
+                  <div className="space-y-2">
+                    <textarea
+                      className="w-full text-sm border border-border rounded-xl p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[72px]"
+                      placeholder={showNoteInput === "return" ? "Reason for returning (required)…" : "Add a note (optional)…"}
+                      value={note}
+                      onChange={e => setNote(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => handleDecide(showNoteInput)} disabled={decideIssue.isPending || (showNoteInput === "return" && !note.trim())}>
+                        {decideIssue.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setShowNoteInput(null); setNote(""); }}>Cancel</Button>
+                    </div>
+                  </div>
                 )}
               </div>
-              {showNoteInput && (
-                <div className="space-y-2">
-                  <textarea
-                    className="w-full text-sm border border-border rounded-xl p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[72px]"
-                    placeholder={showNoteInput === "return" ? "Reason for returning (required)…" : "Add a note (optional)…"}
-                    value={note}
-                    onChange={e => setNote(e.target.value)}
-                  />
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => handleDecide(showNoteInput)} disabled={decideIssue.isPending || (showNoteInput === "return" && !note.trim())}>
-                      {decideIssue.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => { setShowNoteInput(null); setNote(""); }}>Cancel</Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {latestDecision?.action === "delegate" && (
-            <div className="flex items-center gap-2 p-2.5 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-700">
-              <ArrowRightCircle className="h-3.5 w-3.5 flex-shrink-0" />
-              Waiting for Internal Lawyer review
-            </div>
-          )}
-
-          {canDecide && permitted.length > 0 && latestDecision?.action === "delegate" && userRole === "internal_lawyer" && (
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Internal Lawyer Decision</p>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
-                  onClick={() => handleDecide("accept")} disabled={decideIssue.isPending}>
-                  <ThumbsUp className="h-3.5 w-3.5" /> Accept
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
-                  onClick={() => handleDecide("reject")} disabled={decideIssue.isPending}>
-                  <ThumbsDown className="h-3.5 w-3.5" /> Reject
-                </Button>
-                <Button size="sm" variant="outline" className="gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50"
-                  onClick={() => { setShowNoteInput("return"); }} disabled={decideIssue.isPending}>
-                  <Undo2 className="h-3.5 w-3.5" /> Return to Legal Ops
-                </Button>
-              </div>
-              {showNoteInput && (
-                <div className="space-y-2">
-                  <textarea
-                    className="w-full text-sm border border-border rounded-xl p-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-primary min-h-[72px]"
-                    placeholder="Reason for returning (required)…"
-                    value={note}
-                    onChange={e => setNote(e.target.value)}
-                  />
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => handleDecide("return")} disabled={decideIssue.isPending || !note.trim()}>
-                      {decideIssue.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm Return"}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => { setShowNoteInput(null); setNote(""); }}>Cancel</Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           <div>
             <button

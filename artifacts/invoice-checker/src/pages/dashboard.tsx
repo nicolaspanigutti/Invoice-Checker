@@ -1,6 +1,6 @@
 import { useListInvoices } from "@workspace/api-client-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from "recharts";
-import { FileText, AlertTriangle, CheckCircle2, TrendingDown, ArrowRight } from "lucide-react";
+import { FileText, AlertTriangle, CheckCircle2, ArrowRight, XCircle } from "lucide-react";
 import { Link } from "wouter";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -41,14 +41,10 @@ export default function Dashboard() {
   const { data } = useListInvoices({ pageSize: 50 });
   const invoices = data?.data ?? [];
 
-  const pending = invoices.filter(i => ["in_review", "extracting_data", "pending_law_firm"].includes(i.invoiceStatus as string)).length;
+  const pending = invoices.filter(i => (i.invoiceStatus as string) === "in_review").length;
   const escalated = invoices.filter(i => (i.invoiceStatus as string) === "waiting_internal_lawyer").length;
   const approved = invoices.filter(i => (i.invoiceStatus as string) === "ready_to_pay").length;
-
-  const totalAmount = invoices.reduce((sum, i) => {
-    const v = parseFloat(i.totalAmount ?? "0");
-    return sum + (isNaN(v) ? 0 : v);
-  }, 0);
+  const disputed = invoices.filter(i => (i.invoiceStatus as string) === "pending_law_firm").length;
 
   const recent = [...invoices]
     .sort((a, b) => new Date(b.invoiceDate ?? 0).getTime() - new Date(a.invoiceDate ?? 0).getTime())
@@ -112,19 +108,15 @@ export default function Dashboard() {
           </div>
         </Link>
 
-        {/* Total Value */}
-        <Link href="/invoices" className="block group">
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-blue-400">
+        {/* Disputed */}
+        <Link href="/invoices?status=pending_law_firm" className="block group">
+          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-orange-400">
             <div className="flex items-start justify-between">
-              <p className="text-sm font-medium text-blue-700">Total Value</p>
-              <TrendingDown className="w-5 h-5 text-blue-600" />
+              <p className="text-sm font-medium text-orange-700">Disputed</p>
+              <XCircle className="w-5 h-5 text-orange-600" />
             </div>
-            <p className="text-2xl font-display font-bold text-blue-700 mt-3 leading-tight">
-              {totalAmount > 0
-                ? new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", notation: "compact", maximumFractionDigits: 1 }).format(totalAmount)
-                : "—"}
-            </p>
-            <p className="text-xs text-blue-600 mt-1 group-hover:text-blue-800 transition-colors">{invoices.length} invoice{invoices.length !== 1 ? "s" : ""} tracked →</p>
+            <p className="text-4xl font-display font-bold text-orange-700 mt-3">{disputed}</p>
+            <p className="text-xs text-orange-600 mt-1 group-hover:text-orange-800 transition-colors">Returned to law firm →</p>
           </div>
         </Link>
       </div>
