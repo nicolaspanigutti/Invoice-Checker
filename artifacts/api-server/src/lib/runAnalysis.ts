@@ -873,8 +873,14 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   }
 
   let greyIssues: IssueInsert[] = [];
+  let greyRulesFailed = false;
   if (items.length > 0) {
-    greyIssues = await runGreyRules(invoiceId, run.id, invoice, firm, items, elData, budgetData, panelRates);
+    try {
+      greyIssues = await runGreyRules(invoiceId, run.id, invoice, firm, items, elData, budgetData, panelRates);
+    } catch (greyErr) {
+      console.error("Grey rule AI evaluation failed; continuing with objective results:", greyErr);
+      greyRulesFailed = true;
+    }
   }
 
   issues.push(...greyIssues);
@@ -904,7 +910,13 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   await db.update(analysisRunsTable).set({
     status: "completed",
     finishedAt: new Date(),
-    summaryJson: { issueCount: issues.length, totalRecoverable, outcome },
+    summaryJson: {
+      issueCount: issues.length,
+      totalRecoverable,
+      outcome,
+      greyRulesEvaluated: !greyRulesFailed,
+      greyRulesFailedReason: greyRulesFailed ? "AI evaluation error" : null,
+    },
   }).where(eq(analysisRunsTable.id, run.id));
 
   return {

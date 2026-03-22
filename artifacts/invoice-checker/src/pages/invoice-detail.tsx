@@ -609,6 +609,12 @@ export default function InvoiceDetail() {
                 </button>
               )}
             </div>
+            {showIssuesPanel && hasIssues && flaggedItemIds.size === 0 && allItems.length > 0 && !showAllLines && (
+              <div className="px-4 py-3 bg-amber-50/60 border-b border-amber-200 text-xs text-amber-800 text-center">
+                <AlertTriangle className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+                Issues found are invoice-level (not linked to specific lines). Showing all lines for reference.
+              </div>
+            )}
             {allItems.length === 0 ? (
               <div className="text-center py-12">
                 <FileText className="mx-auto h-8 w-8 text-muted-foreground/30 mb-3" />
