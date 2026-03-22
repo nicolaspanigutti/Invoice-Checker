@@ -250,6 +250,56 @@ paths:
                 items:
                   $ref: "#/components/schemas/FirmTerm"
 
+  /law-firms/{id}/tc-extract:
+    post:
+      operationId: extractLawFirmTermsFromTc
+      tags: [lawFirms]
+      summary: Extract commercial terms from a T&C / engagement letter document using AI
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [storagePath]
+              properties:
+                storagePath:
+                  type: string
+                mimeType:
+                  type: string
+      responses:
+        "200":
+          description: Extracted terms
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  extracted:
+                    type: integer
+                  terms:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FirmTerm"
+        "404":
+          description: Law firm not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Could not extract text from document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /panel-baseline-documents:
     get:
       operationId: listPanelBaselineDocuments

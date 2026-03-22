@@ -832,6 +832,16 @@ export type UpsertLawFirmTermsBody = {
   terms: UpsertTermItem[];
 };
 
+export type ExtractLawFirmTermsFromTcBody = {
+  storagePath: string;
+  mimeType?: string;
+};
+
+export type ExtractLawFirmTermsFromTc200 = {
+  extracted?: number;
+  terms?: FirmTerm[];
+};
+
 export type ListPanelBaselineDocumentsParams = {
   documentKind?: ListPanelBaselineDocumentsDocumentKind;
 };

@@ -31,6 +31,8 @@ import type {
   DecideIssueRequest,
   EmailDraft,
   ErrorResponse,
+  ExtractLawFirmTermsFromTc200,
+  ExtractLawFirmTermsFromTcBody,
   ExtractionResult,
   FirmTerm,
   HealthStatus,
@@ -912,6 +914,97 @@ export const useUpsertLawFirmTerms = <
   TContext
 > => {
   return useMutation(getUpsertLawFirmTermsMutationOptions(options));
+};
+
+/**
+ * @summary Extract commercial terms from a T&C / engagement letter document using AI
+ */
+export const getExtractLawFirmTermsFromTcUrl = (id: number) => {
+  return `/api/law-firms/${id}/tc-extract`;
+};
+
+export const extractLawFirmTermsFromTc = async (
+  id: number,
+  extractLawFirmTermsFromTcBody: ExtractLawFirmTermsFromTcBody,
+  options?: RequestInit,
+): Promise<ExtractLawFirmTermsFromTc200> => {
+  return customFetch<ExtractLawFirmTermsFromTc200>(
+    getExtractLawFirmTermsFromTcUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(extractLawFirmTermsFromTcBody),
+    },
+  );
+};
+
+export const getExtractLawFirmTermsFromTcMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractLawFirmTermsFromTc>>,
+    TError,
+    { id: number; data: BodyType<ExtractLawFirmTermsFromTcBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extractLawFirmTermsFromTc>>,
+  TError,
+  { id: number; data: BodyType<ExtractLawFirmTermsFromTcBody> },
+  TContext
+> => {
+  const mutationKey = ["extractLawFirmTermsFromTc"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extractLawFirmTermsFromTc>>,
+    { id: number; data: BodyType<ExtractLawFirmTermsFromTcBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return extractLawFirmTermsFromTc(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtractLawFirmTermsFromTcMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extractLawFirmTermsFromTc>>
+>;
+export type ExtractLawFirmTermsFromTcMutationBody =
+  BodyType<ExtractLawFirmTermsFromTcBody>;
+export type ExtractLawFirmTermsFromTcMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Extract commercial terms from a T&C / engagement letter document using AI
+ */
+export const useExtractLawFirmTermsFromTc = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractLawFirmTermsFromTc>>,
+    TError,
+    { id: number; data: BodyType<ExtractLawFirmTermsFromTcBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof extractLawFirmTermsFromTc>>,
+  TError,
+  { id: number; data: BodyType<ExtractLawFirmTermsFromTcBody> },
+  TContext
+> => {
+  return useMutation(getExtractLawFirmTermsFromTcMutationOptions(options));
 };
 
 /**

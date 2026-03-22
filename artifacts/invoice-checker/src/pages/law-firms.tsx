@@ -1,10 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListLawFirms,
   useCreateLawFirm,
   useUpdateLawFirm,
   useGetLawFirm,
+  useExtractLawFirmTermsFromTc,
+  useRequestUploadUrl,
   getListLawFirmsQueryKey,
   type LawFirmDetail,
   type CreateLawFirmMutationError,
@@ -12,7 +14,8 @@ import {
 } from "@workspace/api-client-react";
 import {
   Building2, Plus, Search, ChevronRight,
-  CheckCircle, Globe, Briefcase, X, Pencil, Save
+  CheckCircle, Globe, Briefcase, X, Pencil, Save,
+  Upload, FileText, Sparkles, CheckCircle2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -196,20 +199,141 @@ function parseForm(form: FormData) {
   };
 }
 
+function TcUploadStep({ firmId, firmName, onDone }: { firmId: number; firmName: string; onDone: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [extractedCount, setExtractedCount] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const requestUploadUrl = useRequestUploadUrl();
+  const extractMutation = useExtractLawFirmTermsFromTc();
+
+  const handleFiles = useCallback((files: FileList | null) => {
+    if (!files?.length) return;
+    const file = files[0];
+    const ok = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "text/plain"].includes(file.type);
+    if (!ok) { toast({ variant: "destructive", title: "Unsupported file type", description: "Please upload a PDF, DOCX, or TXT file." }); return; }
+    setSelectedFile(file);
+  }, [toast]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false);
+    handleFiles(e.dataTransfer.files);
+  }, [handleFiles]);
+
+  const handleExtract = async () => {
+    if (!selectedFile) return;
+    setUploading(true);
+    try {
+      const urlData = await requestUploadUrl.mutateAsync({ data: { name: selectedFile.name, size: selectedFile.size, contentType: selectedFile.type || "application/pdf" } });
+      await fetch(urlData.uploadURL, { method: "PUT", body: selectedFile, headers: { "Content-Type": selectedFile.type || "application/pdf" } });
+      const result = await extractMutation.mutateAsync({ id: firmId, data: { storagePath: urlData.objectPath, mimeType: selectedFile.type || "application/pdf" } });
+      setExtractedCount((result as { extracted?: number }).extracted ?? 0);
+      queryClient.invalidateQueries({ queryKey: ["law-firms", firmId] });
+      queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+    } catch (err) {
+      const msg = (err as { data?: { error?: string } })?.data?.error ?? "Failed to extract terms. Please try again.";
+      toast({ variant: "destructive", title: "Extraction failed", description: msg });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (extractedCount !== null) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
+        <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
+          <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+        </div>
+        <div>
+          <p className="text-lg font-bold text-foreground">{extractedCount} commercial term{extractedCount !== 1 ? "s" : ""} extracted</p>
+          <p className="text-sm text-muted-foreground mt-1">from <span className="font-medium">{firmName}</span>'s T&C document. You can review and verify them on the firm detail page.</p>
+        </div>
+        <button onClick={onDone} className="mt-2 px-6 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-colors">Done</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="text-center">
+        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+          <Sparkles className="w-6 h-6 text-primary" />
+        </div>
+        <h3 className="text-base font-bold text-foreground">Upload Terms & Conditions</h3>
+        <p className="text-sm text-muted-foreground mt-1">Upload the firm's engagement letter or T&C document. AI will extract commercial terms automatically.</p>
+      </div>
+
+      <div
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={cn(
+          "border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all",
+          dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/50",
+          selectedFile ? "border-primary/50 bg-primary/5" : ""
+        )}
+      >
+        <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.txt" className="hidden" onChange={e => handleFiles(e.target.files)} />
+        {selectedFile ? (
+          <div className="flex items-center justify-center gap-3">
+            <FileText className="w-8 h-8 text-primary" />
+            <div className="text-left">
+              <p className="text-sm font-semibold text-foreground">{selectedFile.name}</p>
+              <p className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(0)} KB · {selectedFile.type || "document"}</p>
+            </div>
+            <button type="button" onClick={e => { e.stopPropagation(); setSelectedFile(null); }} className="ml-2 text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2">
+            <Upload className="w-8 h-8 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">Drop file here or click to browse</p>
+            <p className="text-xs text-muted-foreground">PDF, DOCX, or TXT · max 50 MB</p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-3">
+        <button type="button" onClick={onDone} className="flex-1 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted text-sm font-medium transition-colors">
+          Skip for now
+        </button>
+        <button
+          type="button"
+          onClick={handleExtract}
+          disabled={!selectedFile || uploading}
+          className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+        >
+          {uploading ? (
+            <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />Extracting…</>
+          ) : (
+            <><Sparkles className="w-4 h-4" />Extract Terms</>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CreateFirmModal({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const createMutation = useCreateLawFirm();
   const [form, setForm] = useState<FormData>(emptyForm);
+  const [step, setStep] = useState<"details" | "tc-upload">("details");
+  const [createdFirm, setCreatedFirm] = useState<{ id: number; name: string } | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name) { toast({ variant: "destructive", title: "Firm name is required." }); return; }
     createMutation.mutate({ data: parseForm(form) }, {
-      onSuccess: () => {
+      onSuccess: (result) => {
         queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
-        toast({ title: "Law firm added", description: `${form.name} has been created.` });
-        onClose();
+        const created = result as { id: number; name: string };
+        setCreatedFirm({ id: created.id, name: created.name });
+        setStep("tc-upload");
       },
       onError: (err: CreateLawFirmMutationError) => toast({ variant: "destructive", title: "Error", description: (err.data as { error?: string } | null)?.error || "Failed to create firm." })
     });
@@ -217,21 +341,39 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={step === "details" ? onClose : undefined} />
       <div className="relative bg-card border border-border rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between p-6 border-b border-border sticky top-0 bg-card z-10">
-          <h2 className="text-xl font-display font-bold text-foreground">Add Law Firm</h2>
-          <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <FirmFormFields data={form} onChange={(f, v) => setForm(prev => ({ ...prev, [f]: v }))} />
-          <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted transition-colors text-sm font-medium">Cancel</button>
-            <button type="submit" disabled={createMutation.isPending} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-70 transition-colors flex items-center gap-2">
-              {createMutation.isPending ? "Adding..." : <><Plus className="w-4 h-4" />Add Firm</>}
-            </button>
+          <div>
+            <h2 className="text-xl font-display font-bold text-foreground">
+              {step === "details" ? "Add Law Firm" : "Upload T&C Document"}
+            </h2>
+            {step === "tc-upload" && createdFirm && (
+              <p className="text-sm text-muted-foreground mt-0.5">
+                <span className="text-emerald-600 font-medium">✓ {createdFirm.name} created.</span> Optionally upload their T&C to extract commercial terms.
+              </p>
+            )}
           </div>
-        </form>
+          {step === "details" && (
+            <button onClick={onClose} className="p-2 rounded-xl text-muted-foreground hover:bg-muted transition-colors"><X className="w-5 h-5" /></button>
+          )}
+        </div>
+
+        <div className="p-6">
+          {step === "details" ? (
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <FirmFormFields data={form} onChange={(f, v) => setForm(prev => ({ ...prev, [f]: v }))} />
+              <div className="flex gap-3 justify-end pt-2">
+                <button type="button" onClick={onClose} className="px-5 py-2.5 rounded-xl border border-border text-foreground hover:bg-muted transition-colors text-sm font-medium">Cancel</button>
+                <button type="submit" disabled={createMutation.isPending} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-70 transition-colors flex items-center gap-2">
+                  {createMutation.isPending ? "Adding..." : <><Plus className="w-4 h-4" />Add Firm</>}
+                </button>
+              </div>
+            </form>
+          ) : createdFirm ? (
+            <TcUploadStep firmId={createdFirm.id} firmName={createdFirm.name} onDone={onClose} />
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -244,6 +386,7 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
   const updateMutation = useUpdateLawFirm();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<FormData>(emptyForm);
+  const [showTcUpload, setShowTcUpload] = useState(false);
 
   const handleStartEdit = () => {
     if (!firm) return;
@@ -360,14 +503,37 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
                   <p className="text-sm text-foreground/80 leading-relaxed">{firm.notes}</p>
                 </div>
               )}
-              {typedFirm.terms && typedFirm.terms.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center justify-between">
-                    Commercial Terms
-                    <Badge variant={typedFirm.terms.some(t => t.verificationStatus === "verified") ? "success" : "warning"}>
-                      {typedFirm.terms.filter(t => t.verificationStatus === "verified").length}/{typedFirm.terms.length} Verified
-                    </Badge>
-                  </h3>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center justify-between">
+                  Commercial Terms
+                  <div className="flex items-center gap-2">
+                    {typedFirm.terms && typedFirm.terms.length > 0 && (
+                      <Badge variant={typedFirm.terms.some(t => t.verificationStatus === "verified") ? "success" : "warning"}>
+                        {typedFirm.terms.filter(t => t.verificationStatus === "verified").length}/{typedFirm.terms.length} Verified
+                      </Badge>
+                    )}
+                    <button
+                      onClick={() => setShowTcUpload(v => !v)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                    >
+                      <Upload className="w-3 h-3" />
+                      {typedFirm.terms && typedFirm.terms.length > 0 ? "Re-upload T&C" : "Upload T&C"}
+                    </button>
+                  </div>
+                </h3>
+                {showTcUpload && (
+                  <div className="mb-4 p-4 bg-muted/30 rounded-2xl border border-border">
+                    <TcUploadStep
+                      firmId={firmId}
+                      firmName={firm.name}
+                      onDone={() => {
+                        setShowTcUpload(false);
+                        queryClient.invalidateQueries({ queryKey: ["law-firms", firmId] });
+                      }}
+                    />
+                  </div>
+                )}
+                {typedFirm.terms && typedFirm.terms.length > 0 && !showTcUpload && (
                   <div className="space-y-2 bg-muted/30 rounded-2xl p-4">
                     {typedFirm.terms.map(term => (
                       <div key={term.id} className="flex items-start justify-between gap-4 text-sm">
@@ -381,8 +547,15 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+                {(!typedFirm.terms || typedFirm.terms.length === 0) && !showTcUpload && (
+                  <div className="text-center py-6 bg-muted/30 rounded-2xl border border-dashed border-border">
+                    <FileText className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No commercial terms on file.</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Upload the firm's T&C to extract them automatically.</p>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={handleToggleActive}
                 disabled={updateMutation.isPending}

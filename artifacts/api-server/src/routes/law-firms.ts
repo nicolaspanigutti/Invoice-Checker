@@ -2,6 +2,11 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db, lawFirmsTable, firmTermsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireRole } from "../middleware/auth";
+import { ObjectStorageService } from "../lib/objectStorage";
+import { extractTextFromBuffer } from "../lib/extractText";
+import { extractLawFirmTermsFromText, termsToUpsertPayload } from "../lib/extractLawFirmTerms";
+
+const objectStorage = new ObjectStorageService();
 
 const router: IRouter = Router();
 
@@ -190,6 +195,66 @@ router.put("/law-firms/:id/terms", requireRole("super_admin", "legal_ops"), asyn
   }
 
   res.json(results.map(termToResponse));
+});
+
+router.post("/law-firms/:id/tc-extract", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [firm] = await db.select({ id: lawFirmsTable.id }).from(lawFirmsTable).where(eq(lawFirmsTable.id, id)).limit(1);
+  if (!firm) { res.status(404).json({ error: "Law firm not found" }); return; }
+
+  const { storagePath, mimeType } = req.body as { storagePath?: string; mimeType?: string };
+  if (!storagePath) { res.status(400).json({ error: "storagePath is required" }); return; }
+
+  let fileBuffer: Buffer;
+  try {
+    const file = await objectStorage.getObjectEntityFile(storagePath);
+    const fileResponse = await objectStorage.downloadObject(file);
+    const ab = await fileResponse.arrayBuffer();
+    fileBuffer = Buffer.from(ab);
+  } catch {
+    res.status(422).json({ error: "Failed to download the T&C document from storage. Please re-upload." });
+    return;
+  }
+
+  const rawText = await extractTextFromBuffer(fileBuffer, mimeType ?? "application/pdf");
+  if (!rawText.trim()) {
+    res.status(422).json({ error: "Could not extract readable text from this document. Please upload a readable PDF or DOCX file." });
+    return;
+  }
+
+  const extracted = await extractLawFirmTermsFromText(rawText);
+  const upsertItems = termsToUpsertPayload(extracted);
+
+  const results = [];
+  for (const { termKey, termValue } of upsertItems) {
+    const existing = await db
+      .select()
+      .from(firmTermsTable)
+      .where(and(eq(firmTermsTable.lawFirmId, id), eq(firmTermsTable.termKey, termKey)))
+      .limit(1);
+
+    if (existing.length > 0) {
+      const [updated] = await db
+        .update(firmTermsTable)
+        .set({ termValueJson: termValue, verificationStatus: "draft", sourceType: "ai_extracted" })
+        .where(and(eq(firmTermsTable.lawFirmId, id), eq(firmTermsTable.termKey, termKey)))
+        .returning();
+      results.push(updated);
+    } else {
+      const [created] = await db
+        .insert(firmTermsTable)
+        .values({ lawFirmId: id, termKey, termValueJson: termValue, verificationStatus: "draft", sourceType: "ai_extracted" })
+        .returning();
+      results.push(created);
+    }
+  }
+
+  res.json({
+    extracted: upsertItems.length,
+    terms: results.map(termToResponse),
+  });
 });
 
 export default router;

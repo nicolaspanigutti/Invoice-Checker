@@ -228,6 +228,39 @@ export const UpsertLawFirmTermsResponse = zod.array(
 );
 
 /**
+ * @summary Extract commercial terms from a T&C / engagement letter document using AI
+ */
+export const ExtractLawFirmTermsFromTcParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ExtractLawFirmTermsFromTcBody = zod.object({
+  storagePath: zod.string(),
+  mimeType: zod.string().optional(),
+});
+
+export const ExtractLawFirmTermsFromTcResponse = zod.object({
+  extracted: zod.number().optional(),
+  terms: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        lawFirmId: zod.number(),
+        termKey: zod.string(),
+        termValue: zod
+          .unknown()
+          .optional()
+          .describe("JSON value (string, number, boolean, array, or object)"),
+        sourceType: zod.enum(["manual", "ai_extracted"]),
+        verificationStatus: zod.enum(["draft", "verified"]),
+        createdAt: zod.date(),
+        updatedAt: zod.date(),
+      }),
+    )
+    .optional(),
+});
+
+/**
  * @summary List panel baseline documents
  */
 export const ListPanelBaselineDocumentsQueryParams = zod.object({
