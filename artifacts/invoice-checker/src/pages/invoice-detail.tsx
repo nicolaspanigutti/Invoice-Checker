@@ -12,6 +12,7 @@ import {
   type InvoiceItem,
   type InvoiceDocument,
   type InvoiceIssue,
+  type AnalysisRunResult,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -465,10 +466,10 @@ export default function InvoiceDetail() {
 
   const handleRunAnalysis = async () => {
     try {
-      const result = await runAnalysis.mutateAsync({ id });
+      const result: AnalysisRunResult = await runAnalysis.mutateAsync({ id });
       setAnalysisRan(true);
-      const issueCount = (result as unknown as { issueCount?: number }).issueCount ?? 0;
-      const outcome = (result as unknown as { outcome?: string }).outcome ?? null;
+      const issueCount = result.issueCount ?? 0;
+      const outcome = result.outcome ?? null;
       if (outcome === "clean") {
         toast({ title: "Analysis complete — Clean", description: "No compliance issues found. Invoice moved to Ready to Pay." });
       } else {
@@ -669,45 +670,41 @@ export default function InvoiceDetail() {
         <div className="space-y-6">
           <div className="border border-border rounded-3xl bg-card p-5 shadow-sm">
             <h2 className="text-base font-display font-semibold mb-4">Analysis Readiness</h2>
-            {canRunAnalysis ? (
-              <div className="space-y-3">
+            <div className="space-y-3">
+              {canRunAnalysis ? (
                 <div className="flex items-center gap-2 text-green-700">
                   <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
                   <span className="text-sm font-medium">Ready for analysis</span>
                 </div>
-                <Button
-                  className="w-full gap-2"
-                  onClick={handleRunAnalysis}
-                  disabled={runAnalysis.isPending}
-                >
-                  {runAnalysis.isPending
-                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Analysing…</>
-                    : <><Sparkles className="h-4 w-4" /> Run Checking Analysis</>}
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-start gap-2 text-amber-700">
-                  <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
-                  <span className="text-sm font-medium">Not ready for analysis</span>
-                </div>
-                <div className="space-y-2">
-                  {blockingIssues.map((issue, i) => (
-                    <div key={i} className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
-                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-xs font-semibold text-amber-800">{issue.code}</p>
-                        <p className="text-xs text-amber-700 mt-0.5">{issue.message}</p>
+              ) : (
+                <>
+                  <div className="flex items-start gap-2 text-amber-700">
+                    <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                    <span className="text-sm font-medium">Completeness warnings</span>
+                  </div>
+                  <div className="space-y-2">
+                    {blockingIssues.map((issue, i) => (
+                      <div key={i} className="flex items-start gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-semibold text-amber-800">{issue.code}</p>
+                          <p className="text-xs text-amber-700 mt-0.5">{issue.message}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-                <Button className="w-full gap-2" disabled>
-                  <Sparkles className="h-4 w-4" />
-                  Run Checking Analysis
-                </Button>
-              </div>
-            )}
+                    ))}
+                  </div>
+                </>
+              )}
+              <Button
+                className="w-full gap-2"
+                onClick={handleRunAnalysis}
+                disabled={runAnalysis.isPending}
+              >
+                {runAnalysis.isPending
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Analysing…</>
+                  : <><Sparkles className="h-4 w-4" /> Run Checking Analysis</>}
+              </Button>
+            </div>
           </div>
 
           <div className="border border-border rounded-3xl bg-card p-5 shadow-sm">
