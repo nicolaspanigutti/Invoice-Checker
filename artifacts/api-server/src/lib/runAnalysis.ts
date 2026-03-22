@@ -15,7 +15,6 @@ import { eq, and, sql, desc } from "drizzle-orm";
 import { createHash } from "crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { normaliseRole, isUnauthorizedRole, KNOWN_ROLE_CODES } from "./roleNormaliser";
-import { checkCompleteness } from "./completenessGate";
 
 const HEURISTIC_PROMPT_VERSION = "v1.0";
 const EXTRACTION_PROMPT_VERSION = "v1.0";
@@ -75,7 +74,9 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     : [];
 
   const meetingConfig = await db.select().from(rulesConfigTable).where(eq(rulesConfigTable.ruleCode, "MEETING_OVERSTAFFING")).limit(1);
-  const meetingThreshold = ((meetingConfig[0]?.configJson as Record<string, unknown> | null)?.threshold as number | null) ?? 3;
+  const meetingConfigJson = (meetingConfig[0]?.configJson as Record<string, unknown> | null) ?? {};
+  const meetingMinAttendees = (meetingConfigJson.min_attendees as number | null) ?? (meetingConfigJson.threshold as number | null) ?? 3;
+  const meetingMaxAttendees = (meetingConfigJson.max_attendees as number | null) ?? 5;
 
   const inputHashSource = JSON.stringify({
     invoice: { id: invoice.id, totalAmount: invoice.totalAmount, currency: invoice.currency, invoiceDate: invoice.invoiceDate },
@@ -106,22 +107,6 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     extractionPromptVersion: EXTRACTION_PROMPT_VERSION,
     heuristicPromptVersion: HEURISTIC_PROMPT_VERSION,
   }).returning();
-
-  const completeness = await checkCompleteness(invoiceId);
-  if (!completeness.canRunAnalysis) {
-    await db.update(analysisRunsTable).set({
-      status: "failed",
-      finishedAt: new Date(),
-      summaryJson: { error: "completeness_gate_failed", blockingIssues: completeness.blockingIssues },
-    }).where(eq(analysisRunsTable.id, run.id));
-    return {
-      analysisRunId: run.id,
-      issueCount: 0,
-      outcome: null,
-      amountAtRisk: null,
-      status: "failed",
-    };
-  }
 
   try {
   const issues: IssueInsert[] = [];
@@ -837,7 +822,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   for (const [date, descMap] of dateGroups.entries()) {
     for (const [desc, groupItems] of descMap.entries()) {
       const uniqueTimekeepers = new Set(groupItems.map(i => i.timekeeperLabel).filter(Boolean));
-      if (uniqueTimekeepers.size > meetingThreshold) {
+      if (uniqueTimekeepers.size > meetingMinAttendees) {
         const total = groupItems.reduce((sum, i) => sum + n(i.amount), 0);
         issues.push({
           invoiceId,
@@ -848,18 +833,20 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
           evaluatorType: "deterministic",
           issueStatus: "open",
           routeToRole: "legal_ops",
-          explanationText: `On ${date}, ${uniqueTimekeepers.size} timekeepers billed for attendance at what appears to be the same meeting or call: ${Array.from(uniqueTimekeepers).join(", ")}. The configured threshold for this matter is ${meetingThreshold}. Total amount for these lines: ${invoice.currency} ${total.toFixed(2)}.`,
+          explanationText: `On ${date}, ${uniqueTimekeepers.size} timekeepers billed for attendance at what appears to be the same meeting or call: ${Array.from(uniqueTimekeepers).join(", ")}. The configured threshold range for this matter is ${meetingMinAttendees}–${meetingMaxAttendees} attendees (fires when > ${meetingMinAttendees}). Total amount for these lines: ${invoice.currency} ${total.toFixed(2)}.`,
           evidenceJson: {
             date,
             meeting_description: desc,
             timekeeper_list: Array.from(uniqueTimekeepers),
+            attendee_count: uniqueTimekeepers.size,
             hours_each: groupItems.map(i => ({ timekeeper: i.timekeeperLabel, hours: i.hours })),
             amounts_each: groupItems.map(i => ({ timekeeper: i.timekeeperLabel, amount: i.amount })),
             total_amount: total,
-            threshold_used: meetingThreshold,
+            min_attendees_threshold: meetingMinAttendees,
+            max_attendees_threshold: meetingMaxAttendees,
           },
           suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-          configSnapshotJson: { threshold: meetingThreshold },
+          configSnapshotJson: { min_attendees: meetingMinAttendees, max_attendees: meetingMaxAttendees },
         });
       }
     }

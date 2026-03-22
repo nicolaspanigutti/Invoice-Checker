@@ -466,10 +466,6 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
 
   try {
     const result = await runAnalysis(id, req.session.userId!);
-    if (result.status === "failed" && result.issueCount === 0 && result.outcome === null) {
-      res.status(422).json({ error: "Cannot run analysis: completeness gate failed. Check the invoice for missing required fields or documents.", analysisRunId: result.analysisRunId });
-      return;
-    }
     res.json({
       analysisRunId: result.analysisRunId,
       invoiceId: id,
