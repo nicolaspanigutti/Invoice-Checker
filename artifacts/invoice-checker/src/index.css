@@ -55,46 +55,46 @@
 }
 
 :root {
-  /* Clean Professional Enterprise Palette */
-  --background: 210 33% 99%;
-  --foreground: 222 47% 11%;
-  
+  /* Clean white background */
+  --background: 0 0% 97%;
+  --foreground: 220 20% 12%;
+
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  
+  --card-foreground: 220 20% 12%;
+
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  
-  /* Deep Indigo/Blue for primary actions */
-  --primary: 224 76% 48%;
-  --primary-foreground: 210 40% 98%;
-  
-  --secondary: 214 32% 91%;
-  --secondary-foreground: 222 47% 11%;
-  
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  
-  --accent: 210 40% 96%;
-  --accent-foreground: 222 47% 11%;
-  
+  --popover-foreground: 220 20% 12%;
+
+  /* Corporate Red — Santander-style #EC0000 */
+  --primary: 0 100% 46%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 0 0% 94%;
+  --secondary-foreground: 220 20% 12%;
+
+  --muted: 0 0% 94%;
+  --muted-foreground: 220 10% 46%;
+
+  --accent: 0 8% 94%;
+  --accent-foreground: 220 20% 12%;
+
   --destructive: 0 84% 60%;
-  --destructive-foreground: 210 40% 98%;
-  
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 224 76% 48%;
-  
-  /* Dark Sidebar for strong enterprise structure */
-  --sidebar: 222 47% 11%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 217 32% 17%;
-  --sidebar-primary: 224 76% 48%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 217 32% 17%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 224 76% 48%;
-  
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 0 100% 46%;
+
+  /* Dark sidebar */
+  --sidebar: 220 25% 13%;
+  --sidebar-foreground: 0 0% 96%;
+  --sidebar-border: 220 20% 20%;
+  --sidebar-primary: 0 100% 46%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 220 20% 20%;
+  --sidebar-accent-foreground: 0 0% 96%;
+  --sidebar-ring: 0 100% 46%;
+
   --radius: 0.75rem;
 }
 
