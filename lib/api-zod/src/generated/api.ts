@@ -472,7 +472,9 @@ export const ListInvoicesResponse = zod.object({
 export const CreateInvoiceBody = zod.object({
   lawFirmId: zod.number(),
   documentType: zod.enum(["invoice", "proforma"]),
-  billingType: zod.enum(["time_and_materials", "fixed_scope"]).nullish(),
+  billingType: zod
+    .enum(["time_and_materials", "fixed_scope", "closed_scope"])
+    .nullish(),
   matterName: zod.string().nullish(),
   projectReference: zod.string().nullish(),
   jurisdiction: zod.string().nullish(),
@@ -531,7 +533,9 @@ export const GetInvoiceResponse = zod
   })
   .and(
     zod.object({
-      billingType: zod.enum(["time_and_materials", "fixed_scope"]).nullish(),
+      billingType: zod
+        .enum(["time_and_materials", "fixed_scope", "closed_scope"])
+        .nullish(),
       jurisdiction: zod.string().nullish(),
       applicableLaw: zod.string().nullish(),
       subtotalAmount: zod.string().nullish(),
@@ -566,7 +570,9 @@ export const UpdateInvoiceParams = zod.object({
 
 export const UpdateInvoiceBody = zod.object({
   documentType: zod.enum(["invoice", "proforma"]).optional(),
-  billingType: zod.enum(["time_and_materials", "fixed_scope"]).nullish(),
+  billingType: zod
+    .enum(["time_and_materials", "fixed_scope", "closed_scope"])
+    .nullish(),
   matterName: zod.string().nullish(),
   projectReference: zod.string().nullish(),
   jurisdiction: zod.string().nullish(),
@@ -616,7 +622,9 @@ export const UpdateInvoiceResponse = zod
   })
   .and(
     zod.object({
-      billingType: zod.enum(["time_and_materials", "fixed_scope"]).nullish(),
+      billingType: zod
+        .enum(["time_and_materials", "fixed_scope", "closed_scope"])
+        .nullish(),
       jurisdiction: zod.string().nullish(),
       applicableLaw: zod.string().nullish(),
       subtotalAmount: zod.string().nullish(),

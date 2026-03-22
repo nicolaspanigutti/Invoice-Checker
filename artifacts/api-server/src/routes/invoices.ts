@@ -3,18 +3,17 @@ import { db, invoicesTable, invoiceDocumentsTable, invoiceItemsTable, lawFirmsTa
 import { eq, and, ilike, or, sql, desc, count } from "drizzle-orm";
 import { requireRole } from "../middleware/auth";
 import { checkCompleteness } from "../lib/completenessGate";
-import { extractInvoiceFromText } from "../lib/extractInvoice";
+import { extractInvoiceFromText, extractInvoiceFromImage } from "../lib/extractInvoice";
 import { ObjectStorageService } from "../lib/objectStorage";
-import { extractTextFromBuffer } from "../lib/extractText";
+import { extractTextFromBuffer, imageBufferToBase64 } from "../lib/extractText";
 
 const router: IRouter = Router();
 const objectStorage = new ObjectStorageService();
 
-let invoiceCounter = 0;
-
 async function generateInvoiceNumber(): Promise<string> {
-  const [result] = await db.select({ c: count() }).from(invoicesTable);
-  const n = (result?.c ?? 0) + (++invoiceCounter);
+  const result = await db.execute(sql`SELECT nextval('invoice_number_seq') AS n`);
+  const row = result.rows[0] as { n: string };
+  const n = Number(row.n);
   return `INV-${String(n).padStart(6, "0")}`;
 }
 
@@ -344,33 +343,49 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
     return;
   }
 
-  let rawText = invoiceDoc.rawText ?? "";
-
-  if (!rawText && invoiceDoc.storagePath) {
-    try {
-      const file = await objectStorage.getObjectEntityFile(invoiceDoc.storagePath);
-      const fileResponse = await objectStorage.downloadObject(file);
-      const arrayBuffer = await fileResponse.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      rawText = await extractTextFromBuffer(buffer, invoiceDoc.mimeType ?? "application/octet-stream");
-
-      await db.update(invoiceDocumentsTable).set({
-        rawText,
-        extractionStatus: "done",
-      }).where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
-    } catch {
-      await db.update(invoiceDocumentsTable).set({ extractionStatus: "failed" }).where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
-      res.status(422).json({ error: "Failed to download or read the invoice file." });
-      return;
-    }
-  }
-
-  if (!rawText || rawText.trim().length < 10) {
-    res.status(422).json({ error: "Invoice file could not be read as text. Ensure the file is a readable PDF or DOCX." });
+  if (!invoiceDoc.storagePath) {
+    res.status(422).json({ error: "Invoice file has no storage path. Re-upload the document." });
     return;
   }
 
-  const { extracted, confidence, textHash } = await extractInvoiceFromText(rawText);
+  let buffer: Buffer;
+  try {
+    const file = await objectStorage.getObjectEntityFile(invoiceDoc.storagePath);
+    const fileResponse = await objectStorage.downloadObject(file);
+    const arrayBuffer = await fileResponse.arrayBuffer();
+    buffer = Buffer.from(arrayBuffer);
+  } catch {
+    await db.update(invoiceDocumentsTable).set({ extractionStatus: "failed" }).where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
+    res.status(422).json({ error: "Failed to download the invoice file from storage." });
+    return;
+  }
+
+  const mimeType = invoiceDoc.mimeType ?? "application/octet-stream";
+  const isImage = mimeType.startsWith("image/");
+
+  let result;
+  try {
+    if (isImage) {
+      const base64DataUrl = imageBufferToBase64(buffer, mimeType);
+      result = await extractInvoiceFromImage(base64DataUrl, mimeType, invoiceDoc.id);
+    } else {
+      const rawText = await extractTextFromBuffer(buffer, mimeType);
+
+      if (rawText.trim().length < 10) {
+        res.status(422).json({ error: "Invoice file could not be read as text. Please upload a readable PDF, DOCX, or image file." });
+        return;
+      }
+
+      await db.update(invoiceDocumentsTable).set({ rawText }).where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
+      result = await extractInvoiceFromText(rawText, invoiceDoc.id);
+    }
+  } catch {
+    await db.update(invoiceDocumentsTable).set({ extractionStatus: "failed" }).where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
+    res.status(500).json({ error: "AI extraction failed. Please try again." });
+    return;
+  }
+
+  const { extracted, confidence, textHash, fromCache } = result;
 
   const updates: Partial<typeof invoicesTable.$inferInsert> = {};
   if (extracted.invoiceDate) updates.invoiceDate = extracted.invoiceDate;
@@ -379,20 +394,23 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
   if (extracted.subtotalAmount) updates.subtotalAmount = extracted.subtotalAmount;
   if (extracted.taxAmount) updates.taxAmount = extracted.taxAmount;
   if (extracted.currency) updates.currency = extracted.currency;
-  if (extracted.matterName) updates.matterName = extracted.matterName;
-  if (extracted.projectReference) updates.projectReference = extracted.projectReference;
-  if (extracted.jurisdiction) updates.jurisdiction = extracted.jurisdiction;
-  if (extracted.applicableLaw) updates.applicableLaw = extracted.applicableLaw;
-  if (extracted.billingPeriodStart || extracted.billingPeriodEnd) {
-    // Store billing period info in line items
-  }
+  if (extracted.matterName && !invoice.matterName) updates.matterName = extracted.matterName;
+  if (extracted.projectReference && !invoice.projectReference) updates.projectReference = extracted.projectReference;
+  if (extracted.jurisdiction && !invoice.jurisdiction) updates.jurisdiction = extracted.jurisdiction;
+  if (extracted.applicableLaw && !invoice.applicableLaw) updates.applicableLaw = extracted.applicableLaw;
 
   if (Object.keys(updates).length > 0) {
     updates.invoiceStatus = "in_review";
     await db.update(invoicesTable).set(updates).where(eq(invoicesTable.id, id));
+  } else if (invoice.invoiceStatus === "extracting_data") {
+    await db.update(invoicesTable).set({ invoiceStatus: "in_review" }).where(eq(invoicesTable.id, id));
   }
 
-  await db.update(invoiceDocumentsTable).set({ textHash, extractionStatus: "done" }).where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
+  if (!fromCache) {
+    await db.update(invoiceDocumentsTable)
+      .set({ textHash, extractionStatus: "done" })
+      .where(eq(invoiceDocumentsTable.id, invoiceDoc.id));
+  }
 
   if (extracted.lineItems.length > 0) {
     await db.delete(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, id));
@@ -415,7 +433,7 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
     );
   }
 
-  res.json({ invoiceId: id, extracted, confidence });
+  res.json({ invoiceId: id, extracted, confidence, fromCache });
 });
 
 export default router;

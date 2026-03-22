@@ -816,7 +816,7 @@ components:
           properties:
             billingType:
               type: string
-              enum: [time_and_materials, fixed_scope]
+              enum: [time_and_materials, fixed_scope, closed_scope]
               nullable: true
             jurisdiction:
               type: string
@@ -870,7 +870,7 @@ components:
           enum: [invoice, proforma]
         billingType:
           type: string
-          enum: [time_and_materials, fixed_scope]
+          enum: [time_and_materials, fixed_scope, closed_scope]
           nullable: true
         matterName:
           type: string
@@ -915,7 +915,7 @@ components:
           enum: [invoice, proforma]
         billingType:
           type: string
-          enum: [time_and_materials, fixed_scope]
+          enum: [time_and_materials, fixed_scope, closed_scope]
           nullable: true
         matterName:
           type: string

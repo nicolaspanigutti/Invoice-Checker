@@ -19,16 +19,22 @@ export async function extractTextFromBuffer(buffer: Buffer, mimeType: string): P
     return buffer.toString("utf-8");
   }
 
-  if (mime.startsWith("image/")) {
-    return "";
-  }
-
   if (
     mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
     mime === "application/msword"
   ) {
-    return buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").trim();
+    try {
+      const mammoth = require("mammoth");
+      const result = await mammoth.extractRawText({ buffer });
+      return result.value ?? "";
+    } catch {
+      return buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").trim();
+    }
   }
 
   return buffer.toString("utf-8").slice(0, 20000);
+}
+
+export function imageBufferToBase64(buffer: Buffer, mimeType: string): string {
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }

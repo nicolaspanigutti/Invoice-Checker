@@ -1,7 +1,9 @@
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { createHash } from "crypto";
+import { db, invoiceDocumentsTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 
-const EXTRACTION_PROMPT_VERSION = "v1.0";
+const EXTRACTION_PROMPT_VERSION = "v1.1";
 
 export interface ExtractedLineItem {
   timekeeperLabel: string | null;
@@ -37,6 +39,7 @@ export interface ExtractionOutput {
   confidence: Record<string, number>;
   textHash: string;
   promptVersion: string;
+  fromCache: boolean;
 }
 
 const SYSTEM_PROMPT = `You are an expert legal invoice data extraction system for a corporate legal operations team. 
@@ -96,21 +99,7 @@ export function computeTextHash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 64);
 }
 
-export async function extractInvoiceFromText(rawText: string): Promise<ExtractionOutput> {
-  const textHash = computeTextHash(rawText);
-  const truncatedText = rawText.slice(0, 12000);
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-5-mini",
-    max_completion_tokens: 8192,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: EXTRACTION_PROMPT + truncatedText },
-    ],
-  });
-
-  const content = response.choices[0]?.message?.content ?? "{}";
-
+function parseExtractionResponse(content: string): { extracted: ExtractedInvoiceData; confidence: Record<string, number> } {
   let parsed: { confidence?: Record<string, number>; lineItems?: ExtractedLineItem[] } & Omit<ExtractedInvoiceData, "lineItems">;
   try {
     const cleaned = content.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
@@ -149,5 +138,136 @@ export async function extractInvoiceFromText(rawText: string): Promise<Extractio
     })) : [],
   };
 
-  return { extracted, confidence, textHash, promptVersion: EXTRACTION_PROMPT_VERSION };
+  return { extracted, confidence };
+}
+
+export async function extractInvoiceFromText(rawText: string, documentId?: number): Promise<ExtractionOutput> {
+  const textHash = computeTextHash(rawText);
+
+  if (documentId !== undefined) {
+    const [existing] = await db
+      .select()
+      .from(invoiceDocumentsTable)
+      .where(
+        and(
+          eq(invoiceDocumentsTable.id, documentId),
+          eq(invoiceDocumentsTable.textHash, textHash),
+          eq(invoiceDocumentsTable.extractionStatus, "done"),
+        )
+      )
+      .limit(1);
+
+    if (existing?.extractedJson) {
+      try {
+        const cached = JSON.parse(existing.extractedJson as string) as { extracted: ExtractedInvoiceData; confidence: Record<string, number> };
+        return {
+          extracted: cached.extracted,
+          confidence: cached.confidence,
+          textHash,
+          promptVersion: existing.promptVersion ?? EXTRACTION_PROMPT_VERSION,
+          fromCache: true,
+        };
+      } catch {
+      }
+    }
+  }
+
+  const truncatedText = rawText.slice(0, 12000);
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_completion_tokens: 8192,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: EXTRACTION_PROMPT + truncatedText },
+    ],
+  });
+
+  const content = response.choices[0]?.message?.content ?? "{}";
+  const { extracted, confidence } = parseExtractionResponse(content);
+
+  if (documentId !== undefined) {
+    await db.update(invoiceDocumentsTable)
+      .set({
+        textHash,
+        extractionStatus: "done",
+        promptVersion: EXTRACTION_PROMPT_VERSION,
+        extractedJson: JSON.stringify({ extracted, confidence }),
+      })
+      .where(eq(invoiceDocumentsTable.id, documentId));
+  }
+
+  return { extracted, confidence, textHash, promptVersion: EXTRACTION_PROMPT_VERSION, fromCache: false };
+}
+
+export async function extractInvoiceFromImage(base64DataUrl: string, mimeType: string, documentId?: number): Promise<ExtractionOutput> {
+  const imageHash = computeTextHash(base64DataUrl);
+
+  if (documentId !== undefined) {
+    const [existing] = await db
+      .select()
+      .from(invoiceDocumentsTable)
+      .where(
+        and(
+          eq(invoiceDocumentsTable.id, documentId),
+          eq(invoiceDocumentsTable.textHash, imageHash),
+          eq(invoiceDocumentsTable.extractionStatus, "done"),
+        )
+      )
+      .limit(1);
+
+    if (existing?.extractedJson) {
+      try {
+        const cached = JSON.parse(existing.extractedJson as string) as { extracted: ExtractedInvoiceData; confidence: Record<string, number> };
+        return {
+          extracted: cached.extracted,
+          confidence: cached.confidence,
+          textHash: imageHash,
+          promptVersion: existing.promptVersion ?? EXTRACTION_PROMPT_VERSION,
+          fromCache: true,
+        };
+      } catch {
+      }
+    }
+  }
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_completion_tokens: 8192,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `${EXTRACTION_PROMPT}[See attached invoice image]`,
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: base64DataUrl,
+              detail: "high",
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const content = response.choices[0]?.message?.content ?? "{}";
+  const { extracted, confidence } = parseExtractionResponse(content);
+
+  if (documentId !== undefined) {
+    await db.update(invoiceDocumentsTable)
+      .set({
+        textHash: imageHash,
+        extractionStatus: "done",
+        promptVersion: EXTRACTION_PROMPT_VERSION,
+        extractedJson: JSON.stringify({ extracted, confidence }),
+      })
+      .where(eq(invoiceDocumentsTable.id, documentId));
+  }
+
+  return { extracted, confidence, textHash: imageHash, promptVersion: EXTRACTION_PROMPT_VERSION, fromCache: false };
 }

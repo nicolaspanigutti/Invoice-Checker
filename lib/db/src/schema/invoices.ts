@@ -1,8 +1,10 @@
-import { pgTable, text, serial, timestamp, numeric, date, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, pgSequence, text, serial, timestamp, numeric, date, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { lawFirmsTable } from "./law-firms";
 import { usersTable } from "./users";
+
+export const invoiceNumberSeq = pgSequence("invoice_number_seq", { startWith: 2, increment: 1 });
 
 export const invoicesTable = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -15,7 +17,7 @@ export const invoicesTable = pgTable("invoices", {
   subtotalAmount: numeric("subtotal_amount", { precision: 14, scale: 2 }),
   taxAmount: numeric("tax_amount", { precision: 14, scale: 2 }),
   totalAmount: numeric("total_amount", { precision: 14, scale: 2 }),
-  billingType: text("billing_type", { enum: ["time_and_materials", "fixed_scope"] }),
+  billingType: text("billing_type", { enum: ["time_and_materials", "fixed_scope", "closed_scope"] }),
   matterName: text("matter_name"),
   projectReference: text("project_reference"),
   jurisdiction: text("jurisdiction"),
@@ -46,6 +48,8 @@ export const invoiceDocumentsTable = pgTable("invoice_documents", {
   storagePath: text("storage_path"),
   rawText: text("raw_text"),
   textHash: text("text_hash"),
+  promptVersion: text("prompt_version"),
+  extractedJson: text("extracted_json"),
   extractionStatus: text("extraction_status", { enum: ["pending", "done", "failed"] }).notNull().default("pending"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

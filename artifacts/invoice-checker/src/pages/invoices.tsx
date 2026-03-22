@@ -6,8 +6,11 @@ import {
   useListLawFirms,
   useListUsers,
   useRequestUploadUrl,
+  useExtractInvoiceData,
   type InvoiceSummary,
   type ListInvoicesParams,
+  type ExtractionResult,
+  type ExtractedInvoiceData,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,14 +109,26 @@ function FileUploadRow({ item, onRemove }: { item: UploadedFile; onRemove: () =>
   );
 }
 
+function ConfidencePill({ score }: { score?: number }) {
+  if (score === undefined) return null;
+  const pct = Math.round(score * 100);
+  const colour = pct >= 80 ? "bg-green-100 text-green-800" : pct >= 50 ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800";
+  return <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colour}`}>{pct}%</span>;
+}
+
 function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [step, setStep] = useState<"upload" | "details">("upload");
+  const [step, setStep] = useState<"upload" | "details" | "review">("upload");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [createdInvoiceId, setCreatedInvoiceId] = useState<number | null>(null);
+  const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [reviewForm, setReviewForm] = useState<Partial<ExtractedInvoiceData>>({});
   const [form, setForm] = useState({
     lawFirmId: "",
     documentType: "invoice" as "invoice" | "proforma",
-    billingType: "" as "" | "time_and_materials" | "fixed_scope",
+    billingType: "" as "" | "time_and_materials" | "fixed_scope" | "closed_scope",
     matterName: "",
     projectReference: "",
     jurisdiction: "",
@@ -127,8 +142,19 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
   const { data: users } = useListUsers();
   const requestUploadUrl = useRequestUploadUrl();
   const createInvoice = useCreateInvoice();
+  const extractInvoice = useExtractInvoiceData();
 
   const lawyers = users?.filter(u => u.isActive && (u.role === "internal_lawyer" || u.role === "legal_ops")) ?? [];
+
+  const resetModal = () => {
+    setStep("upload");
+    setUploadedFiles([]);
+    setCreatedInvoiceId(null);
+    setExtractionResult(null);
+    setExtracting(false);
+    setReviewForm({});
+    setForm({ lawFirmId: "", documentType: "invoice", billingType: "", matterName: "", projectReference: "", jurisdiction: "", currency: "GBP", invoiceDate: "", dueDate: "", internalRequestorId: "" });
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, kind: "invoice_file" | "engagement_letter" | "budget_estimate") => {
     const file = e.target.files?.[0];
@@ -165,7 +191,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
     e.target.value = "";
   };
 
-  const handleSubmit = () => {
+  const handleSubmitDetails = () => {
     if (!form.lawFirmId) {
       toast({ variant: "destructive", title: "Required", description: "Please select a law firm." });
       return;
@@ -197,18 +223,54 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
         },
       },
       {
-        onSuccess: () => {
-          toast({ title: "Invoice created", description: "Invoice has been created successfully." });
-          onClose();
-          setStep("upload");
-          setUploadedFiles([]);
-          setForm({ lawFirmId: "", documentType: "invoice", billingType: "", matterName: "", projectReference: "", jurisdiction: "", currency: "GBP", invoiceDate: "", dueDate: "", internalRequestorId: "" });
+        onSuccess: (invoice) => {
+          setCreatedInvoiceId(invoice.id);
+          const hasInvoiceFile = documents.some(d => d.documentKind === "invoice_file");
+          if (hasInvoiceFile) {
+            setExtracting(true);
+            setStep("review");
+            extractInvoice.mutate(
+              { id: invoice.id },
+              {
+                onSuccess: (result) => {
+                  setExtractionResult(result);
+                  setReviewForm({
+                    invoiceDate: result.extracted.invoiceDate ?? undefined,
+                    dueDate: result.extracted.dueDate ?? undefined,
+                    totalAmount: result.extracted.totalAmount ?? undefined,
+                    currency: result.extracted.currency ?? undefined,
+                    matterName: result.extracted.matterName ?? undefined,
+                    projectReference: result.extracted.projectReference ?? undefined,
+                    jurisdiction: result.extracted.jurisdiction ?? undefined,
+                  });
+                  setExtracting(false);
+                },
+                onError: () => {
+                  setExtracting(false);
+                  toast({ variant: "destructive", title: "Extraction failed", description: "Could not extract data from the invoice file. You can fill in details manually on the invoice page." });
+                },
+              }
+            );
+          } else {
+            toast({ title: "Invoice created", description: "Invoice has been created successfully." });
+            onClose();
+            resetModal();
+            navigate(`/invoices/${invoice.id}`);
+          }
         },
         onError: () => {
           toast({ variant: "destructive", title: "Error", description: "Failed to create invoice." });
         },
       }
     );
+  };
+
+  const handleConfirmReview = () => {
+    if (createdInvoiceId) {
+      navigate(`/invoices/${createdInvoiceId}`);
+    }
+    onClose();
+    resetModal();
   };
 
   const hasInvoiceFile = uploadedFiles.some(f => f.documentKind === "invoice_file");
@@ -222,16 +284,23 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
         </DialogHeader>
 
         <div className="flex gap-2 mb-6">
-          {(["upload", "details"] as const).map((s, i) => (
-            <button
-              key={s}
-              onClick={() => setStep(s)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${step === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${step === s ? "bg-white/20" : "bg-muted"}`}>{i + 1}</span>
-              {s === "upload" ? "Upload Files" : "Invoice Details"}
-            </button>
-          ))}
+          {(["upload", "details", "review"] as const).map((s, i) => {
+            const labels = { upload: "Upload Files", details: "Invoice Details", review: "AI Review" };
+            const isActive = step === s;
+            const isPast = (step === "details" && s === "upload") || (step === "review" && (s === "upload" || s === "details"));
+            const canClick = s === "upload" && step === "details";
+            return (
+              <button
+                key={s}
+                onClick={() => { if (canClick) setStep(s); }}
+                disabled={!canClick && !isActive}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${isActive ? "bg-primary text-primary-foreground" : isPast ? "text-muted-foreground" : "text-muted-foreground opacity-40"}`}
+              >
+                <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${isActive ? "bg-white/20" : isPast ? "bg-muted" : "bg-muted"}`}>{i + 1}</span>
+                {labels[s]}
+              </button>
+            );
+          })}
         </div>
 
         {step === "upload" && (
@@ -318,11 +387,12 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
 
               <div className="space-y-1.5">
                 <Label>Billing Type</Label>
-                <Select value={form.billingType} onValueChange={v => setForm(f => ({ ...f, billingType: v as "" | "time_and_materials" | "fixed_scope" }))}>
+                <Select value={form.billingType} onValueChange={v => setForm(f => ({ ...f, billingType: v as "" | "time_and_materials" | "fixed_scope" | "closed_scope" }))}>
                   <SelectTrigger><SelectValue placeholder="Select billing type" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="time_and_materials">Time & Materials</SelectItem>
                     <SelectItem value="fixed_scope">Fixed Scope</SelectItem>
+                    <SelectItem value="closed_scope">Closed Scope</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -386,9 +456,134 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
 
             <DialogFooter>
               <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
-              <Button onClick={handleSubmit} disabled={createInvoice.isPending || !form.lawFirmId}>
+              <Button onClick={handleSubmitDetails} disabled={createInvoice.isPending || !form.lawFirmId}>
                 {createInvoice.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Create Invoice
+                {hasInvoiceFile ? "Create & Extract" : "Create Invoice"}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {step === "review" && (
+          <div className="space-y-5">
+            {extracting && (
+              <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                <p className="font-medium text-lg">Extracting invoice data with AI...</p>
+                <p className="text-sm text-muted-foreground">This usually takes 5–15 seconds. Please wait.</p>
+              </div>
+            )}
+
+            {!extracting && extractionResult && (
+              <>
+                <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <CheckCircle2 className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                  <p className="text-sm text-blue-800">AI extracted the following fields. Please review and correct any errors before proceeding.</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>
+                      Invoice Date
+                      <ConfidencePill score={extractionResult.confidence?.invoiceDate} />
+                    </Label>
+                    <Input
+                      type="date"
+                      value={reviewForm.invoiceDate ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, invoiceDate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      Due Date
+                      <ConfidencePill score={extractionResult.confidence?.dueDate} />
+                    </Label>
+                    <Input
+                      type="date"
+                      value={reviewForm.dueDate ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, dueDate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      Total Amount
+                      <ConfidencePill score={extractionResult.confidence?.totalAmount} />
+                    </Label>
+                    <Input
+                      value={reviewForm.totalAmount ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, totalAmount: e.target.value }))}
+                      placeholder="e.g. 12500.00"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      Currency
+                      <ConfidencePill score={extractionResult.confidence?.currency} />
+                    </Label>
+                    <Input
+                      value={reviewForm.currency ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, currency: e.target.value }))}
+                      placeholder="e.g. GBP"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label>
+                      Matter Name
+                      <ConfidencePill score={extractionResult.confidence?.matterName} />
+                    </Label>
+                    <Input
+                      value={reviewForm.matterName ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, matterName: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      Project Reference
+                      <ConfidencePill score={extractionResult.confidence?.projectReference} />
+                    </Label>
+                    <Input
+                      value={reviewForm.projectReference ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, projectReference: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>
+                      Jurisdiction
+                      <ConfidencePill score={extractionResult.confidence?.jurisdiction} />
+                    </Label>
+                    <Input
+                      value={reviewForm.jurisdiction ?? ""}
+                      onChange={e => setReviewForm(f => ({ ...f, jurisdiction: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                {(extractionResult.extracted.lineItems ?? []).length > 0 && (
+                  <div className="p-3 bg-muted/30 rounded-xl">
+                    <p className="text-sm font-medium mb-1">
+                      {(extractionResult.extracted.lineItems ?? []).length} line item{(extractionResult.extracted.lineItems ?? []).length !== 1 ? "s" : ""} extracted
+                    </p>
+                    <p className="text-xs text-muted-foreground">Line items are available on the invoice detail page for review.</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {!extracting && !extractionResult && (
+              <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800">Extraction failed</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">You can still open the invoice and fill in details manually.</p>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button onClick={handleConfirmReview} disabled={extracting}>
+                {extracting ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Extracting...</>
+                ) : "Open Invoice"}
               </Button>
             </DialogFooter>
           </div>

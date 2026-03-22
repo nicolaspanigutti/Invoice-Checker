@@ -67,6 +67,7 @@ export type InvoiceDetailBillingType =
 export const InvoiceDetailBillingType = {
   time_and_materials: "time_and_materials",
   fixed_scope: "fixed_scope",
+  closed_scope: "closed_scope",
 } as const;
 
 export interface CompletenessIssue {
@@ -112,6 +113,7 @@ export type CreateInvoiceRequestBillingType =
 export const CreateInvoiceRequestBillingType = {
   time_and_materials: "time_and_materials",
   fixed_scope: "fixed_scope",
+  closed_scope: "closed_scope",
 } as const;
 
 export type AddInvoiceDocumentRequestDocumentKind =
@@ -161,6 +163,7 @@ export type UpdateInvoiceRequestBillingType =
 export const UpdateInvoiceRequestBillingType = {
   time_and_materials: "time_and_materials",
   fixed_scope: "fixed_scope",
+  closed_scope: "closed_scope",
 } as const;
 
 export type UpdateInvoiceRequestInvoiceStatus =
