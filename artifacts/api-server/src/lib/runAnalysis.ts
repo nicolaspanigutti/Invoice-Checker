@@ -935,7 +935,7 @@ async function runGreyRules(
   budgetData: Record<string, unknown> | null,
   panelRates: { r: typeof panelRatesTable.$inferSelect; d: typeof panelBaselineDocumentsTable.$inferSelect }[],
 ): Promise<IssueInsert[]> {
-  const linesSummary = items.slice(0, 50).map(i => ({
+  const linesSummary = items.map(i => ({
     line: i.lineNo,
     timekeeper: i.timekeeperLabel,
     role: i.roleRaw,
@@ -944,7 +944,7 @@ async function runGreyRules(
     hours: i.hours,
     rate: i.rateCharged,
     amount: i.amount,
-    desc: i.description?.slice(0, 150),
+    desc: i.description?.slice(0, 80),
     isExpense: i.isExpenseLine,
     expenseType: i.expenseType,
   }));
