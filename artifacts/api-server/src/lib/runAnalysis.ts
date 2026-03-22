@@ -323,6 +323,250 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
   }
 }
 
+export interface GreyRuleParseContext {
+  invoiceId: number;
+  runId: number;
+  currency: string;
+  matterName: string | null | undefined;
+  items: Array<{ id: number; lineNo: number }>;
+  isRuleActive: (code: string) => boolean;
+}
+
+export function parseGreyRulesResponse(
+  parsed: Record<string, unknown>,
+  ctx: GreyRuleParseContext,
+): IssueInsert[] {
+  const { invoiceId, runId, currency, matterName, items, isRuleActive } = ctx;
+  const greyIssues: IssueInsert[] = [];
+
+  const elConflict = parsed["EL_CONFLICT_WITH_PANEL_BASELINE"] as { fires?: boolean; conflict_description?: string; baseline_source?: string; baseline_value?: string; el_value?: string } | null;
+  if (elConflict?.fires && elConflict.conflict_description && isRuleActive("EL_CONFLICT_WITH_PANEL_BASELINE")) {
+    greyIssues.push({
+      invoiceId,
+      analysisRunId: runId,
+      ruleCode: "EL_CONFLICT_WITH_PANEL_BASELINE",
+      ruleType: "objective",
+      severity: "error",
+      evaluatorType: "heuristic",
+      issueStatus: "open",
+      routeToRole: "legal_ops",
+      explanationText: `The Engagement Letter for this matter contains terms that appear to conflict with the active Panel baseline. Specific conflict detected: ${elConflict.conflict_description}. Panel baseline source: ${elConflict.baseline_source ?? "Active Panel Rates/T&C"}. EL term: ${elConflict.el_value ?? "see evidence"}. Per the Panel T&C, the EL does not override the Panel baseline unless expressly approved in writing by Arcturus.`,
+      evidenceJson: {
+        conflict_type: elConflict.conflict_description,
+        baseline_source: elConflict.baseline_source,
+        baseline_value: elConflict.baseline_value,
+        el_source: "Engagement Letter",
+        el_value: elConflict.el_value,
+        conflict_description: elConflict.conflict_description,
+      },
+      suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+    });
+  }
+
+  const hoursDisp = parsed["HOURS_DISPROPORTIONATE"] as Array<{ fires?: boolean; timekeeper_label?: string; role_normalized?: string; total_hours?: number; billing_period?: string; task_description?: string; heuristic_reasoning?: string }> | null;
+  if (Array.isArray(hoursDisp) && isRuleActive("HOURS_DISPROPORTIONATE")) {
+    for (const h of hoursDisp) {
+      if (!h.fires || !h.timekeeper_label) continue;
+      greyIssues.push({
+        invoiceId,
+        analysisRunId: runId,
+        ruleCode: "HOURS_DISPROPORTIONATE",
+        ruleType: "gray",
+        severity: "warning",
+        evaluatorType: "heuristic",
+        issueStatus: "open",
+        routeToRole: "internal_lawyer",
+        explanationText: `${h.timekeeper_label} (${h.role_normalized ?? "unknown"}) billed ${h.total_hours}h on "${h.task_description}" during ${h.billing_period ?? "this billing period"}. For a ${h.role_normalized ?? "timekeeper"}, this volume of hours on a single task in one period is potentially unusual. ${h.heuristic_reasoning ?? ""}`,
+        evidenceJson: {
+          timekeeper_label: h.timekeeper_label,
+          role_normalized: h.role_normalized,
+          total_hours: h.total_hours,
+          billing_period: h.billing_period,
+          task_description: h.task_description,
+          heuristic_reasoning: h.heuristic_reasoning,
+        },
+        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+      });
+    }
+  }
+
+  const parallelBilling = parsed["PARALLEL_BILLING"] as Array<{ fires?: boolean; date?: string; timekeeper_list?: string[]; descriptions?: string[]; hours_each?: unknown[]; amounts_each?: unknown[]; total_hours?: number; total_amount?: number; heuristic_reasoning?: string }> | null;
+  if (Array.isArray(parallelBilling) && isRuleActive("PARALLEL_BILLING")) {
+    for (const pb of parallelBilling) {
+      if (!pb.fires || !pb.date) continue;
+      greyIssues.push({
+        invoiceId,
+        analysisRunId: runId,
+        ruleCode: "PARALLEL_BILLING",
+        ruleType: "gray",
+        severity: "warning",
+        evaluatorType: "heuristic",
+        issueStatus: "open",
+        routeToRole: "internal_lawyer",
+        explanationText: `On ${pb.date}, ${pb.timekeeper_list?.length ?? 0} timekeepers billed for tasks with similar or overlapping descriptions: ${pb.timekeeper_list?.join(", ")}. Total hours billed across these lines: ${pb.total_hours}h for combined amount of ${currency} ${pb.total_amount?.toFixed(2) ?? "0.00"}. ${pb.heuristic_reasoning ?? ""}`,
+        evidenceJson: {
+          date: pb.date,
+          timekeeper_list: pb.timekeeper_list,
+          descriptions: pb.descriptions,
+          hours_each: pb.hours_each,
+          amounts_each: pb.amounts_each,
+          total_hours: pb.total_hours,
+          total_amount: pb.total_amount,
+          heuristic_reasoning: pb.heuristic_reasoning,
+        },
+        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+      });
+    }
+  }
+
+  const scopeCreep = parsed["SCOPE_CREEP"] as Array<{ fires?: boolean; line_no?: number; description?: string; el_scope_summary?: string; el_date?: string; matter_name?: string; heuristic_reasoning?: string }> | null;
+  if (Array.isArray(scopeCreep) && isRuleActive("SCOPE_CREEP")) {
+    for (const sc of scopeCreep) {
+      if (!sc.fires || !sc.line_no) continue;
+      const lineItem = items.find(i => i.lineNo === sc.line_no);
+      greyIssues.push({
+        invoiceId,
+        analysisRunId: runId,
+        invoiceItemId: lineItem?.id,
+        ruleCode: "SCOPE_CREEP",
+        ruleType: "gray",
+        severity: "warning",
+        evaluatorType: "heuristic",
+        issueStatus: "open",
+        routeToRole: "internal_lawyer",
+        explanationText: `Line ${sc.line_no} describes work ("${sc.description}") that does not appear to fall within the agreed scope of the Engagement Letter dated ${sc.el_date ?? "N/A"} for ${sc.matter_name ?? matterName ?? "this matter"}. The agreed scope covers: ${sc.el_scope_summary ?? "see Engagement Letter"}. ${sc.heuristic_reasoning ?? ""}`,
+        evidenceJson: {
+          line_no: sc.line_no,
+          description: sc.description,
+          el_scope_summary: sc.el_scope_summary,
+          el_date: sc.el_date,
+          matter_name: sc.matter_name,
+          heuristic_reasoning: sc.heuristic_reasoning,
+        },
+        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+      });
+    }
+  }
+
+  const seniorityOverkill = parsed["SENIORITY_OVERKILL"] as Array<{ fires?: boolean; line_no?: number; timekeeper_label?: string; role_normalized?: string; rate_charged?: number; hours?: number; amount?: number; description?: string; heuristic_reasoning?: string }> | null;
+  if (Array.isArray(seniorityOverkill) && isRuleActive("SENIORITY_OVERKILL")) {
+    for (const so of seniorityOverkill) {
+      if (!so.fires || !so.line_no) continue;
+      const lineItem = items.find(i => i.lineNo === so.line_no);
+      greyIssues.push({
+        invoiceId,
+        analysisRunId: runId,
+        invoiceItemId: lineItem?.id,
+        ruleCode: "SENIORITY_OVERKILL",
+        ruleType: "gray",
+        severity: "warning",
+        evaluatorType: "heuristic",
+        issueStatus: "open",
+        routeToRole: "internal_lawyer",
+        explanationText: `Line ${so.line_no}: ${so.timekeeper_label} (${so.role_normalized}, ${currency} ${so.rate_charged}/h) billed ${so.hours}h for "${so.description}". This task appears to be routine or administrative in nature and could typically be handled by a more junior timekeeper at a lower rate. ${so.heuristic_reasoning ?? ""}`,
+        evidenceJson: {
+          line_no: so.line_no,
+          timekeeper_label: so.timekeeper_label,
+          role_normalized: so.role_normalized,
+          rate_charged: so.rate_charged,
+          hours: so.hours,
+          amount: so.amount,
+          description: so.description,
+          heuristic_reasoning: so.heuristic_reasoning,
+        },
+        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+      });
+    }
+  }
+
+  const estimateExcess = parsed["ESTIMATE_EXCESS"] as { fires?: boolean; estimate_amount?: number; source_document?: string; source_date?: string; cumulative_fees?: number; excess_amount?: number; excess_pct?: number; revised_estimate_provided?: boolean } | null;
+  if (estimateExcess?.fires && estimateExcess.estimate_amount && isRuleActive("ESTIMATE_EXCESS")) {
+    greyIssues.push({
+      invoiceId,
+      analysisRunId: runId,
+      ruleCode: "ESTIMATE_EXCESS",
+      ruleType: "gray",
+      severity: "warning",
+      evaluatorType: "heuristic",
+      issueStatus: "open",
+      routeToRole: "internal_lawyer",
+      explanationText: `The fee estimate for this matter was ${currency} ${estimateExcess.estimate_amount?.toFixed(2)} (source: ${estimateExcess.source_document ?? "Budget Estimate"}, dated ${estimateExcess.source_date ?? "N/A"}). Cumulative fees billed on this matter to date (including this invoice) total ${currency} ${estimateExcess.cumulative_fees?.toFixed(2)}, exceeding the estimate by ${currency} ${estimateExcess.excess_amount?.toFixed(2)} (${estimateExcess.excess_pct?.toFixed(1)}%). The Law Firm has ${estimateExcess.revised_estimate_provided ? "" : "not "}provided a revised estimate or explanation for this deviation.`,
+      evidenceJson: {
+        estimate_amount: estimateExcess.estimate_amount,
+        source_document: estimateExcess.source_document,
+        source_date: estimateExcess.source_date,
+        cumulative_fees: estimateExcess.cumulative_fees,
+        excess_amount: estimateExcess.excess_amount,
+        excess_pct: estimateExcess.excess_pct,
+        revised_estimate_provided: estimateExcess.revised_estimate_provided ?? false,
+      },
+      suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+    });
+  }
+
+  const internalCoord = parsed["INTERNAL_COORDINATION"] as Array<{ fires?: boolean; line_no?: number; timekeeper_label?: string; role_normalized?: string; hours?: number; amount?: number; description?: string; heuristic_reasoning?: string }> | null;
+  if (Array.isArray(internalCoord) && isRuleActive("INTERNAL_COORDINATION")) {
+    for (const ic of internalCoord) {
+      if (!ic.fires || !ic.line_no) continue;
+      const lineItem = items.find(i => i.lineNo === ic.line_no);
+      greyIssues.push({
+        invoiceId,
+        analysisRunId: runId,
+        invoiceItemId: lineItem?.id,
+        ruleCode: "INTERNAL_COORDINATION",
+        ruleType: "gray",
+        severity: "warning",
+        evaluatorType: "heuristic",
+        issueStatus: "open",
+        routeToRole: "internal_lawyer",
+        explanationText: `Line ${ic.line_no}: ${ic.timekeeper_label} (${ic.role_normalized ?? "unknown"}) billed ${ic.hours}h for "${ic.description}". This description suggests internal coordination, team meetings, or knowledge transfer between firm lawyers, which may not be billable under the T&C. ${ic.heuristic_reasoning ?? ""}`,
+        evidenceJson: {
+          line_no: ic.line_no,
+          timekeeper_label: ic.timekeeper_label,
+          role_normalized: ic.role_normalized,
+          hours: ic.hours,
+          amount: ic.amount,
+          description: ic.description,
+          heuristic_reasoning: ic.heuristic_reasoning,
+        },
+        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+      });
+    }
+  }
+
+  const timekeeperNotApproved = parsed["TIMEKEEPER_NOT_APPROVED"] as Array<{ fires?: boolean; line_no?: number; timekeeper_label?: string; role_normalized?: string; hours?: number; amount?: number; heuristic_reasoning?: string }> | null;
+  if (Array.isArray(timekeeperNotApproved) && isRuleActive("TIMEKEEPER_NOT_APPROVED")) {
+    for (const tna of timekeeperNotApproved) {
+      if (!tna.fires || !tna.line_no) continue;
+      const lineItem = items.find(i => i.lineNo === tna.line_no);
+      greyIssues.push({
+        invoiceId,
+        analysisRunId: runId,
+        invoiceItemId: lineItem?.id,
+        ruleCode: "TIMEKEEPER_NOT_APPROVED",
+        ruleType: "gray",
+        severity: "warning",
+        evaluatorType: "heuristic",
+        issueStatus: "open",
+        routeToRole: "internal_lawyer",
+        explanationText: `Line ${tna.line_no}: ${tna.timekeeper_label} (${tna.role_normalized ?? "unknown"}) does not appear in the approved staffing list in the Engagement Letter. Billing by unapproved timekeepers requires prior authorisation from Arcturus. ${tna.heuristic_reasoning ?? ""}`,
+        evidenceJson: {
+          line_no: tna.line_no,
+          timekeeper_label: tna.timekeeper_label,
+          role_normalized: tna.role_normalized,
+          hours: tna.hours,
+          amount: tna.amount,
+          heuristic_reasoning: tna.heuristic_reasoning,
+          source_document: "Engagement Letter (staffing annex)",
+        },
+        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
+      });
+    }
+  }
+
+  return greyIssues;
+}
+
 async function runGreyRules(
   invoiceId: number,
   runId: number,
@@ -508,236 +752,17 @@ Return valid JSON only. No markdown, no explanation.`;
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
     const parsed = JSON.parse(cleaned) as Record<string, unknown>;
 
-    const greyIssues: IssueInsert[] = [];
-
-    const elConflict = parsed["EL_CONFLICT_WITH_PANEL_BASELINE"] as { fires?: boolean; conflict_description?: string; baseline_source?: string; baseline_value?: string; el_value?: string } | null;
-    if (elConflict?.fires && elConflict.conflict_description && isRuleActive("EL_CONFLICT_WITH_PANEL_BASELINE")) {
-      greyIssues.push({
-        invoiceId,
-        analysisRunId: runId,
-        ruleCode: "EL_CONFLICT_WITH_PANEL_BASELINE",
-        ruleType: "gray",
-        severity: "error",
-        evaluatorType: "heuristic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `The Engagement Letter for this matter contains terms that appear to conflict with the active Panel baseline. Specific conflict detected: ${elConflict.conflict_description}. Panel baseline source: ${elConflict.baseline_source ?? "Active Panel Rates/T&C"}. EL term: ${elConflict.el_value ?? "see evidence"}. Per the Panel T&C, the EL does not override the Panel baseline unless expressly approved in writing by Arcturus.`,
-        evidenceJson: {
-          conflict_type: elConflict.conflict_description,
-          baseline_source: elConflict.baseline_source,
-          baseline_value: elConflict.baseline_value,
-          el_source: "Engagement Letter",
-          el_value: elConflict.el_value,
-          conflict_description: elConflict.conflict_description,
-        },
-        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-      });
-    }
-
-    const hoursDisp = parsed["HOURS_DISPROPORTIONATE"] as Array<{ fires?: boolean; timekeeper_label?: string; role_normalized?: string; total_hours?: number; billing_period?: string; task_description?: string; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(hoursDisp) && isRuleActive("HOURS_DISPROPORTIONATE")) {
-      for (const h of hoursDisp) {
-        if (!h.fires || !h.timekeeper_label) continue;
-        greyIssues.push({
-          invoiceId,
-          analysisRunId: runId,
-          ruleCode: "HOURS_DISPROPORTIONATE",
-          ruleType: "gray",
-          severity: "warning",
-          evaluatorType: "heuristic",
-          issueStatus: "open",
-          routeToRole: "internal_lawyer",
-          explanationText: `${h.timekeeper_label} (${h.role_normalized ?? "unknown"}) billed ${h.total_hours}h on "${h.task_description}" during ${h.billing_period ?? "this billing period"}. For a ${h.role_normalized ?? "timekeeper"}, this volume of hours on a single task in one period is potentially unusual. ${h.heuristic_reasoning ?? ""}`,
-          evidenceJson: {
-            timekeeper_label: h.timekeeper_label,
-            role_normalized: h.role_normalized,
-            total_hours: h.total_hours,
-            billing_period: h.billing_period,
-            task_description: h.task_description,
-            heuristic_reasoning: h.heuristic_reasoning,
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        });
-      }
-    }
-
-    const parallelBilling = parsed["PARALLEL_BILLING"] as Array<{ fires?: boolean; date?: string; timekeeper_list?: string[]; descriptions?: string[]; hours_each?: unknown[]; amounts_each?: unknown[]; total_hours?: number; total_amount?: number; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(parallelBilling) && isRuleActive("PARALLEL_BILLING")) {
-      for (const pb of parallelBilling) {
-        if (!pb.fires || !pb.date) continue;
-        greyIssues.push({
-          invoiceId,
-          analysisRunId: runId,
-          ruleCode: "PARALLEL_BILLING",
-          ruleType: "gray",
-          severity: "warning",
-          evaluatorType: "heuristic",
-          issueStatus: "open",
-          routeToRole: "internal_lawyer",
-          explanationText: `On ${pb.date}, ${pb.timekeeper_list?.length ?? 0} timekeepers billed for tasks with similar or overlapping descriptions: ${pb.timekeeper_list?.join(", ")}. Total hours billed across these lines: ${pb.total_hours}h for combined amount of ${invoice.currency} ${pb.total_amount?.toFixed(2) ?? "0.00"}. ${pb.heuristic_reasoning ?? ""}`,
-          evidenceJson: {
-            date: pb.date,
-            timekeeper_list: pb.timekeeper_list,
-            descriptions: pb.descriptions,
-            hours_each: pb.hours_each,
-            amounts_each: pb.amounts_each,
-            total_hours: pb.total_hours,
-            total_amount: pb.total_amount,
-            heuristic_reasoning: pb.heuristic_reasoning,
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        });
-      }
-    }
-
-    const scopeCreep = parsed["SCOPE_CREEP"] as Array<{ fires?: boolean; line_no?: number; description?: string; el_scope_summary?: string; el_date?: string; matter_name?: string; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(scopeCreep) && isRuleActive("SCOPE_CREEP")) {
-      for (const sc of scopeCreep) {
-        if (!sc.fires || !sc.line_no) continue;
-        const lineItem = items.find(i => i.lineNo === sc.line_no);
-        greyIssues.push({
-          invoiceId,
-          analysisRunId: runId,
-          invoiceItemId: lineItem?.id,
-          ruleCode: "SCOPE_CREEP",
-          ruleType: "gray",
-          severity: "warning",
-          evaluatorType: "heuristic",
-          issueStatus: "open",
-          routeToRole: "internal_lawyer",
-          explanationText: `Line ${sc.line_no} describes work ("${sc.description}") that does not appear to fall within the agreed scope of the Engagement Letter dated ${sc.el_date ?? "N/A"} for ${sc.matter_name ?? invoice.matterName ?? "this matter"}. The agreed scope covers: ${sc.el_scope_summary ?? "see Engagement Letter"}. ${sc.heuristic_reasoning ?? ""}`,
-          evidenceJson: {
-            line_no: sc.line_no,
-            description: sc.description,
-            el_scope_summary: sc.el_scope_summary,
-            el_date: sc.el_date,
-            matter_name: sc.matter_name,
-            heuristic_reasoning: sc.heuristic_reasoning,
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        });
-      }
-    }
-
-    const seniorityOverkill = parsed["SENIORITY_OVERKILL"] as Array<{ fires?: boolean; line_no?: number; timekeeper_label?: string; role_normalized?: string; rate_charged?: number; hours?: number; amount?: number; description?: string; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(seniorityOverkill) && isRuleActive("SENIORITY_OVERKILL")) {
-      for (const so of seniorityOverkill) {
-        if (!so.fires || !so.line_no) continue;
-        const lineItem = items.find(i => i.lineNo === so.line_no);
-        greyIssues.push({
-          invoiceId,
-          analysisRunId: runId,
-          invoiceItemId: lineItem?.id,
-          ruleCode: "SENIORITY_OVERKILL",
-          ruleType: "gray",
-          severity: "warning",
-          evaluatorType: "heuristic",
-          issueStatus: "open",
-          routeToRole: "internal_lawyer",
-          explanationText: `Line ${so.line_no}: ${so.timekeeper_label} (${so.role_normalized}, ${invoice.currency} ${so.rate_charged}/h) billed ${so.hours}h for "${so.description}". This task appears to be routine or administrative in nature and could typically be handled by a more junior timekeeper at a lower rate. ${so.heuristic_reasoning ?? ""}`,
-          evidenceJson: {
-            line_no: so.line_no,
-            timekeeper_label: so.timekeeper_label,
-            role_normalized: so.role_normalized,
-            rate_charged: so.rate_charged,
-            hours: so.hours,
-            amount: so.amount,
-            description: so.description,
-            heuristic_reasoning: so.heuristic_reasoning,
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        });
-      }
-    }
-
-    const estimateExcess = parsed["ESTIMATE_EXCESS"] as { fires?: boolean; estimate_amount?: number; source_document?: string; source_date?: string; cumulative_fees?: number; excess_amount?: number; excess_pct?: number; revised_estimate_provided?: boolean } | null;
-    if (estimateExcess?.fires && estimateExcess.estimate_amount && isRuleActive("ESTIMATE_EXCESS")) {
-      greyIssues.push({
-        invoiceId,
-        analysisRunId: runId,
-        ruleCode: "ESTIMATE_EXCESS",
-        ruleType: "gray",
-        severity: "warning",
-        evaluatorType: "heuristic",
-        issueStatus: "open",
-        routeToRole: "internal_lawyer",
-        explanationText: `The fee estimate for this matter was ${invoice.currency} ${estimateExcess.estimate_amount?.toFixed(2)} (source: ${estimateExcess.source_document ?? "Budget Estimate"}, dated ${estimateExcess.source_date ?? "N/A"}). Cumulative fees billed on this matter to date (including this invoice) total ${invoice.currency} ${estimateExcess.cumulative_fees?.toFixed(2)}, exceeding the estimate by ${invoice.currency} ${estimateExcess.excess_amount?.toFixed(2)} (${estimateExcess.excess_pct?.toFixed(1)}%). The Law Firm has ${estimateExcess.revised_estimate_provided ? "" : "not "}provided a revised estimate or explanation for this deviation.`,
-        evidenceJson: {
-          estimate_amount: estimateExcess.estimate_amount,
-          source_document: estimateExcess.source_document,
-          source_date: estimateExcess.source_date,
-          cumulative_fees: estimateExcess.cumulative_fees,
-          excess_amount: estimateExcess.excess_amount,
-          excess_pct: estimateExcess.excess_pct,
-          revised_estimate_provided: estimateExcess.revised_estimate_provided ?? false,
-        },
-        suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-      });
-    }
-
-    const internalCoord = parsed["INTERNAL_COORDINATION"] as Array<{ fires?: boolean; line_no?: number; timekeeper_label?: string; role_normalized?: string; hours?: number; amount?: number; description?: string; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(internalCoord) && isRuleActive("INTERNAL_COORDINATION")) {
-      for (const ic of internalCoord) {
-        if (!ic.fires || !ic.line_no) continue;
-        const lineItem = items.find(i => i.lineNo === ic.line_no);
-        greyIssues.push({
-          invoiceId,
-          analysisRunId: runId,
-          invoiceItemId: lineItem?.id,
-          ruleCode: "INTERNAL_COORDINATION",
-          ruleType: "gray",
-          severity: "warning",
-          evaluatorType: "heuristic",
-          issueStatus: "open",
-          routeToRole: "internal_lawyer",
-          explanationText: `Line ${ic.line_no}: ${ic.timekeeper_label} (${ic.role_normalized ?? "unknown"}) billed ${ic.hours}h for "${ic.description}". This description suggests internal coordination, team meetings, or knowledge transfer between firm lawyers, which may not be billable under the T&C. ${ic.heuristic_reasoning ?? ""}`,
-          evidenceJson: {
-            line_no: ic.line_no,
-            timekeeper_label: ic.timekeeper_label,
-            role_normalized: ic.role_normalized,
-            hours: ic.hours,
-            amount: ic.amount,
-            description: ic.description,
-            heuristic_reasoning: ic.heuristic_reasoning,
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        });
-      }
-    }
-
-    const timekeeperNotApproved = parsed["TIMEKEEPER_NOT_APPROVED"] as Array<{ fires?: boolean; line_no?: number; timekeeper_label?: string; role_normalized?: string; hours?: number; amount?: number; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(timekeeperNotApproved) && isRuleActive("TIMEKEEPER_NOT_APPROVED")) {
-      for (const tna of timekeeperNotApproved) {
-        if (!tna.fires || !tna.line_no) continue;
-        const lineItem = items.find(i => i.lineNo === tna.line_no);
-        greyIssues.push({
-          invoiceId,
-          analysisRunId: runId,
-          invoiceItemId: lineItem?.id,
-          ruleCode: "TIMEKEEPER_NOT_APPROVED",
-          ruleType: "gray",
-          severity: "warning",
-          evaluatorType: "heuristic",
-          issueStatus: "open",
-          routeToRole: "internal_lawyer",
-          explanationText: `Line ${tna.line_no}: ${tna.timekeeper_label} (${tna.role_normalized ?? "unknown"}) does not appear in the approved staffing list in the Engagement Letter. Billing by unapproved timekeepers requires prior authorisation from Arcturus. ${tna.heuristic_reasoning ?? ""}`,
-          evidenceJson: {
-            line_no: tna.line_no,
-            timekeeper_label: tna.timekeeper_label,
-            role_normalized: tna.role_normalized,
-            hours: tna.hours,
-            amount: tna.amount,
-            heuristic_reasoning: tna.heuristic_reasoning,
-            source_document: "Engagement Letter (staffing annex)",
-          },
-          suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-        });
-      }
-    }
-
-    return greyIssues;
+    return parseGreyRulesResponse(parsed, {
+      invoiceId,
+      runId,
+      currency: invoice.currency,
+      matterName: invoice.matterName,
+      items,
+      isRuleActive,
+    });
   } catch (err) {
     console.error("Grey rules AI call failed:", err);
     throw new Error(`Grey rule AI evaluation failed: ${String(err)}`);
   }
 }
+

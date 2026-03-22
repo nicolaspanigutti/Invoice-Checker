@@ -1046,15 +1046,17 @@ export default function InvoiceDetail() {
                   </div>
                 </>
               )}
-              <Button
-                className="w-full gap-2"
-                onClick={handleRunAnalysis}
-                disabled={runAnalysis.isPending}
-              >
-                {runAnalysis.isPending
-                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Analysing…</>
-                  : <><Sparkles className="h-4 w-4" /> Run Checking Analysis</>}
-              </Button>
+              {!hasExistingAnalysis && (
+                <Button
+                  className="w-full gap-2"
+                  onClick={handleRunAnalysis}
+                  disabled={runAnalysis.isPending}
+                >
+                  {runAnalysis.isPending
+                    ? <><Loader2 className="h-4 w-4 animate-spin" /> Analysing…</>
+                    : <><Sparkles className="h-4 w-4" /> Run Checking Analysis</>}
+                </Button>
+              )}
             </div>
           </div>
 

@@ -493,17 +493,13 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
   if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
 
   const actorId = req.session.userId!;
-  const isRerun = invoice.currentAnalysisRunId !== null;
 
-  if (isRerun) {
-    await db.insert(auditEventsTable).values({
-      entityType: "invoice",
-      entityId: id,
-      eventType: "re_run_requested",
-      actorId,
-      afterJson: { previousRunId: invoice.currentAnalysisRunId },
-      reason: null,
+  if (invoice.currentAnalysisRunId !== null) {
+    res.status(409).json({
+      error: "Analysis has already been run for this invoice. Use the rerun endpoint to initiate a new analysis with a mandatory reason.",
+      currentAnalysisRunId: invoice.currentAnalysisRunId,
     });
+    return;
   }
 
   await db.insert(auditEventsTable).values({
