@@ -1,7 +1,7 @@
 import { useListInvoices } from "@workspace/api-client-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from "recharts";
 import { FileText, AlertTriangle, CheckCircle2, ArrowRight, XCircle } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 const STATUS_COLORS: Record<string, string> = {
   extracting_data: "bg-yellow-100 text-yellow-800",
@@ -39,6 +39,7 @@ function fmtDate(d: string | null | undefined) {
 
 export default function Dashboard() {
   const { data } = useListInvoices({ pageSize: 50 });
+  const [, navigate] = useLocation();
   const invoices = data?.data ?? [];
 
   const pending = invoices.filter(i => (i.invoiceStatus as string) === "in_review").length;
@@ -56,11 +57,11 @@ export default function Dashboard() {
   }, {});
 
   const chartData = [
-    { name: "Extracting", value: statusCounts["extracting_data"] ?? 0, fill: "#f59e0b" },
-    { name: "In Review", value: statusCounts["in_review"] ?? 0, fill: "#3b82f6" },
-    { name: "Awaiting Lawyer", value: statusCounts["waiting_internal_lawyer"] ?? 0, fill: "#EC0000" },
-    { name: "Pending Firm", value: statusCounts["pending_law_firm"] ?? 0, fill: "#f97316" },
-    { name: "Ready to Pay", value: statusCounts["ready_to_pay"] ?? 0, fill: "#22c55e" },
+    { name: "Extracting",      statusKey: "extracting_data",        value: statusCounts["extracting_data"] ?? 0,        fill: "#f59e0b" },
+    { name: "In Review",       statusKey: "in_review",              value: statusCounts["in_review"] ?? 0,              fill: "#3b82f6" },
+    { name: "Awaiting Lawyer", statusKey: "waiting_internal_lawyer",value: statusCounts["waiting_internal_lawyer"] ?? 0, fill: "#EC0000" },
+    { name: "Pending Firm",    statusKey: "pending_law_firm",       value: statusCounts["pending_law_firm"] ?? 0,       fill: "#f97316" },
+    { name: "Ready to Pay",    statusKey: "ready_to_pay",           value: statusCounts["ready_to_pay"] ?? 0,           fill: "#22c55e" },
   ];
 
   return (
@@ -74,19 +75,19 @@ export default function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Total Pending */}
         <Link href="/invoices?status=in_review" className="block group">
-          <div className="bg-white border border-border rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-primary/30">
+          <div className="h-full bg-white border border-border rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-primary/30">
             <div className="flex items-start justify-between">
               <p className="text-sm font-medium text-muted-foreground">Total Pending</p>
               <FileText className="w-5 h-5 text-muted-foreground/50 group-hover:text-primary/50 transition-colors" />
             </div>
             <p className="text-4xl font-display font-bold text-foreground mt-3">{pending}</p>
-            <p className="text-xs text-muted-foreground mt-1 group-hover:text-primary transition-colors">View invoices requiring action →</p>
+            <p className="text-xs text-muted-foreground mt-1 group-hover:text-primary transition-colors">Requiring action →</p>
           </div>
         </Link>
 
         {/* Escalated */}
         <Link href="/invoices?status=waiting_internal_lawyer" className="block group">
-          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-orange-400">
+          <div className="h-full bg-orange-50 border border-orange-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-orange-400">
             <div className="flex items-start justify-between">
               <p className="text-sm font-medium text-orange-600">Escalated</p>
               <AlertTriangle className="w-5 h-5 text-orange-500" />
@@ -98,7 +99,7 @@ export default function Dashboard() {
 
         {/* Approved */}
         <Link href="/invoices?status=ready_to_pay" className="block group">
-          <div className="bg-green-50 border border-green-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-green-400">
+          <div className="h-full bg-green-50 border border-green-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-green-400">
             <div className="flex items-start justify-between">
               <p className="text-sm font-medium text-green-700">Approved</p>
               <CheckCircle2 className="w-5 h-5 text-green-600" />
@@ -110,13 +111,13 @@ export default function Dashboard() {
 
         {/* Disputed */}
         <Link href="/invoices?status=pending_law_firm" className="block group">
-          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-orange-400">
+          <div className="h-full bg-red-50 border border-red-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-red-400">
             <div className="flex items-start justify-between">
-              <p className="text-sm font-medium text-orange-700">Disputed</p>
-              <XCircle className="w-5 h-5 text-orange-600" />
+              <p className="text-sm font-medium text-red-700">Disputed</p>
+              <XCircle className="w-5 h-5 text-red-600" />
             </div>
-            <p className="text-4xl font-display font-bold text-orange-700 mt-3">{disputed}</p>
-            <p className="text-xs text-orange-600 mt-1 group-hover:text-orange-800 transition-colors">Returned to law firm →</p>
+            <p className="text-4xl font-display font-bold text-red-700 mt-3">{disputed}</p>
+            <p className="text-xs text-red-600 mt-1 group-hover:text-red-800 transition-colors">Returned to law firm →</p>
           </div>
         </Link>
       </div>
@@ -151,7 +152,11 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {recent.map((inv, idx) => (
-                  <tr key={inv.id} className={`border-b border-border last:border-0 hover:bg-muted/20 transition-colors ${idx % 2 === 0 ? "" : "bg-muted/10"}`}>
+                  <tr
+                    key={inv.id}
+                    onClick={() => navigate(`/invoices/${inv.id}`)}
+                    className={`border-b border-border last:border-0 hover:bg-primary/5 transition-colors cursor-pointer ${idx % 2 === 0 ? "" : "bg-muted/10"}`}
+                  >
                     <td className="px-6 py-3.5 font-medium text-foreground">{inv.lawFirmName ?? "—"}</td>
                     <td className="px-4 py-3.5 font-mono text-xs text-muted-foreground">{inv.invoiceNumber}</td>
                     <td className="px-4 py-3.5 text-muted-foreground hidden sm:table-cell">{fmtDate(inv.invoiceDate)}</td>
@@ -172,14 +177,24 @@ export default function Dashboard() {
         <div className="bg-white border border-border rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-border">
             <h2 className="font-display font-bold text-foreground">Invoice Pipeline</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">By status</p>
+            <p className="text-xs text-muted-foreground mt-0.5">By status — click a bar to filter</p>
           </div>
           <div className="p-5">
             {invoices.length === 0 ? (
               <div className="py-10 text-center text-muted-foreground text-sm">No data yet</div>
             ) : (
               <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={chartData} barSize={28} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <BarChart
+                  data={chartData}
+                  barSize={28}
+                  margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
+                  style={{ cursor: "pointer" }}
+                  onClick={(state) => {
+                    if (state?.activePayload?.[0]?.payload?.statusKey) {
+                      navigate(`/invoices?status=${state.activePayload[0].payload.statusKey}`);
+                    }
+                  }}
+                >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
@@ -198,13 +213,17 @@ export default function Dashboard() {
 
             <div className="mt-3 space-y-1.5">
               {chartData.filter(d => d.value > 0).map(d => (
-                <div key={d.name} className="flex items-center justify-between text-xs">
+                <button
+                  key={d.name}
+                  onClick={() => navigate(`/invoices?status=${d.statusKey}`)}
+                  className="w-full flex items-center justify-between text-xs hover:bg-muted/40 rounded px-1 py-0.5 transition-colors"
+                >
                   <div className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: d.fill }} />
                     <span className="text-muted-foreground">{d.name}</span>
                   </div>
                   <span className="font-semibold text-foreground">{d.value}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
