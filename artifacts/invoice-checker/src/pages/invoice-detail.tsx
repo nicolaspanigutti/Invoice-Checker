@@ -411,8 +411,10 @@ export default function InvoiceDetail() {
   const { data: invoice, isLoading } = useGetInvoice(id);
   const { data: documents } = useListInvoiceDocuments(id);
   const { data: items } = useListInvoiceItems(id);
+  const { data: issues } = useListInvoiceIssues(id);
   const extractData = useExtractInvoiceData();
   const runAnalysis = useRunInvoiceAnalysis();
+  const [showAllLines, setShowAllLines] = useState(false);
 
   if (isLoading) {
     return (
@@ -434,7 +436,17 @@ export default function InvoiceDetail() {
   const completeness = invoice.completeness;
   const canRunAnalysis = completeness?.canRunAnalysis ?? false;
   const blockingIssues = completeness?.blockingIssues ?? [];
-  const displayItems = items ?? [];
+
+  const showIssuesPanel = analysisRan || (invoice.invoiceStatus !== "extracting_data" && invoice.invoiceStatus !== "in_review");
+
+  const flaggedItemIds = new Set<number>(
+    (issues ?? []).map(iss => iss.invoiceItemId).filter((itemId): itemId is number => itemId != null)
+  );
+  const hasIssues = (issues ?? []).length > 0;
+  const allItems = items ?? [];
+  const displayItems = (showIssuesPanel && hasIssues && !showAllLines && flaggedItemIds.size > 0)
+    ? allItems.filter(item => flaggedItemIds.has(item.id))
+    : allItems;
 
   const handleExtract = async () => {
     setExtracting(true);
@@ -468,8 +480,6 @@ export default function InvoiceDetail() {
       toast({ variant: "destructive", title: "Analysis failed", description: msg });
     }
   };
-
-  const showIssuesPanel = analysisRan || (invoice.invoiceStatus !== "extracting_data" && invoice.invoiceStatus !== "in_review");
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -577,11 +587,27 @@ export default function InvoiceDetail() {
           )}
 
           <div className="border border-border rounded-3xl bg-card shadow-sm overflow-hidden">
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-              <h2 className="text-lg font-display font-semibold">Line Items</h2>
-              <span className="text-sm text-muted-foreground">{items?.length ?? 0} lines</span>
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-display font-semibold">Line Items</h2>
+                <span className="text-sm text-muted-foreground">{allItems.length} lines</span>
+                {showIssuesPanel && hasIssues && flaggedItemIds.size > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                    <AlertCircle className="h-3 w-3" /> {flaggedItemIds.size} flagged
+                  </span>
+                )}
+              </div>
+              {showIssuesPanel && hasIssues && flaggedItemIds.size > 0 && (
+                <button
+                  onClick={() => setShowAllLines(v => !v)}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showAllLines ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {showAllLines ? `Show flagged only (${flaggedItemIds.size})` : `Show all ${allItems.length} lines`}
+                </button>
+              )}
             </div>
-            {!items || items.length === 0 ? (
+            {allItems.length === 0 ? (
               <div className="text-center py-12">
                 <FileText className="mx-auto h-8 w-8 text-muted-foreground/30 mb-3" />
                 <p className="text-sm text-muted-foreground">No line items extracted yet. Run AI extraction to populate.</p>
@@ -603,8 +629,11 @@ export default function InvoiceDetail() {
                   </TableHeader>
                   <TableBody>
                     {displayItems.map((item: InvoiceItem) => (
-                      <TableRow key={item.id} className={item.isExpenseLine ? "bg-amber-50/40" : ""}>
-                        <TableCell className="text-muted-foreground text-xs">{item.lineNo}</TableCell>
+                      <TableRow key={item.id} className={flaggedItemIds.has(item.id) ? "bg-red-50/50" : item.isExpenseLine ? "bg-amber-50/40" : ""}>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {item.lineNo}
+                          {flaggedItemIds.has(item.id) && <AlertCircle className="inline h-3 w-3 text-red-500 ml-1" />}
+                        </TableCell>
                         <TableCell className="text-sm font-medium">{item.timekeeperLabel ?? "—"}</TableCell>
                         <TableCell className="text-sm">{item.roleRaw ?? (item.isExpenseLine ? <span className="text-amber-700 text-xs font-medium">Expense</span> : "—")}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{item.workDate ? format(new Date(item.workDate), "d MMM yy") : "—"}</TableCell>
@@ -616,6 +645,14 @@ export default function InvoiceDetail() {
                     ))}
                   </TableBody>
                 </Table>
+                {showIssuesPanel && hasIssues && !showAllLines && flaggedItemIds.size < allItems.length && (
+                  <div className="px-4 py-2 border-t border-border bg-muted/20 text-xs text-muted-foreground text-center">
+                    Showing {displayItems.length} flagged line{displayItems.length !== 1 ? "s" : ""} of {allItems.length} total.{" "}
+                    <button className="underline hover:text-foreground" onClick={() => setShowAllLines(true)}>
+                      Show all lines
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

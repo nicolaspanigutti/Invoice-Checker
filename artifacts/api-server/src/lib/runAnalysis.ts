@@ -12,10 +12,12 @@ import {
   rulesConfigTable,
 } from "@workspace/db";
 import { eq, and, sql, desc } from "drizzle-orm";
+import { createHash } from "crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { normaliseRole, isUnauthorizedRole, KNOWN_ROLE_CODES } from "./roleNormaliser";
 
 const HEURISTIC_PROMPT_VERSION = "v1.0";
+const EXTRACTION_PROMPT_VERSION = "v1.0";
 
 type IssueInsert = typeof issuesTable.$inferInsert;
 type InvoiceItem = typeof invoiceItemsTable.$inferSelect;
@@ -74,6 +76,14 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   const meetingConfig = await db.select().from(rulesConfigTable).where(eq(rulesConfigTable.ruleCode, "MEETING_OVERSTAFFING")).limit(1);
   const meetingThreshold = ((meetingConfig[0]?.configJson as Record<string, unknown> | null)?.threshold as number | null) ?? 3;
 
+  const inputHashSource = JSON.stringify({
+    invoice: { id: invoice.id, totalAmount: invoice.totalAmount, currency: invoice.currency, invoiceDate: invoice.invoiceDate },
+    docCount: docs.length,
+    itemCount: rawItems.length,
+    elDataHash: elDoc?.extractedJson ? createHash("sha256").update(elDoc.extractedJson).digest("hex").slice(0, 16) : null,
+  });
+  const inputHash = createHash("sha256").update(inputHashSource).digest("hex");
+
   const prevRuns = await db.select({ id: analysisRunsTable.id }).from(analysisRunsTable).where(eq(analysisRunsTable.invoiceId, invoiceId));
   const versionNo = prevRuns.length + 1;
 
@@ -91,9 +101,12 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     status: "running",
     startedById,
     startedAt: new Date(),
+    inputHash,
+    extractionPromptVersion: EXTRACTION_PROMPT_VERSION,
     heuristicPromptVersion: HEURISTIC_PROMPT_VERSION,
   }).returning();
 
+  try {
   const issues: IssueInsert[] = [];
 
   const items: (InvoiceItem & { roleNormalizedComputed: string | null; isUnauthorized: boolean })[] = rawItems.map(item => ({
@@ -102,18 +115,11 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     isUnauthorized: isUnauthorizedRole(item.roleRaw),
   }));
 
-  await db.update(invoiceItemsTable)
-    .set({ roleNormalized: sql`CASE ${sql.join(items.map(it => sql`WHEN id = ${it.id} THEN ${it.roleNormalizedComputed}`))
-      } ELSE role_normalized END` })
-    .where(eq(invoiceItemsTable.invoiceId, invoiceId))
-    .catch(() => {});
-
   for (const item of items) {
-    if (item.roleNormalized === null && item.roleRaw !== null && !item.isExpenseLine) {
+    if (item.roleRaw !== null && !item.isExpenseLine) {
       await db.update(invoiceItemsTable)
         .set({ roleNormalized: item.roleNormalizedComputed })
-        .where(eq(invoiceItemsTable.id, item.id))
-        .catch(() => {});
+        .where(eq(invoiceItemsTable.id, item.id));
     }
   }
 
@@ -587,13 +593,12 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
         .filter((i): i is typeof items[0] => i !== undefined && n(i.rateCharged) > data.minRate);
       const excessAmount = ratesAboveMin.reduce((sum, i) => sum + (n(i.rateCharged) - data.minRate) * n(i.hours), 0);
 
-      const severity = maxApproved && data.maxRate > maxApproved ? "error" : "error";
       issues.push({
         invoiceId,
         analysisRunId: run.id,
         ruleCode: "INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER",
         ruleType: "objective",
-        severity,
+        severity: "error",
         evaluatorType: "deterministic",
         issueStatus: "open",
         routeToRole: "legal_ops",
@@ -847,6 +852,15 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     amountAtRisk: totalRecoverable > 0 ? totalRecoverable.toFixed(2) : null,
     status: "completed",
   };
+
+  } catch (err) {
+    await db.update(analysisRunsTable).set({
+      status: "failed",
+      finishedAt: new Date(),
+      summaryJson: { error: String(err) },
+    }).where(eq(analysisRunsTable.id, run.id));
+    throw err;
+  }
 }
 
 async function runGreyRules(
