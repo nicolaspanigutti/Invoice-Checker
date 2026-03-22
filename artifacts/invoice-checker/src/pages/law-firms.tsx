@@ -658,6 +658,7 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
   const [form, setForm] = useState<FormData>(emptyForm);
   const [showTcUpload, setShowTcUpload] = useState(false);
   const [verifyingTermKey, setVerifyingTermKey] = useState<string | null>(null);
+  const [verifyingAll, setVerifyingAll] = useState(false);
 
   const handleStartEdit = () => {
     if (!firm) return;
@@ -716,6 +717,31 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
       toast({ variant: "destructive", title: "Verification failed", description: "Could not verify term. Please try again." });
     } finally {
       setVerifyingTermKey(null);
+    }
+  };
+
+  const handleVerifyAll = async () => {
+    const typedFirm = firm as LawFirmDetail & { terms?: Array<{ id: number; termKey: string; termValue: unknown; verificationStatus: string; sourceType: string }> };
+    if (!typedFirm.terms) return;
+    setVerifyingAll(true);
+    try {
+      await upsertTerms.mutateAsync({
+        id: firmId,
+        data: {
+          terms: typedFirm.terms.map(t => ({
+            termKey: t.termKey,
+            termValue: t.termValue,
+            verificationStatus: "verified" as const,
+          })),
+        },
+      });
+      queryClient.invalidateQueries({ queryKey: ["law-firms", firmId] });
+      queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+      toast({ title: "All terms verified", description: "All commercial terms have been marked as manually verified." });
+    } catch {
+      toast({ variant: "destructive", title: "Verification failed", description: "Could not verify terms. Please try again." });
+    } finally {
+      setVerifyingAll(false);
     }
   };
 
@@ -807,6 +833,16 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
                       <Badge variant={typedFirm.terms.some(t => t.verificationStatus === "verified") ? "success" : "warning"}>
                         {typedFirm.terms.filter(t => t.verificationStatus === "verified").length}/{typedFirm.terms.length} Verified
                       </Badge>
+                    )}
+                    {typedFirm.terms && typedFirm.terms.some(t => t.verificationStatus !== "verified") && (
+                      <button
+                        onClick={handleVerifyAll}
+                        disabled={verifyingAll}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-400 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {verifyingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                        Verify All
+                      </button>
                     )}
                     <button
                       onClick={() => setShowTcUpload(v => !v)}
