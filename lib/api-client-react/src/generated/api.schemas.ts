@@ -95,6 +95,7 @@ export type InvoiceDetail = InvoiceSummary & {
   assignedLegalOpsId?: number | null;
   assignedInternalLawyerId?: number | null;
   createdById?: number | null;
+  currentAnalysisRunId?: number | null;
   updatedAt: string;
   completeness: CompletenessResult;
 };

@@ -728,7 +728,7 @@ export default function InvoiceDetail() {
   };
 
   const reportableStatuses = ["in_review", "waiting_internal_lawyer", "pending_law_firm", "ready_to_pay"];
-  const canViewReport = reportableStatuses.includes(invoice.invoiceStatus);
+  const canViewReport = reportableStatuses.includes(invoice.invoiceStatus) && Boolean(invoice.currentAnalysisRunId);
   const canDraftEmail = invoice.invoiceStatus === "pending_law_firm";
 
   return (

@@ -80,6 +80,7 @@ async function buildInvoiceSummary(invoice: typeof invoicesTable.$inferSelect, i
     assignedLegalOpsId: invoice.assignedLegalOpsId,
     assignedInternalLawyerId: invoice.assignedInternalLawyerId,
     createdById: invoice.createdById,
+    currentAnalysisRunId: invoice.currentAnalysisRunId,
     updatedAt: invoice.updatedAt,
     completeness,
   };
@@ -538,6 +539,7 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
       afterJson: { issueCount: result.issueCount, outcome: result.outcome, amountAtRisk: result.amountAtRisk },
       reason: null,
     });
+    await recalculateRecovery(id);
     res.json({
       analysisRunId: result.analysisRunId,
       invoiceId: id,
@@ -1004,16 +1006,18 @@ router.post("/invoices/:id/report", requireRole("super_admin", "legal_ops", "int
   const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
   if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
 
+  if (!invoice.currentAnalysisRunId) {
+    res.status(400).json({ error: "Report unavailable: no analysis has been run on this invoice yet." });
+    return;
+  }
+
   let lawFirmName: string | null = null;
   if (invoice.lawFirmId) {
     const [firm] = await db.select({ name: lawFirmsTable.name }).from(lawFirmsTable).where(eq(lawFirmsTable.id, invoice.lawFirmId)).limit(1);
     lawFirmName = firm?.name ?? null;
   }
 
-  const conditions = [eq(issuesTable.invoiceId, id)];
-  if (invoice.currentAnalysisRunId) {
-    conditions.push(eq(issuesTable.analysisRunId, invoice.currentAnalysisRunId));
-  }
+  const conditions = [eq(issuesTable.invoiceId, id), eq(issuesTable.analysisRunId, invoice.currentAnalysisRunId)];
 
   const allIssues = await db
     .select({ i: issuesTable, actorName: usersTable.displayName })

@@ -549,6 +549,7 @@ export const GetInvoiceResponse = zod
       assignedLegalOpsId: zod.number().nullish(),
       assignedInternalLawyerId: zod.number().nullish(),
       createdById: zod.number().nullish(),
+      currentAnalysisRunId: zod.number().nullish(),
       updatedAt: zod.date(),
       completeness: zod.object({
         canRunAnalysis: zod.boolean(),
@@ -639,6 +640,7 @@ export const UpdateInvoiceResponse = zod
       assignedLegalOpsId: zod.number().nullish(),
       assignedInternalLawyerId: zod.number().nullish(),
       createdById: zod.number().nullish(),
+      currentAnalysisRunId: zod.number().nullish(),
       updatedAt: zod.date(),
       completeness: zod.object({
         canRunAnalysis: zod.boolean(),

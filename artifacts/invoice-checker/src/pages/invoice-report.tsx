@@ -189,8 +189,18 @@ export default function InvoiceReportPage() {
         @media print {
           .no-print { display: none !important; }
           .print-only { display: block !important; }
-          body { background: white !important; }
+          body { background: white !important; font-size: 11pt; }
           .print-full { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+          .shadow-sm { box-shadow: none !important; }
+          section { page-break-inside: avoid; }
+          table { page-break-inside: auto; }
+          tr { page-break-inside: avoid; page-break-after: auto; }
+          thead { display: table-header-group; }
+          @page {
+            margin: 1.5cm 2cm;
+            size: A4 portrait;
+          }
+          h1, h2, h3 { page-break-after: avoid; }
         }
         .print-only { display: none; }
       `}</style>
