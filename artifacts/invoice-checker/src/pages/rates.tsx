@@ -389,7 +389,6 @@ function RatesTable({ documentId, firmFilter, jurisdictionFilter }: { documentId
 function RatesDocumentsSection() {
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedDocId, setSelectedDocId] = useState<number | undefined>(undefined);
   const [firmFilter, setFirmFilter] = useState("");
   const [jurisdictionFilter, setJurisdictionFilter] = useState("");
 
@@ -398,57 +397,49 @@ function RatesDocumentsSection() {
     { query: { queryKey: getListPanelBaselineDocumentsQueryKey({ documentKind: "rates" }) } }
   );
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListPanelBaselineDocumentsQueryKey() });
+  const activeDoc = documents.find(d => d.verificationStatus === "active");
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-display font-semibold text-foreground flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-muted-foreground" />Panel Rate Schedules
-        </h2>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-sm hover:bg-primary/90 transition-colors">
-          <Plus className="w-4 h-4" />Add Rates Document
+      <h2 className="text-lg font-display font-semibold text-foreground flex items-center gap-2">
+        <DollarSign className="w-5 h-5 text-muted-foreground" />Panel Rate Schedules
+      </h2>
+
+      {/* Current version card */}
+      <div className="bg-card border border-border rounded-2xl p-5 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+            <FileText className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Current rates version</p>
+            {docsLoading ? (
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            ) : activeDoc ? (
+              <>
+                <p className="text-sm font-semibold text-foreground">{activeDoc.versionLabel}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {activeDoc.fileName && <span>{activeDoc.fileName} · </span>}
+                  {activeDoc.activatedAt
+                    ? `Activated ${new Date(activeDoc.activatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                    : `Added ${new Date(activeDoc.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No active rates version — add one to get started.</p>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm shadow-sm hover:bg-primary/90 transition-colors flex-shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          {activeDoc ? "Replace Version" : "Add Version"}
         </button>
       </div>
 
-      <div className="bg-card border border-border rounded-2xl p-5">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2"><FileText className="w-3.5 h-3.5" />Documents</h3>
-        {docsLoading ? (
-          <div className="text-center py-4 text-muted-foreground text-sm">Loading...</div>
-        ) : documents.length === 0 ? (
-          <div className="text-center py-6 text-muted-foreground text-sm">No rate documents yet. Add one above.</div>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setSelectedDocId(undefined)}
-                className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-colors", selectedDocId === undefined ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground hover:bg-muted")}
-              >
-                All Documents
-              </button>
-              {documents.map((doc: PanelBaselineDocument) => (
-                <button
-                  key={doc.id}
-                  onClick={() => setSelectedDocId(doc.id)}
-                  className={cn("px-4 py-2 rounded-xl text-sm font-medium border transition-colors flex items-center gap-2", selectedDocId === doc.id ? "bg-primary text-primary-foreground border-primary" : "border-border text-foreground hover:bg-muted")}
-                >
-                  {doc.versionLabel}
-                  <StatusBadge status={doc.verificationStatus as DocStatus} />
-                </button>
-              ))}
-            </div>
-            {selectedDocId !== undefined && (
-              <div className="pt-2">
-                <DocumentStatusActions
-                  doc={documents.find(d => d.id === selectedDocId)!}
-                  onUpdate={invalidate}
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
+      {/* Rates table with filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -460,7 +451,7 @@ function RatesDocumentsSection() {
         </div>
       </div>
 
-      <RatesTable documentId={selectedDocId} firmFilter={firmFilter} jurisdictionFilter={jurisdictionFilter} />
+      <RatesTable documentId={activeDoc?.id} firmFilter={firmFilter} jurisdictionFilter={jurisdictionFilter} />
 
       {showCreate && <AddRatesDocumentModal onClose={() => setShowCreate(false)} />}
     </div>
