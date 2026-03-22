@@ -24,3 +24,21 @@ id = "8ApSgaQm9ncv7XFl8ksWY"
 uri = "file://demo/Caldwell_Pryce_LLP_Engagement_Letter_ACQ2026.pdf"
 type = "pdf"
 title = "Carta de Encargo – Caldwell & Pryce LLP / Acme Industrial Group plc"
+
+[[outputs]]
+id = "yQIxhKEeQ9bosTf2SQz7m"
+uri = "file://demo/Mercer_Voss_INV-2026-0031.pdf"
+type = "pdf"
+title = "Factura limpia — Mercer Voss INV-2026-0031"
+
+[[outputs]]
+id = "PGA5VDXz0FLecU3-FCxdI"
+uri = "file://demo/Hargreaves_Sutton_LLP_INV-2026-0094.pdf"
+type = "pdf"
+title = "Factura con 4 errores — Hargreaves & Sutton INV-2026-0094"
+
+[[outputs]]
+id = "l5trOj5DNfTcs9mJ6dhcD"
+uri = "file://demo/Hargreaves_Sutton_LLP_Engagement_Letter_2026.pdf"
+type = "pdf"
+title = "T&C — Hargreaves & Sutton LLP (para subir como nueva firma)"
