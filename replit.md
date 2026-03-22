@@ -12,10 +12,10 @@
 
 ### Auth
 
-Email/password authentication with server-side session cookies (`express-session` + `connect-pg-simple`). Session table: `user_sessions`. Seed credentials (password: `password123`):
-- `admin@arcturusgroup.com` (super_admin)
-- `daniel.whitfield@arcturusgroup.com` (legal_ops)
-- `sophie.cartwright@arcturusgroup.com` (internal_lawyer)
+Email/password authentication with server-side session cookies (`express-session` + `connect-pg-simple`). Session table: `user_sessions`. Seed credentials:
+- `admin@arcturusgroup.com` — password: `Arcturus2026!` (super_admin)
+- `daniel.whitfield@arcturusgroup.com` — password: see seed (legal_ops)
+- `sophie.cartwright@arcturusgroup.com` — password: see seed (internal_lawyer)
 
 ---
 
@@ -97,6 +97,16 @@ Base path: `/api`
 | `/api/auth/login` | POST | public | Login with email/password |
 | `/api/auth/logout` | POST | session | End session |
 | `/api/auth/me` | GET | session | Get current user |
+| `/api/invoices` | GET | all roles | List invoices (paginated) |
+| `/api/invoices` | POST | admin, legal_ops | Create invoice |
+| `/api/invoices/:id` | GET | all roles | Get invoice detail (incl. completeness) |
+| `/api/invoices/:id` | PATCH | admin, legal_ops | Update invoice fields |
+| `/api/invoices/:id/documents` | GET | all roles | List invoice documents |
+| `/api/invoices/:id/documents` | POST | admin, legal_ops | Add document to invoice |
+| `/api/invoices/:id/items` | GET | all roles | List extracted line items |
+| `/api/invoices/:id/completeness` | GET | all roles | Check completeness gate |
+| `/api/invoices/:id/extract` | POST | admin, legal_ops | Run AI data extraction |
+| `/api/storage/uploads/request-url` | POST | all authenticated | Get presigned GCS upload URL |
 
 Codegen: `pnpm --filter @workspace/api-spec run codegen` — regenerates `lib/api-client-react/src/generated/` and `lib/api-zod/src/generated/`
 
@@ -108,7 +118,8 @@ Codegen: `pnpm --filter @workspace/api-spec run codegen` — regenerates `lib/ap
 |------|------|-------|
 | `/login` | Login | public |
 | `/` | Dashboard | all |
-| `/invoices` | Invoices | all |
+| `/invoices` | Invoice list (paginated, searchable, filterable by status) | all |
+| `/invoices/:id` | Invoice detail (summary, line items, documents, AI extraction, completeness gate) | all |
 | `/law-firms` | Law Firms | super_admin, legal_ops |
 | `/rates` | Rates | super_admin, legal_ops |
 | `/rules` | Rules | all |
@@ -131,7 +142,7 @@ pnpm run typecheck                              # Full monorepo typecheck
 
 - [x] **Sprint 0** — Foundation & App Scaffold (auth, DB schema, seed data, login/logout UI)
 - [x] **Sprint 1** — Reference Data Management (Law Firms, Rates CRUD, Users)
-- [ ] **Sprint 2** — Invoice Upload & AI Extraction
+- [x] **Sprint 2** — Invoice Upload & AI Extraction (CRUD, file upload via GCS presigned URLs, AI extraction via GPT, completeness gate, frontend list + detail pages)
 - [ ] **Sprint 3** — Rule Engine MVP (17 objective + 7 grey rules)
 - [ ] **Sprint 4** — Review Workflow, Comments & Audit Trail
 - [ ] **Sprint 5** — Recovery, Report & Email Draft

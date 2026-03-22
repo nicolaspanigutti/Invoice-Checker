@@ -18,6 +18,10 @@ tags:
     description: Panel rates management
   - name: users
     description: User management
+  - name: invoices
+    description: Invoice management
+  - name: storage
+    description: Object storage
 paths:
   /healthz:
     get:
@@ -471,8 +475,710 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a presigned upload URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestUploadUrlBody"
+      responses:
+        "200":
+          description: Presigned URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestUploadUrlResponse"
+
+  /invoices:
+    get:
+      operationId: listInvoices
+      tags: [invoices]
+      summary: List invoices (paginated)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [extracting_data, in_review, waiting_internal_lawyer, pending_law_firm, ready_to_pay]
+        - name: lawFirmId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Paginated invoice list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceListResponse"
+    post:
+      operationId: createInvoice
+      tags: [invoices]
+      summary: Create a new invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvoiceRequest"
+      responses:
+        "201":
+          description: Created invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceDetail"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invoices/{id}:
+    get:
+      operationId: getInvoice
+      tags: [invoices]
+      summary: Get invoice detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Invoice detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateInvoice
+      tags: [invoices]
+      summary: Update invoice header fields
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInvoiceRequest"
+      responses:
+        "200":
+          description: Updated invoice
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invoices/{id}/documents:
+    get:
+      operationId: listInvoiceDocuments
+      tags: [invoices]
+      summary: List documents for an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InvoiceDocument"
+    post:
+      operationId: addInvoiceDocument
+      tags: [invoices]
+      summary: Add a document to an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddInvoiceDocumentRequest"
+      responses:
+        "201":
+          description: Document added, extraction started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceDocument"
+
+  /invoices/{id}/items:
+    get:
+      operationId: listInvoiceItems
+      tags: [invoices]
+      summary: List line items for an invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of line items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InvoiceItem"
+
+  /invoices/{id}/completeness:
+    get:
+      operationId: getInvoiceCompleteness
+      tags: [invoices]
+      summary: Check completeness gate for running analysis
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Completeness check result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletenessResult"
+
+  /invoices/{id}/extract:
+    post:
+      operationId: extractInvoiceData
+      tags: [invoices]
+      summary: Trigger AI extraction for invoice documents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Extraction result with extracted fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionResult"
+
 components:
   schemas:
+    RequestUploadUrlBody:
+      type: object
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        contentType:
+          type: string
+      required:
+        - name
+        - size
+        - contentType
+
+    RequestUploadUrlResponse:
+      type: object
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+      required:
+        - uploadURL
+        - objectPath
+
+    InvoiceListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/InvoiceSummary"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+      required:
+        - data
+        - total
+        - page
+        - pageSize
+
+    InvoiceSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceNumber:
+          type: string
+        lawFirmId:
+          type: integer
+        lawFirmName:
+          type: string
+          nullable: true
+        documentType:
+          type: string
+          enum: [invoice, proforma]
+        invoiceDate:
+          type: string
+          nullable: true
+        currency:
+          type: string
+        totalAmount:
+          type: string
+          nullable: true
+        matterName:
+          type: string
+          nullable: true
+        projectReference:
+          type: string
+          nullable: true
+        internalRequestorId:
+          type: integer
+          nullable: true
+        internalRequestorName:
+          type: string
+          nullable: true
+        invoiceStatus:
+          type: string
+          enum: [extracting_data, in_review, waiting_internal_lawyer, pending_law_firm, ready_to_pay]
+        issueCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - invoiceNumber
+        - documentType
+        - currency
+        - invoiceStatus
+        - issueCount
+        - createdAt
+
+    InvoiceDetail:
+      allOf:
+        - $ref: "#/components/schemas/InvoiceSummary"
+        - type: object
+          properties:
+            billingType:
+              type: string
+              enum: [time_and_materials, fixed_scope]
+              nullable: true
+            jurisdiction:
+              type: string
+              nullable: true
+            applicableLaw:
+              type: string
+              nullable: true
+            subtotalAmount:
+              type: string
+              nullable: true
+            taxAmount:
+              type: string
+              nullable: true
+            amountAtRisk:
+              type: string
+              nullable: true
+            confirmedRecovery:
+              type: string
+              nullable: true
+            reviewOutcome:
+              type: string
+              nullable: true
+            dueDate:
+              type: string
+              nullable: true
+            assignedLegalOpsId:
+              type: integer
+              nullable: true
+            assignedInternalLawyerId:
+              type: integer
+              nullable: true
+            createdById:
+              type: integer
+              nullable: true
+            updatedAt:
+              type: string
+              format: date-time
+            completeness:
+              $ref: "#/components/schemas/CompletenessResult"
+          required:
+            - completeness
+            - updatedAt
+
+    CreateInvoiceRequest:
+      type: object
+      properties:
+        lawFirmId:
+          type: integer
+        documentType:
+          type: string
+          enum: [invoice, proforma]
+        billingType:
+          type: string
+          enum: [time_and_materials, fixed_scope]
+          nullable: true
+        matterName:
+          type: string
+          nullable: true
+        projectReference:
+          type: string
+          nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
+        currency:
+          type: string
+        invoiceDate:
+          type: string
+          nullable: true
+        dueDate:
+          type: string
+          nullable: true
+        internalRequestorId:
+          type: integer
+          nullable: true
+        assignedLegalOpsId:
+          type: integer
+          nullable: true
+        assignedInternalLawyerId:
+          type: integer
+          nullable: true
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/AddInvoiceDocumentRequest"
+      required:
+        - lawFirmId
+        - documentType
+        - currency
+
+    UpdateInvoiceRequest:
+      type: object
+      properties:
+        documentType:
+          type: string
+          enum: [invoice, proforma]
+        billingType:
+          type: string
+          enum: [time_and_materials, fixed_scope]
+          nullable: true
+        matterName:
+          type: string
+          nullable: true
+        projectReference:
+          type: string
+          nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
+        currency:
+          type: string
+        invoiceDate:
+          type: string
+          nullable: true
+        dueDate:
+          type: string
+          nullable: true
+        totalAmount:
+          type: string
+          nullable: true
+        subtotalAmount:
+          type: string
+          nullable: true
+        taxAmount:
+          type: string
+          nullable: true
+        internalRequestorId:
+          type: integer
+          nullable: true
+        assignedLegalOpsId:
+          type: integer
+          nullable: true
+        assignedInternalLawyerId:
+          type: integer
+          nullable: true
+        invoiceStatus:
+          type: string
+          enum: [extracting_data, in_review, waiting_internal_lawyer, pending_law_firm, ready_to_pay]
+          nullable: true
+
+    InvoiceDocument:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceId:
+          type: integer
+        documentKind:
+          type: string
+          enum: [invoice_file, engagement_letter, budget_estimate]
+        fileName:
+          type: string
+        mimeType:
+          type: string
+          nullable: true
+        storagePath:
+          type: string
+          nullable: true
+        extractionStatus:
+          type: string
+          enum: [pending, done, failed]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - invoiceId
+        - documentKind
+        - fileName
+        - extractionStatus
+        - createdAt
+
+    AddInvoiceDocumentRequest:
+      type: object
+      properties:
+        documentKind:
+          type: string
+          enum: [invoice_file, engagement_letter, budget_estimate]
+        fileName:
+          type: string
+        mimeType:
+          type: string
+          nullable: true
+        storagePath:
+          type: string
+          nullable: true
+      required:
+        - documentKind
+        - fileName
+
+    InvoiceItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceId:
+          type: integer
+        lineNo:
+          type: integer
+        timekeeperLabel:
+          type: string
+          nullable: true
+        roleRaw:
+          type: string
+          nullable: true
+        roleNormalized:
+          type: string
+          nullable: true
+        workDate:
+          type: string
+          nullable: true
+        hours:
+          type: string
+          nullable: true
+        rateCharged:
+          type: string
+          nullable: true
+        amount:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        isExpenseLine:
+          type: boolean
+        expenseType:
+          type: string
+          nullable: true
+        billingPeriodStart:
+          type: string
+          nullable: true
+        billingPeriodEnd:
+          type: string
+          nullable: true
+      required:
+        - id
+        - invoiceId
+        - lineNo
+        - isExpenseLine
+
+    CompletenessResult:
+      type: object
+      properties:
+        canRunAnalysis:
+          type: boolean
+        blockingIssues:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompletenessIssue"
+      required:
+        - canRunAnalysis
+        - blockingIssues
+
+    CompletenessIssue:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        field:
+          type: string
+          nullable: true
+      required:
+        - code
+        - message
+
+    ExtractionResult:
+      type: object
+      properties:
+        invoiceId:
+          type: integer
+        extracted:
+          $ref: "#/components/schemas/ExtractedInvoiceData"
+        confidence:
+          type: object
+          additionalProperties:
+            type: number
+      required:
+        - invoiceId
+        - extracted
+
+    ExtractedInvoiceData:
+      type: object
+      properties:
+        lawFirmName:
+          type: string
+          nullable: true
+        invoiceDate:
+          type: string
+          nullable: true
+        dueDate:
+          type: string
+          nullable: true
+        totalAmount:
+          type: string
+          nullable: true
+        subtotalAmount:
+          type: string
+          nullable: true
+        taxAmount:
+          type: string
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        matterName:
+          type: string
+          nullable: true
+        projectReference:
+          type: string
+          nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
+        applicableLaw:
+          type: string
+          nullable: true
+        billingPeriodStart:
+          type: string
+          nullable: true
+        billingPeriodEnd:
+          type: string
+          nullable: true
+        lineItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtractedLineItem"
+      required: []
+
+    ExtractedLineItem:
+      type: object
+      properties:
+        timekeeperLabel:
+          type: string
+          nullable: true
+        roleRaw:
+          type: string
+          nullable: true
+        workDate:
+          type: string
+          nullable: true
+        hours:
+          type: string
+          nullable: true
+        rateCharged:
+          type: string
+          nullable: true
+        amount:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        isExpenseLine:
+          type: boolean
+        expenseType:
+          type: string
+          nullable: true
+      required:
+        - isExpenseLine
+
     HealthStatus:
       type: object
       properties:

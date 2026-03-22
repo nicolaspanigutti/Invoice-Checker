@@ -5,6 +5,278 @@
  * Invoice Checker API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface RequestUploadUrlBody {
+  name: string;
+  size: number;
+  contentType: string;
+}
+
+export interface RequestUploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
+}
+
+export type InvoiceSummaryDocumentType =
+  (typeof InvoiceSummaryDocumentType)[keyof typeof InvoiceSummaryDocumentType];
+
+export const InvoiceSummaryDocumentType = {
+  invoice: "invoice",
+  proforma: "proforma",
+} as const;
+
+export type InvoiceSummaryInvoiceStatus =
+  (typeof InvoiceSummaryInvoiceStatus)[keyof typeof InvoiceSummaryInvoiceStatus];
+
+export const InvoiceSummaryInvoiceStatus = {
+  extracting_data: "extracting_data",
+  in_review: "in_review",
+  waiting_internal_lawyer: "waiting_internal_lawyer",
+  pending_law_firm: "pending_law_firm",
+  ready_to_pay: "ready_to_pay",
+} as const;
+
+export interface InvoiceSummary {
+  id: number;
+  invoiceNumber: string;
+  lawFirmId?: number;
+  lawFirmName?: string | null;
+  documentType: InvoiceSummaryDocumentType;
+  invoiceDate?: string | null;
+  currency: string;
+  totalAmount?: string | null;
+  matterName?: string | null;
+  projectReference?: string | null;
+  internalRequestorId?: number | null;
+  internalRequestorName?: string | null;
+  invoiceStatus: InvoiceSummaryInvoiceStatus;
+  issueCount: number;
+  createdAt: string;
+}
+
+export interface InvoiceListResponse {
+  data: InvoiceSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type InvoiceDetailBillingType =
+  | (typeof InvoiceDetailBillingType)[keyof typeof InvoiceDetailBillingType]
+  | null;
+
+export const InvoiceDetailBillingType = {
+  time_and_materials: "time_and_materials",
+  fixed_scope: "fixed_scope",
+} as const;
+
+export interface CompletenessIssue {
+  code: string;
+  message: string;
+  field?: string | null;
+}
+
+export interface CompletenessResult {
+  canRunAnalysis: boolean;
+  blockingIssues: CompletenessIssue[];
+}
+
+export type InvoiceDetail = InvoiceSummary & {
+  billingType?: InvoiceDetailBillingType;
+  jurisdiction?: string | null;
+  applicableLaw?: string | null;
+  subtotalAmount?: string | null;
+  taxAmount?: string | null;
+  amountAtRisk?: string | null;
+  confirmedRecovery?: string | null;
+  reviewOutcome?: string | null;
+  dueDate?: string | null;
+  assignedLegalOpsId?: number | null;
+  assignedInternalLawyerId?: number | null;
+  createdById?: number | null;
+  updatedAt: string;
+  completeness: CompletenessResult;
+};
+
+export type CreateInvoiceRequestDocumentType =
+  (typeof CreateInvoiceRequestDocumentType)[keyof typeof CreateInvoiceRequestDocumentType];
+
+export const CreateInvoiceRequestDocumentType = {
+  invoice: "invoice",
+  proforma: "proforma",
+} as const;
+
+export type CreateInvoiceRequestBillingType =
+  | (typeof CreateInvoiceRequestBillingType)[keyof typeof CreateInvoiceRequestBillingType]
+  | null;
+
+export const CreateInvoiceRequestBillingType = {
+  time_and_materials: "time_and_materials",
+  fixed_scope: "fixed_scope",
+} as const;
+
+export type AddInvoiceDocumentRequestDocumentKind =
+  (typeof AddInvoiceDocumentRequestDocumentKind)[keyof typeof AddInvoiceDocumentRequestDocumentKind];
+
+export const AddInvoiceDocumentRequestDocumentKind = {
+  invoice_file: "invoice_file",
+  engagement_letter: "engagement_letter",
+  budget_estimate: "budget_estimate",
+} as const;
+
+export interface AddInvoiceDocumentRequest {
+  documentKind: AddInvoiceDocumentRequestDocumentKind;
+  fileName: string;
+  mimeType?: string | null;
+  storagePath?: string | null;
+}
+
+export interface CreateInvoiceRequest {
+  lawFirmId: number;
+  documentType: CreateInvoiceRequestDocumentType;
+  billingType?: CreateInvoiceRequestBillingType;
+  matterName?: string | null;
+  projectReference?: string | null;
+  jurisdiction?: string | null;
+  currency: string;
+  invoiceDate?: string | null;
+  dueDate?: string | null;
+  internalRequestorId?: number | null;
+  assignedLegalOpsId?: number | null;
+  assignedInternalLawyerId?: number | null;
+  documents?: AddInvoiceDocumentRequest[];
+}
+
+export type UpdateInvoiceRequestDocumentType =
+  (typeof UpdateInvoiceRequestDocumentType)[keyof typeof UpdateInvoiceRequestDocumentType];
+
+export const UpdateInvoiceRequestDocumentType = {
+  invoice: "invoice",
+  proforma: "proforma",
+} as const;
+
+export type UpdateInvoiceRequestBillingType =
+  | (typeof UpdateInvoiceRequestBillingType)[keyof typeof UpdateInvoiceRequestBillingType]
+  | null;
+
+export const UpdateInvoiceRequestBillingType = {
+  time_and_materials: "time_and_materials",
+  fixed_scope: "fixed_scope",
+} as const;
+
+export type UpdateInvoiceRequestInvoiceStatus =
+  | (typeof UpdateInvoiceRequestInvoiceStatus)[keyof typeof UpdateInvoiceRequestInvoiceStatus]
+  | null;
+
+export const UpdateInvoiceRequestInvoiceStatus = {
+  extracting_data: "extracting_data",
+  in_review: "in_review",
+  waiting_internal_lawyer: "waiting_internal_lawyer",
+  pending_law_firm: "pending_law_firm",
+  ready_to_pay: "ready_to_pay",
+} as const;
+
+export interface UpdateInvoiceRequest {
+  documentType?: UpdateInvoiceRequestDocumentType;
+  billingType?: UpdateInvoiceRequestBillingType;
+  matterName?: string | null;
+  projectReference?: string | null;
+  jurisdiction?: string | null;
+  currency?: string;
+  invoiceDate?: string | null;
+  dueDate?: string | null;
+  totalAmount?: string | null;
+  subtotalAmount?: string | null;
+  taxAmount?: string | null;
+  internalRequestorId?: number | null;
+  assignedLegalOpsId?: number | null;
+  assignedInternalLawyerId?: number | null;
+  invoiceStatus?: UpdateInvoiceRequestInvoiceStatus;
+}
+
+export type InvoiceDocumentDocumentKind =
+  (typeof InvoiceDocumentDocumentKind)[keyof typeof InvoiceDocumentDocumentKind];
+
+export const InvoiceDocumentDocumentKind = {
+  invoice_file: "invoice_file",
+  engagement_letter: "engagement_letter",
+  budget_estimate: "budget_estimate",
+} as const;
+
+export type InvoiceDocumentExtractionStatus =
+  (typeof InvoiceDocumentExtractionStatus)[keyof typeof InvoiceDocumentExtractionStatus];
+
+export const InvoiceDocumentExtractionStatus = {
+  pending: "pending",
+  done: "done",
+  failed: "failed",
+} as const;
+
+export interface InvoiceDocument {
+  id: number;
+  invoiceId: number;
+  documentKind: InvoiceDocumentDocumentKind;
+  fileName: string;
+  mimeType?: string | null;
+  storagePath?: string | null;
+  extractionStatus: InvoiceDocumentExtractionStatus;
+  createdAt: string;
+}
+
+export interface InvoiceItem {
+  id: number;
+  invoiceId: number;
+  lineNo: number;
+  timekeeperLabel?: string | null;
+  roleRaw?: string | null;
+  roleNormalized?: string | null;
+  workDate?: string | null;
+  hours?: string | null;
+  rateCharged?: string | null;
+  amount?: string | null;
+  description?: string | null;
+  isExpenseLine: boolean;
+  expenseType?: string | null;
+  billingPeriodStart?: string | null;
+  billingPeriodEnd?: string | null;
+}
+
+export type ExtractionResultConfidence = { [key: string]: number };
+
+export interface ExtractedLineItem {
+  timekeeperLabel?: string | null;
+  roleRaw?: string | null;
+  workDate?: string | null;
+  hours?: string | null;
+  rateCharged?: string | null;
+  amount?: string | null;
+  description?: string | null;
+  isExpenseLine: boolean;
+  expenseType?: string | null;
+}
+
+export interface ExtractedInvoiceData {
+  lawFirmName?: string | null;
+  invoiceDate?: string | null;
+  dueDate?: string | null;
+  totalAmount?: string | null;
+  subtotalAmount?: string | null;
+  taxAmount?: string | null;
+  currency?: string | null;
+  matterName?: string | null;
+  projectReference?: string | null;
+  jurisdiction?: string | null;
+  applicableLaw?: string | null;
+  billingPeriodStart?: string | null;
+  billingPeriodEnd?: string | null;
+  lineItems?: ExtractedLineItem[];
+}
+
+export interface ExtractionResult {
+  invoiceId: number;
+  extracted: ExtractedInvoiceData;
+  confidence?: ExtractionResultConfidence;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -302,3 +574,22 @@ export type LookupPanelRateParams = {
   currency: string;
   invoiceDate: string;
 };
+
+export type ListInvoicesParams = {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: ListInvoicesStatus;
+  lawFirmId?: number;
+};
+
+export type ListInvoicesStatus =
+  (typeof ListInvoicesStatus)[keyof typeof ListInvoicesStatus];
+
+export const ListInvoicesStatus = {
+  extracting_data: "extracting_data",
+  in_review: "in_review",
+  waiting_internal_lawyer: "waiting_internal_lawyer",
+  pending_law_firm: "pending_law_firm",
+  ready_to_pay: "ready_to_pay",
+} as const;

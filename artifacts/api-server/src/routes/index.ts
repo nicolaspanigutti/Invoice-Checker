@@ -4,6 +4,8 @@ import authRouter from "./auth";
 import lawFirmsRouter from "./law-firms";
 import ratesRouter from "./rates";
 import usersRouter from "./users";
+import invoicesRouter from "./invoices";
+import storageRouter from "./storage";
 
 const router: IRouter = Router();
 
@@ -12,5 +14,7 @@ router.use(authRouter);
 router.use(lawFirmsRouter);
 router.use(ratesRouter);
 router.use(usersRouter);
+router.use(invoicesRouter);
+router.use(storageRouter);
 
 export default router;

@@ -8,6 +8,7 @@ import { Loader2, ShieldAlert } from "lucide-react";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Invoices from "@/pages/invoices";
+import InvoiceDetail from "@/pages/invoice-detail";
 import LawFirms from "@/pages/law-firms";
 import Rates from "@/pages/rates";
 import Rules from "@/pages/rules";
@@ -71,6 +72,7 @@ function MainApp() {
       <Switch>
         <Route path="/" component={() => <ProtectedRoute component={Dashboard} user={user} />} />
         <Route path="/invoices" component={() => <ProtectedRoute component={Invoices} user={user} />} />
+        <Route path="/invoices/:id" component={() => <ProtectedRoute component={InvoiceDetail} user={user} />} />
         <Route path="/law-firms" component={() => <ProtectedRoute component={LawFirms} allowedRoles={["super_admin", "legal_ops"]} user={user} />} />
         <Route path="/rates" component={() => <ProtectedRoute component={Rates} allowedRoles={["super_admin", "legal_ops"]} user={user} />} />
         <Route path="/rules" component={() => <ProtectedRoute component={Rules} user={user} />} />

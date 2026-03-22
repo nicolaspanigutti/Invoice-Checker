@@ -272,6 +272,13 @@ export const CreatePanelBaselineDocumentBody = zod.object({
 });
 
 /**
+ * Allowed status transitions:
+- draft → verified, archived
+- verified → active, archived
+- active → archived
+- archived → (none)
+Activating a document atomically archives any other active document of the same documentKind.
+
  * @summary Update document status (verify, activate, archive)
  */
 export const UpdatePanelBaselineDocumentStatusParams = zod.object({
@@ -390,4 +397,376 @@ export const UpdateUserResponse = zod.object({
   displayName: zod.string(),
   role: zod.enum(["super_admin", "legal_ops", "internal_lawyer"]),
   isActive: zod.boolean(),
+});
+
+/**
+ * @summary Request a presigned upload URL
+ */
+export const RequestUploadUrlBody = zod.object({
+  name: zod.string(),
+  size: zod.number(),
+  contentType: zod.string(),
+});
+
+export const RequestUploadUrlResponse = zod.object({
+  uploadURL: zod.string(),
+  objectPath: zod.string(),
+});
+
+/**
+ * @summary List invoices (paginated)
+ */
+export const listInvoicesQueryPageDefault = 1;
+export const listInvoicesQueryPageSizeDefault = 10;
+
+export const ListInvoicesQueryParams = zod.object({
+  page: zod.coerce.number().default(listInvoicesQueryPageDefault),
+  pageSize: zod.coerce.number().default(listInvoicesQueryPageSizeDefault),
+  search: zod.coerce.string().optional(),
+  status: zod
+    .enum([
+      "extracting_data",
+      "in_review",
+      "waiting_internal_lawyer",
+      "pending_law_firm",
+      "ready_to_pay",
+    ])
+    .optional(),
+  lawFirmId: zod.coerce.number().optional(),
+});
+
+export const ListInvoicesResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      id: zod.number(),
+      invoiceNumber: zod.string(),
+      lawFirmId: zod.number().optional(),
+      lawFirmName: zod.string().nullish(),
+      documentType: zod.enum(["invoice", "proforma"]),
+      invoiceDate: zod.string().nullish(),
+      currency: zod.string(),
+      totalAmount: zod.string().nullish(),
+      matterName: zod.string().nullish(),
+      projectReference: zod.string().nullish(),
+      internalRequestorId: zod.number().nullish(),
+      internalRequestorName: zod.string().nullish(),
+      invoiceStatus: zod.enum([
+        "extracting_data",
+        "in_review",
+        "waiting_internal_lawyer",
+        "pending_law_firm",
+        "ready_to_pay",
+      ]),
+      issueCount: zod.number(),
+      createdAt: zod.date(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
+ * @summary Create a new invoice
+ */
+export const CreateInvoiceBody = zod.object({
+  lawFirmId: zod.number(),
+  documentType: zod.enum(["invoice", "proforma"]),
+  billingType: zod.enum(["time_and_materials", "fixed_scope"]).nullish(),
+  matterName: zod.string().nullish(),
+  projectReference: zod.string().nullish(),
+  jurisdiction: zod.string().nullish(),
+  currency: zod.string(),
+  invoiceDate: zod.string().nullish(),
+  dueDate: zod.string().nullish(),
+  internalRequestorId: zod.number().nullish(),
+  assignedLegalOpsId: zod.number().nullish(),
+  assignedInternalLawyerId: zod.number().nullish(),
+  documents: zod
+    .array(
+      zod.object({
+        documentKind: zod.enum([
+          "invoice_file",
+          "engagement_letter",
+          "budget_estimate",
+        ]),
+        fileName: zod.string(),
+        mimeType: zod.string().nullish(),
+        storagePath: zod.string().nullish(),
+      }),
+    )
+    .optional(),
+});
+
+/**
+ * @summary Get invoice detail
+ */
+export const GetInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetInvoiceResponse = zod
+  .object({
+    id: zod.number(),
+    invoiceNumber: zod.string(),
+    lawFirmId: zod.number().optional(),
+    lawFirmName: zod.string().nullish(),
+    documentType: zod.enum(["invoice", "proforma"]),
+    invoiceDate: zod.string().nullish(),
+    currency: zod.string(),
+    totalAmount: zod.string().nullish(),
+    matterName: zod.string().nullish(),
+    projectReference: zod.string().nullish(),
+    internalRequestorId: zod.number().nullish(),
+    internalRequestorName: zod.string().nullish(),
+    invoiceStatus: zod.enum([
+      "extracting_data",
+      "in_review",
+      "waiting_internal_lawyer",
+      "pending_law_firm",
+      "ready_to_pay",
+    ]),
+    issueCount: zod.number(),
+    createdAt: zod.date(),
+  })
+  .and(
+    zod.object({
+      billingType: zod.enum(["time_and_materials", "fixed_scope"]).nullish(),
+      jurisdiction: zod.string().nullish(),
+      applicableLaw: zod.string().nullish(),
+      subtotalAmount: zod.string().nullish(),
+      taxAmount: zod.string().nullish(),
+      amountAtRisk: zod.string().nullish(),
+      confirmedRecovery: zod.string().nullish(),
+      reviewOutcome: zod.string().nullish(),
+      dueDate: zod.string().nullish(),
+      assignedLegalOpsId: zod.number().nullish(),
+      assignedInternalLawyerId: zod.number().nullish(),
+      createdById: zod.number().nullish(),
+      updatedAt: zod.date(),
+      completeness: zod.object({
+        canRunAnalysis: zod.boolean(),
+        blockingIssues: zod.array(
+          zod.object({
+            code: zod.string(),
+            message: zod.string(),
+            field: zod.string().nullish(),
+          }),
+        ),
+      }),
+    }),
+  );
+
+/**
+ * @summary Update invoice header fields
+ */
+export const UpdateInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateInvoiceBody = zod.object({
+  documentType: zod.enum(["invoice", "proforma"]).optional(),
+  billingType: zod.enum(["time_and_materials", "fixed_scope"]).nullish(),
+  matterName: zod.string().nullish(),
+  projectReference: zod.string().nullish(),
+  jurisdiction: zod.string().nullish(),
+  currency: zod.string().optional(),
+  invoiceDate: zod.string().nullish(),
+  dueDate: zod.string().nullish(),
+  totalAmount: zod.string().nullish(),
+  subtotalAmount: zod.string().nullish(),
+  taxAmount: zod.string().nullish(),
+  internalRequestorId: zod.number().nullish(),
+  assignedLegalOpsId: zod.number().nullish(),
+  assignedInternalLawyerId: zod.number().nullish(),
+  invoiceStatus: zod
+    .enum([
+      "extracting_data",
+      "in_review",
+      "waiting_internal_lawyer",
+      "pending_law_firm",
+      "ready_to_pay",
+    ])
+    .nullish(),
+});
+
+export const UpdateInvoiceResponse = zod
+  .object({
+    id: zod.number(),
+    invoiceNumber: zod.string(),
+    lawFirmId: zod.number().optional(),
+    lawFirmName: zod.string().nullish(),
+    documentType: zod.enum(["invoice", "proforma"]),
+    invoiceDate: zod.string().nullish(),
+    currency: zod.string(),
+    totalAmount: zod.string().nullish(),
+    matterName: zod.string().nullish(),
+    projectReference: zod.string().nullish(),
+    internalRequestorId: zod.number().nullish(),
+    internalRequestorName: zod.string().nullish(),
+    invoiceStatus: zod.enum([
+      "extracting_data",
+      "in_review",
+      "waiting_internal_lawyer",
+      "pending_law_firm",
+      "ready_to_pay",
+    ]),
+    issueCount: zod.number(),
+    createdAt: zod.date(),
+  })
+  .and(
+    zod.object({
+      billingType: zod.enum(["time_and_materials", "fixed_scope"]).nullish(),
+      jurisdiction: zod.string().nullish(),
+      applicableLaw: zod.string().nullish(),
+      subtotalAmount: zod.string().nullish(),
+      taxAmount: zod.string().nullish(),
+      amountAtRisk: zod.string().nullish(),
+      confirmedRecovery: zod.string().nullish(),
+      reviewOutcome: zod.string().nullish(),
+      dueDate: zod.string().nullish(),
+      assignedLegalOpsId: zod.number().nullish(),
+      assignedInternalLawyerId: zod.number().nullish(),
+      createdById: zod.number().nullish(),
+      updatedAt: zod.date(),
+      completeness: zod.object({
+        canRunAnalysis: zod.boolean(),
+        blockingIssues: zod.array(
+          zod.object({
+            code: zod.string(),
+            message: zod.string(),
+            field: zod.string().nullish(),
+          }),
+        ),
+      }),
+    }),
+  );
+
+/**
+ * @summary List documents for an invoice
+ */
+export const ListInvoiceDocumentsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListInvoiceDocumentsResponseItem = zod.object({
+  id: zod.number(),
+  invoiceId: zod.number(),
+  documentKind: zod.enum([
+    "invoice_file",
+    "engagement_letter",
+    "budget_estimate",
+  ]),
+  fileName: zod.string(),
+  mimeType: zod.string().nullish(),
+  storagePath: zod.string().nullish(),
+  extractionStatus: zod.enum(["pending", "done", "failed"]),
+  createdAt: zod.date(),
+});
+export const ListInvoiceDocumentsResponse = zod.array(
+  ListInvoiceDocumentsResponseItem,
+);
+
+/**
+ * @summary Add a document to an invoice
+ */
+export const AddInvoiceDocumentParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const AddInvoiceDocumentBody = zod.object({
+  documentKind: zod.enum([
+    "invoice_file",
+    "engagement_letter",
+    "budget_estimate",
+  ]),
+  fileName: zod.string(),
+  mimeType: zod.string().nullish(),
+  storagePath: zod.string().nullish(),
+});
+
+/**
+ * @summary List line items for an invoice
+ */
+export const ListInvoiceItemsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListInvoiceItemsResponseItem = zod.object({
+  id: zod.number(),
+  invoiceId: zod.number(),
+  lineNo: zod.number(),
+  timekeeperLabel: zod.string().nullish(),
+  roleRaw: zod.string().nullish(),
+  roleNormalized: zod.string().nullish(),
+  workDate: zod.string().nullish(),
+  hours: zod.string().nullish(),
+  rateCharged: zod.string().nullish(),
+  amount: zod.string().nullish(),
+  description: zod.string().nullish(),
+  isExpenseLine: zod.boolean(),
+  expenseType: zod.string().nullish(),
+  billingPeriodStart: zod.string().nullish(),
+  billingPeriodEnd: zod.string().nullish(),
+});
+export const ListInvoiceItemsResponse = zod.array(ListInvoiceItemsResponseItem);
+
+/**
+ * @summary Check completeness gate for running analysis
+ */
+export const GetInvoiceCompletenessParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetInvoiceCompletenessResponse = zod.object({
+  canRunAnalysis: zod.boolean(),
+  blockingIssues: zod.array(
+    zod.object({
+      code: zod.string(),
+      message: zod.string(),
+      field: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Trigger AI extraction for invoice documents
+ */
+export const ExtractInvoiceDataParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ExtractInvoiceDataResponse = zod.object({
+  invoiceId: zod.number(),
+  extracted: zod.object({
+    lawFirmName: zod.string().nullish(),
+    invoiceDate: zod.string().nullish(),
+    dueDate: zod.string().nullish(),
+    totalAmount: zod.string().nullish(),
+    subtotalAmount: zod.string().nullish(),
+    taxAmount: zod.string().nullish(),
+    currency: zod.string().nullish(),
+    matterName: zod.string().nullish(),
+    projectReference: zod.string().nullish(),
+    jurisdiction: zod.string().nullish(),
+    applicableLaw: zod.string().nullish(),
+    billingPeriodStart: zod.string().nullish(),
+    billingPeriodEnd: zod.string().nullish(),
+    lineItems: zod
+      .array(
+        zod.object({
+          timekeeperLabel: zod.string().nullish(),
+          roleRaw: zod.string().nullish(),
+          workDate: zod.string().nullish(),
+          hours: zod.string().nullish(),
+          rateCharged: zod.string().nullish(),
+          amount: zod.string().nullish(),
+          description: zod.string().nullish(),
+          isExpenseLine: zod.boolean(),
+          expenseType: zod.string().nullish(),
+        }),
+      )
+      .optional(),
+  }),
+  confidence: zod.record(zod.string(), zod.number()).optional(),
 });

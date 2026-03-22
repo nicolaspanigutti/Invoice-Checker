@@ -1,20 +1,574 @@
-import { PlaceholderPage } from "@/components/shared/PlaceholderPage";
-import { FileText } from "lucide-react";
+import { useState } from "react";
+import { useLocation } from "wouter";
+import {
+  useListInvoices,
+  useCreateInvoice,
+  useListLawFirms,
+  useListUsers,
+  useRequestUploadUrl,
+  type InvoiceSummary,
+  type ListInvoicesParams,
+} from "@workspace/api-client-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Plus,
+  Search,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  Upload,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Building2,
+  X,
+} from "lucide-react";
+import { format } from "date-fns";
+const STATUS_LABELS: Record<string, string> = {
+  extracting_data: "Extracting Data",
+  in_review: "In Review",
+  waiting_internal_lawyer: "Awaiting Lawyer",
+  pending_law_firm: "Pending Firm",
+  ready_to_pay: "Ready to Pay",
+};
+
+const STATUS_COLOURS: Record<string, string> = {
+  extracting_data: "bg-yellow-100 text-yellow-800",
+  in_review: "bg-blue-100 text-blue-800",
+  waiting_internal_lawyer: "bg-purple-100 text-purple-800",
+  pending_law_firm: "bg-orange-100 text-orange-800",
+  ready_to_pay: "bg-green-100 text-green-800",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOURS[status] ?? "bg-gray-100 text-gray-700"}`}>
+      {STATUS_LABELS[status] ?? status}
+    </span>
+  );
+}
+
+type UploadedFile = {
+  file: File;
+  documentKind: "invoice_file" | "engagement_letter" | "budget_estimate";
+  objectPath?: string;
+  uploading?: boolean;
+  error?: string;
+};
+
+function FileUploadRow({ item, onRemove }: { item: UploadedFile; onRemove: () => void }) {
+  const kindLabels: Record<string, string> = {
+    invoice_file: "Invoice File",
+    engagement_letter: "Engagement Letter",
+    budget_estimate: "Budget Estimate",
+  };
+  return (
+    <div className="flex items-center gap-3 p-3 border rounded-xl bg-muted/30">
+      <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{item.file.name}</p>
+        <p className="text-xs text-muted-foreground">{kindLabels[item.documentKind]}</p>
+      </div>
+      {item.uploading && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+      {item.objectPath && !item.uploading && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+      {item.error && <AlertTriangle className="h-4 w-4 text-destructive" />}
+      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onRemove}>
+        <X className="h-3 w-3" />
+      </Button>
+    </div>
+  );
+}
+
+function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<"upload" | "details">("upload");
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [form, setForm] = useState({
+    lawFirmId: "",
+    documentType: "invoice" as "invoice" | "proforma",
+    billingType: "" as "" | "time_and_materials" | "fixed_scope",
+    matterName: "",
+    projectReference: "",
+    jurisdiction: "",
+    currency: "GBP",
+    invoiceDate: "",
+    dueDate: "",
+    internalRequestorId: "",
+  });
+
+  const { data: lawFirms } = useListLawFirms();
+  const { data: users } = useListUsers();
+  const requestUploadUrl = useRequestUploadUrl();
+  const createInvoice = useCreateInvoice();
+
+  const lawyers = users?.filter(u => u.isActive && (u.role === "internal_lawyer" || u.role === "legal_ops")) ?? [];
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, kind: "invoice_file" | "engagement_letter" | "budget_estimate") => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const entry: UploadedFile = { file, documentKind: kind, uploading: true };
+    setUploadedFiles(prev => [...prev, entry]);
+
+    requestUploadUrl.mutate(
+      { data: { name: file.name, size: file.size, contentType: file.type || "application/octet-stream" } },
+      {
+        onSuccess: async (data) => {
+          try {
+            await fetch(data.uploadURL, {
+              method: "PUT",
+              body: file,
+              headers: { "Content-Type": file.type || "application/octet-stream" },
+            });
+            setUploadedFiles(prev => prev.map(f =>
+              f.file === file ? { ...f, uploading: false, objectPath: data.objectPath } : f
+            ));
+          } catch {
+            setUploadedFiles(prev => prev.map(f =>
+              f.file === file ? { ...f, uploading: false, error: "Upload failed" } : f
+            ));
+          }
+        },
+        onError: () => {
+          setUploadedFiles(prev => prev.map(f =>
+            f.file === file ? { ...f, uploading: false, error: "Failed to get upload URL" } : f
+          ));
+        },
+      }
+    );
+    e.target.value = "";
+  };
+
+  const handleSubmit = () => {
+    if (!form.lawFirmId) {
+      toast({ variant: "destructive", title: "Required", description: "Please select a law firm." });
+      return;
+    }
+
+    const documents = uploadedFiles
+      .filter(f => f.objectPath)
+      .map(f => ({
+        documentKind: f.documentKind,
+        fileName: f.file.name,
+        mimeType: f.file.type || null,
+        storagePath: f.objectPath!,
+      }));
+
+    createInvoice.mutate(
+      {
+        data: {
+          lawFirmId: parseInt(form.lawFirmId, 10),
+          documentType: form.documentType,
+          billingType: form.billingType || null,
+          matterName: form.matterName || null,
+          projectReference: form.projectReference || null,
+          jurisdiction: form.jurisdiction || null,
+          currency: form.currency,
+          invoiceDate: form.invoiceDate || null,
+          dueDate: form.dueDate || null,
+          internalRequestorId: form.internalRequestorId ? parseInt(form.internalRequestorId, 10) : null,
+          documents,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Invoice created", description: "Invoice has been created successfully." });
+          onClose();
+          setStep("upload");
+          setUploadedFiles([]);
+          setForm({ lawFirmId: "", documentType: "invoice", billingType: "", matterName: "", projectReference: "", jurisdiction: "", currency: "GBP", invoiceDate: "", dueDate: "", internalRequestorId: "" });
+        },
+        onError: () => {
+          toast({ variant: "destructive", title: "Error", description: "Failed to create invoice." });
+        },
+      }
+    );
+  };
+
+  const hasInvoiceFile = uploadedFiles.some(f => f.documentKind === "invoice_file");
+  const anyUploading = uploadedFiles.some(f => f.uploading);
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="text-xl font-display">Add Invoice</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex gap-2 mb-6">
+          {(["upload", "details"] as const).map((s, i) => (
+            <button
+              key={s}
+              onClick={() => setStep(s)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${step === s ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <span className={`w-5 h-5 rounded-full text-xs flex items-center justify-center ${step === s ? "bg-white/20" : "bg-muted"}`}>{i + 1}</span>
+              {s === "upload" ? "Upload Files" : "Invoice Details"}
+            </button>
+          ))}
+        </div>
+
+        {step === "upload" && (
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <div className="border-2 border-dashed border-border rounded-2xl p-6 text-center bg-muted/20">
+                <Upload className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+                <p className="font-medium mb-1">Invoice File <span className="text-destructive">*</span></p>
+                <p className="text-sm text-muted-foreground mb-3">PDF, DOCX, PNG, JPG accepted</p>
+                <label className="cursor-pointer">
+                  <span className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors">
+                    <Upload className="h-4 w-4" /> Choose File
+                  </span>
+                  <input type="file" className="hidden" accept=".pdf,.docx,.doc,.png,.jpg,.jpeg" onChange={e => handleFileSelect(e, "invoice_file")} />
+                </label>
+              </div>
+
+              <div className="border-2 border-dashed border-border rounded-2xl p-4 text-center bg-muted/10">
+                <p className="font-medium text-sm mb-1">Engagement Letter <span className="text-muted-foreground">(optional)</span></p>
+                <label className="cursor-pointer">
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 border border-border rounded-lg text-sm font-medium hover:bg-muted/50 transition-colors">
+                    <Plus className="h-3 w-3" /> Add
+                  </span>
+                  <input type="file" className="hidden" accept=".pdf,.docx,.doc" onChange={e => handleFileSelect(e, "engagement_letter")} />
+                </label>
+              </div>
+
+              <div className="border-2 border-dashed border-border rounded-2xl p-4 text-center bg-muted/10">
+                <p className="font-medium text-sm mb-1">Budget Estimate <span className="text-muted-foreground">(optional)</span></p>
+                <label className="cursor-pointer">
+                  <span className="inline-flex items-center gap-2 px-3 py-1.5 border border-border rounded-lg text-sm font-medium hover:bg-muted/50 transition-colors">
+                    <Plus className="h-3 w-3" /> Add
+                  </span>
+                  <input type="file" className="hidden" accept=".pdf,.docx,.doc,.xlsx,.xls" onChange={e => handleFileSelect(e, "budget_estimate")} />
+                </label>
+              </div>
+            </div>
+
+            {uploadedFiles.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Uploaded Files</p>
+                {uploadedFiles.map((f, i) => (
+                  <FileUploadRow key={i} item={f} onRemove={() => setUploadedFiles(prev => prev.filter((_, j) => j !== i))} />
+                ))}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+              <Button onClick={() => setStep("details")} disabled={anyUploading}>
+                Continue to Details
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {step === "details" && (
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 space-y-1.5">
+                <Label>Law Firm <span className="text-destructive">*</span></Label>
+                <Select value={form.lawFirmId} onValueChange={v => setForm(f => ({ ...f, lawFirmId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select law firm" /></SelectTrigger>
+                  <SelectContent>
+                    {lawFirms?.filter(f => f.isActive).map(f => (
+                      <SelectItem key={f.id} value={String(f.id)}>
+                        {f.name} <span className="text-muted-foreground text-xs">({f.firmType === "panel" ? "Panel" : "Non-panel"})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Document Type <span className="text-destructive">*</span></Label>
+                <Select value={form.documentType} onValueChange={v => setForm(f => ({ ...f, documentType: v as "invoice" | "proforma" }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="invoice">Invoice</SelectItem>
+                    <SelectItem value="proforma">Proforma</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Billing Type</Label>
+                <Select value={form.billingType} onValueChange={v => setForm(f => ({ ...f, billingType: v as "" | "time_and_materials" | "fixed_scope" }))}>
+                  <SelectTrigger><SelectValue placeholder="Select billing type" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="time_and_materials">Time & Materials</SelectItem>
+                    <SelectItem value="fixed_scope">Fixed Scope</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label>Matter Name</Label>
+                <Input value={form.matterName} onChange={e => setForm(f => ({ ...f, matterName: e.target.value }))} placeholder="e.g. Acquisition of Meridian Corp" />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Project Reference</Label>
+                <Input value={form.projectReference} onChange={e => setForm(f => ({ ...f, projectReference: e.target.value }))} placeholder="e.g. PROJ-2026-001" />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Jurisdiction</Label>
+                <Input value={form.jurisdiction} onChange={e => setForm(f => ({ ...f, jurisdiction: e.target.value }))} placeholder="e.g. England & Wales" />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Currency <span className="text-destructive">*</span></Label>
+                <Select value={form.currency} onValueChange={v => setForm(f => ({ ...f, currency: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["GBP", "EUR", "USD", "CHF", "SGD", "AED"].map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Invoice Date</Label>
+                <Input type="date" value={form.invoiceDate} onChange={e => setForm(f => ({ ...f, invoiceDate: e.target.value }))} />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Due Date</Label>
+                <Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
+              </div>
+
+              <div className="col-span-2 space-y-1.5">
+                <Label>Internal Requestor</Label>
+                <Select value={form.internalRequestorId} onValueChange={v => setForm(f => ({ ...f, internalRequestorId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select requestor" /></SelectTrigger>
+                  <SelectContent>
+                    {lawyers.map(u => (
+                      <SelectItem key={u.id} value={String(u.id)}>{u.displayName} ({u.role.replace("_", " ")})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {!hasInvoiceFile && (
+              <div className="flex items-start gap-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800">No invoice file uploaded. You can add documents after creation, but AI extraction won&apos;t run until an invoice file is present.</p>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStep("upload")}>Back</Button>
+              <Button onClick={handleSubmit} disabled={createInvoice.isPending || !form.lawFirmId}>
+                {createInvoice.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Create Invoice
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function Invoices() {
+  const [, navigate] = useLocation();
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [addOpen, setAddOpen] = useState(false);
+
+  const params: ListInvoicesParams = {
+    page,
+    pageSize: 10,
+    ...(search ? { search } : {}),
+    ...(statusFilter ? { status: statusFilter as ListInvoicesParams["status"] } : {}),
+  };
+
+  const { data, isLoading } = useListInvoices(params);
+
+  const invoices = data?.data ?? [];
+  const total = data?.total ?? 0;
+  const pageSize = data?.pageSize ?? 10;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSearch(searchInput);
+    setPage(1);
+  };
+
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-4xl font-display font-bold tracking-tight text-foreground">Invoices</h1>
-        <p className="text-lg text-muted-foreground">Manage and review law firm invoices.</p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-display font-bold tracking-tight text-foreground">Invoices</h1>
+          <p className="text-lg text-muted-foreground mt-1">Manage and review law firm invoices.</p>
+        </div>
+        <Button onClick={() => setAddOpen(true)} className="shrink-0">
+          <Plus className="h-4 w-4 mr-2" /> Add Invoice
+        </Button>
       </div>
-      <div className="border border-border rounded-3xl bg-card p-8 shadow-sm">
-        <PlaceholderPage 
-          title="Invoice Pipeline" 
-          description="The complete invoice upload, AI extraction, and rule engine review pipeline will be available in the upcoming sprint."
-          icon={FileText}
-        />
+
+      <div className="border border-border rounded-3xl bg-card shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-border flex flex-col sm:flex-row gap-3">
+          <form onSubmit={handleSearch} className="flex gap-2 flex-1">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search invoices..."
+                value={searchInput}
+                onChange={e => setSearchInput(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Button type="submit" variant="outline" size="sm">Search</Button>
+          </form>
+
+          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v === "all" ? "" : v); setPage(1); }}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {Object.entries(STATUS_LABELS).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {isLoading ? (
+          <div className="flex justify-center items-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : invoices.length === 0 ? (
+          <div className="text-center py-20">
+            <Building2 className="mx-auto h-12 w-12 text-muted-foreground/30 mb-4" />
+            <p className="text-muted-foreground font-medium">No invoices found</p>
+            <p className="text-sm text-muted-foreground mt-1">Create your first invoice by clicking &quot;Add Invoice&quot;</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Invoice #</TableHead>
+                <TableHead>Law Firm</TableHead>
+                <TableHead>Matter</TableHead>
+                <TableHead>Requestor</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Invoice Date</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Issues</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invoices.map((inv: InvoiceSummary) => (
+                <TableRow
+                  key={inv.id}
+                  className="cursor-pointer hover:bg-muted/40"
+                  onClick={() => navigate(`/invoices/${inv.id}`)}
+                >
+                  <TableCell className="font-mono font-medium text-sm">{inv.invoiceNumber}</TableCell>
+                  <TableCell>
+                    <span className="text-sm font-medium">{inv.lawFirmName ?? <span className="text-muted-foreground">—</span>}</span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm">{inv.matterName ?? <span className="text-muted-foreground">—</span>}</span>
+                    {inv.projectReference && (
+                      <p className="text-xs text-muted-foreground">{inv.projectReference}</p>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm">{inv.internalRequestorName ?? <span className="text-muted-foreground">—</span>}</span>
+                  </TableCell>
+                  <TableCell>
+                    {inv.totalAmount ? (
+                      <span className="font-medium text-sm">
+                        {inv.currency} {parseFloat(inv.totalAmount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm text-muted-foreground">
+                      {inv.invoiceDate ? format(new Date(inv.invoiceDate), "d MMM yyyy") : "—"}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={inv.invoiceStatus} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {inv.issueCount > 0 ? (
+                      <Badge variant="destructive" className="text-xs">{inv.issueCount}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">0</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+            <p className="text-sm text-muted-foreground">
+              Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total} invoices
+            </p>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page <= 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm px-2">{page} / {totalPages}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
+
+      <AddInvoiceModal open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
 }
