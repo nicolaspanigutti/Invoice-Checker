@@ -12,7 +12,7 @@ import {
   rulesConfigTable,
   auditEventsTable,
 } from "@workspace/db";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { createHash } from "crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { normaliseRole, isUnauthorizedRole, KNOWN_ROLE_CODES } from "./roleNormaliser";
@@ -99,12 +99,13 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
   const versionNo = prevRuns.length + 1;
 
   if (prevRuns.length > 0) {
+    const prevRunIds = prevRuns.map(r => r.id);
     await db.update(analysisRunsTable)
       .set({ status: "obsolete" })
       .where(eq(analysisRunsTable.invoiceId, invoiceId));
     await db.update(issuesTable)
       .set({ issueStatus: "no_longer_applicable" })
-      .where(eq(issuesTable.invoiceId, invoiceId));
+      .where(inArray(issuesTable.analysisRunId, prevRunIds));
   }
 
   const [run] = await db.insert(analysisRunsTable).values({

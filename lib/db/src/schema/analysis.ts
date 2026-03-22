@@ -25,7 +25,7 @@ export const issuesTable = pgTable("issues", {
   analysisRunId: integer("analysis_run_id").references(() => analysisRunsTable.id),
   invoiceItemId: integer("invoice_item_id").references(() => invoiceItemsTable.id),
   ruleCode: text("rule_code").notNull(),
-  ruleType: text("rule_type", { enum: ["objective", "gray", "configurable", "metadata"] }).notNull(),
+  ruleType: text("rule_type", { enum: ["objective", "gray", "configurable", "metadata", "warning"] }).notNull(),
   severity: text("severity", { enum: ["error", "warning"] }).notNull(),
   evaluatorType: text("evaluator_type", { enum: ["deterministic", "heuristic"] }).notNull(),
   issueStatus: text("issue_status", {

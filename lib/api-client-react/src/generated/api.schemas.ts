@@ -29,6 +29,7 @@ export type InvoiceSummaryInvoiceStatus =
 
 export const InvoiceSummaryInvoiceStatus = {
   pending: "pending",
+  extracting_data: "extracting_data",
   in_review: "in_review",
   escalated: "escalated",
   disputed: "disputed",
@@ -174,6 +175,7 @@ export type UpdateInvoiceRequestInvoiceStatus =
 
 export const UpdateInvoiceRequestInvoiceStatus = {
   pending: "pending",
+  extracting_data: "extracting_data",
   in_review: "in_review",
   escalated: "escalated",
   disputed: "disputed",
@@ -592,7 +594,7 @@ export const InvoiceIssueRuleType = {
   objective: "objective",
   gray: "gray",
   configurable: "configurable",
-  metadata: "metadata",
+  warning: "warning",
 } as const;
 
 export type InvoiceIssueSeverity =
@@ -773,7 +775,7 @@ export const RuleRuleType = {
   objective: "objective",
   gray: "gray",
   configurable: "configurable",
-  metadata: "metadata",
+  warning: "warning",
 } as const;
 
 export type RuleSeverity = (typeof RuleSeverity)[keyof typeof RuleSeverity];
@@ -869,6 +871,7 @@ export type ListInvoicesStatus =
 
 export const ListInvoicesStatus = {
   pending: "pending",
+  extracting_data: "extracting_data",
   in_review: "in_review",
   escalated: "escalated",
   disputed: "disputed",
@@ -896,7 +899,8 @@ export const ListInvoiceCommentsScope = {
 } as const;
 
 export type RerunInvoiceAnalysisBody = {
-  reason?: string;
+  /** @minLength 1 */
+  reason: string;
 };
 
 export type UpdateRuleBodyConfigJson = { [key: string]: unknown } | null;

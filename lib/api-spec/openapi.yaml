@@ -520,7 +520,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [pending, in_review, escalated, disputed, accepted]
+            enum: [pending, extracting_data, in_review, escalated, disputed, accepted]
         - name: lawFirmId
           in: query
           schema:
@@ -965,14 +965,16 @@ paths:
           schema:
             type: integer
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required: [reason]
               properties:
                 reason:
                   type: string
+                  minLength: 1
       responses:
         "200":
           description: Re-run complete
@@ -980,6 +982,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnalysisRunResult"
+        "400":
+          description: Bad request (missing reason)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "422":
           description: Completeness gate failed
           content:
@@ -1160,7 +1168,7 @@ components:
           nullable: true
         invoiceStatus:
           type: string
-          enum: [pending, in_review, escalated, disputed, accepted]
+          enum: [pending, extracting_data, in_review, escalated, disputed, accepted]
         issueCount:
           type: integer
         createdAt:
@@ -1323,7 +1331,7 @@ components:
           nullable: true
         invoiceStatus:
           type: string
-          enum: [pending, in_review, escalated, disputed, accepted]
+          enum: [pending, extracting_data, in_review, escalated, disputed, accepted]
           nullable: true
 
     InvoiceDocument:
@@ -2021,7 +2029,7 @@ components:
           type: string
         ruleType:
           type: string
-          enum: [objective, gray, configurable, metadata]
+          enum: [objective, gray, configurable, warning]
         severity:
           type: string
           enum: [error, warning]
@@ -2337,7 +2345,7 @@ components:
           type: string
         ruleType:
           type: string
-          enum: [objective, gray, configurable, metadata]
+          enum: [objective, gray, configurable, warning]
         severity:
           type: string
           enum: [error, warning]

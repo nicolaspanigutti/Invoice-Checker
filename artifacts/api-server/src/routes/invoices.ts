@@ -575,18 +575,16 @@ router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), asyn
   }
 
   const oldStatus = existingInvoice.invoiceStatus;
-  if (oldStatus !== "in_review") {
-    await db.update(invoicesTable).set({ invoiceStatus: "in_review" }).where(eq(invoicesTable.id, id));
-    await db.insert(auditEventsTable).values({
-      entityType: "invoice",
-      entityId: id,
-      eventType: "state_change",
-      actorId,
-      beforeJson: { status: oldStatus },
-      afterJson: { status: "in_review" },
-      reason: `Re-run initiated: ${reason}`,
-    });
-  }
+  await db.update(invoicesTable).set({ invoiceStatus: "extracting_data" }).where(eq(invoicesTable.id, id));
+  await db.insert(auditEventsTable).values({
+    entityType: "invoice",
+    entityId: id,
+    eventType: "state_change",
+    actorId,
+    beforeJson: { status: oldStatus },
+    afterJson: { status: "extracting_data" },
+    reason: `Re-run initiated: ${reason}`,
+  });
 
   await db.insert(auditEventsTable).values({
     entityType: "invoice",

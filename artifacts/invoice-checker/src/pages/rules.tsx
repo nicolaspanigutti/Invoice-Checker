@@ -197,7 +197,7 @@ export default function Rules() {
   const { mutateAsync: updateRuleMutation } = useUpdateRule();
 
   const [expandedCodes, setExpandedCodes] = useState<Set<string>>(new Set());
-  const [tab, setTab] = useState<"all" | "objective" | "gray" | "configurable" | "metadata">("all");
+  const [tab, setTab] = useState<"all" | "objective" | "gray" | "configurable" | "warning">("all");
   const [configureRule, setConfigureRule] = useState<Rule | null>(null);
 
   const handleToggle = async (code: string, isActive: boolean) => {
@@ -283,7 +283,7 @@ export default function Rules() {
               <TabsTrigger value="objective" className="text-xs">Objective</TabsTrigger>
               <TabsTrigger value="gray" className="text-xs">Grey Area</TabsTrigger>
               <TabsTrigger value="configurable" className="text-xs">Configurable</TabsTrigger>
-              <TabsTrigger value="metadata" className="text-xs">Metadata</TabsTrigger>
+              <TabsTrigger value="warning" className="text-xs">Warnings</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>

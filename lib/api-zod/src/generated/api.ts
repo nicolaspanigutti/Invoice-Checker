@@ -424,7 +424,14 @@ export const ListInvoicesQueryParams = zod.object({
   pageSize: zod.coerce.number().default(listInvoicesQueryPageSizeDefault),
   search: zod.coerce.string().optional(),
   status: zod
-    .enum(["pending", "in_review", "escalated", "disputed", "accepted"])
+    .enum([
+      "pending",
+      "extracting_data",
+      "in_review",
+      "escalated",
+      "disputed",
+      "accepted",
+    ])
     .optional(),
   lawFirmId: zod.coerce.number().optional(),
 });
@@ -447,6 +454,7 @@ export const ListInvoicesResponse = zod.object({
       jurisdiction: zod.string().nullish(),
       invoiceStatus: zod.enum([
         "pending",
+        "extracting_data",
         "in_review",
         "escalated",
         "disputed",
@@ -519,6 +527,7 @@ export const GetInvoiceResponse = zod
     jurisdiction: zod.string().nullish(),
     invoiceStatus: zod.enum([
       "pending",
+      "extracting_data",
       "in_review",
       "escalated",
       "disputed",
@@ -583,7 +592,14 @@ export const UpdateInvoiceBody = zod.object({
   assignedLegalOpsId: zod.number().nullish(),
   assignedInternalLawyerId: zod.number().nullish(),
   invoiceStatus: zod
-    .enum(["pending", "in_review", "escalated", "disputed", "accepted"])
+    .enum([
+      "pending",
+      "extracting_data",
+      "in_review",
+      "escalated",
+      "disputed",
+      "accepted",
+    ])
     .nullish(),
 });
 
@@ -604,6 +620,7 @@ export const UpdateInvoiceResponse = zod
     jurisdiction: zod.string().nullish(),
     invoiceStatus: zod.enum([
       "pending",
+      "extracting_data",
       "in_review",
       "escalated",
       "disputed",
@@ -824,7 +841,7 @@ export const ListInvoiceIssuesResponseItem = zod.object({
   analysisRunId: zod.number().nullish(),
   invoiceItemId: zod.number().nullish(),
   ruleCode: zod.string(),
-  ruleType: zod.enum(["objective", "gray", "configurable", "metadata"]),
+  ruleType: zod.enum(["objective", "gray", "configurable", "warning"]),
   severity: zod.enum(["error", "warning"]),
   issueStatus: zod.string(),
   routeToRole: zod.enum(["legal_ops", "internal_lawyer"]),
@@ -871,7 +888,7 @@ export const DecideIssueResponse = zod.object({
   analysisRunId: zod.number().nullish(),
   invoiceItemId: zod.number().nullish(),
   ruleCode: zod.string(),
-  ruleType: zod.enum(["objective", "gray", "configurable", "metadata"]),
+  ruleType: zod.enum(["objective", "gray", "configurable", "warning"]),
   severity: zod.enum(["error", "warning"]),
   issueStatus: zod.string(),
   routeToRole: zod.enum(["legal_ops", "internal_lawyer"]),
@@ -1075,7 +1092,7 @@ export const RerunInvoiceAnalysisParams = zod.object({
 });
 
 export const RerunInvoiceAnalysisBody = zod.object({
-  reason: zod.string().optional(),
+  reason: zod.string().min(1),
 });
 
 export const RerunInvoiceAnalysisResponse = zod.object({
@@ -1093,7 +1110,7 @@ export const RerunInvoiceAnalysisResponse = zod.object({
 export const ListRulesResponseItem = zod.object({
   code: zod.string(),
   displayName: zod.string(),
-  ruleType: zod.enum(["objective", "gray", "configurable", "metadata"]),
+  ruleType: zod.enum(["objective", "gray", "configurable", "warning"]),
   severity: zod.enum(["error", "warning"]),
   scope: zod.enum(["invoice", "invoice_item"]),
   routeToRole: zod.enum(["legal_ops", "internal_lawyer"]),
@@ -1121,7 +1138,7 @@ export const UpdateRuleBody = zod.object({
 export const UpdateRuleResponse = zod.object({
   code: zod.string(),
   displayName: zod.string(),
-  ruleType: zod.enum(["objective", "gray", "configurable", "metadata"]),
+  ruleType: zod.enum(["objective", "gray", "configurable", "warning"]),
   severity: zod.enum(["error", "warning"]),
   scope: zod.enum(["invoice", "invoice_item"]),
   routeToRole: zod.enum(["legal_ops", "internal_lawyer"]),

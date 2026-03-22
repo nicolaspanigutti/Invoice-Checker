@@ -26,7 +26,7 @@ export const invoicesTable = pgTable("invoices", {
   assignedLegalOpsId: integer("assigned_legal_ops_id").references(() => usersTable.id),
   assignedInternalLawyerId: integer("assigned_internal_lawyer_id").references(() => usersTable.id),
   invoiceStatus: text("invoice_status", {
-    enum: ["pending", "in_review", "escalated", "disputed", "accepted"]
+    enum: ["pending", "extracting_data", "in_review", "escalated", "disputed", "accepted"]
   }).notNull().default("pending"),
   reviewOutcome: text("review_outcome", {
     enum: ["clean", "accepted_with_comments", "partially_rejected", "fully_rejected"]

@@ -3261,7 +3261,7 @@ export const getRerunInvoiceAnalysisUrl = (id: number) => {
 
 export const rerunInvoiceAnalysis = async (
   id: number,
-  rerunInvoiceAnalysisBody?: RerunInvoiceAnalysisBody,
+  rerunInvoiceAnalysisBody: RerunInvoiceAnalysisBody,
   options?: RequestInit,
 ): Promise<AnalysisRunResult> => {
   return customFetch<AnalysisRunResult>(getRerunInvoiceAnalysisUrl(id), {

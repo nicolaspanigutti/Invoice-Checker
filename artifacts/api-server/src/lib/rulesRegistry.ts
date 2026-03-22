@@ -1,7 +1,7 @@
 export interface RuleDefinition {
   code: string;
   displayName: string;
-  ruleType: "objective" | "gray" | "configurable" | "metadata";
+  ruleType: "objective" | "gray" | "configurable" | "warning";
   severity: "error" | "warning";
   scope: "invoice" | "invoice_item";
   routeToRole: "legal_ops" | "internal_lawyer";
@@ -243,11 +243,11 @@ export const RULES_REGISTRY: RuleDefinition[] = [
   {
     code: "TIMEKEEPER_NOT_APPROVED",
     displayName: "Timekeeper Not Approved",
-    ruleType: "objective",
-    severity: "error",
+    ruleType: "gray",
+    severity: "warning",
     scope: "invoice_item",
-    routeToRole: "legal_ops",
-    description: "A timekeeper billed on this invoice has not been pre-approved for the matter roster or was not included in the approved staffing plan submitted with the Engagement Letter.",
+    routeToRole: "internal_lawyer",
+    description: "A timekeeper billed on this invoice has not been pre-approved for the matter roster or was not included in the approved staffing plan submitted with the Engagement Letter — assessed by AI against the EL staffing annex.",
     hasConfig: false,
   },
   {
@@ -263,7 +263,7 @@ export const RULES_REGISTRY: RuleDefinition[] = [
   {
     code: "MISSING_LINE_DETAIL",
     displayName: "Missing Line Detail",
-    ruleType: "metadata",
+    ruleType: "warning",
     severity: "warning",
     scope: "invoice",
     routeToRole: "legal_ops",
@@ -273,7 +273,7 @@ export const RULES_REGISTRY: RuleDefinition[] = [
   {
     code: "JURISDICTION_UNCLEAR",
     displayName: "Jurisdiction Unclear",
-    ruleType: "metadata",
+    ruleType: "warning",
     severity: "warning",
     scope: "invoice",
     routeToRole: "legal_ops",
