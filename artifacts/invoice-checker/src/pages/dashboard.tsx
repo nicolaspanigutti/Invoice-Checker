@@ -1,6 +1,6 @@
 import { useListInvoices } from "@workspace/api-client-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from "recharts";
-import { FileText, AlertTriangle, CheckCircle2, ArrowRight, XCircle } from "lucide-react";
+import { FileText, AlertTriangle, CheckCircle2, ArrowRight, XCircle, Clock } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -42,7 +42,8 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
   const invoices = data?.data ?? [];
 
-  const pending = invoices.filter(i => (i.invoiceStatus as string) === "in_review").length;
+  const pending = invoices.filter(i => (i.invoiceStatus as string) === "pending").length;
+  const inReview = invoices.filter(i => (i.invoiceStatus as string) === "in_review").length;
   const escalated = invoices.filter(i => (i.invoiceStatus as string) === "escalated").length;
   const approved = invoices.filter(i => (i.invoiceStatus as string) === "accepted").length;
   const disputed = invoices.filter(i => (i.invoiceStatus as string) === "disputed").length;
@@ -72,16 +73,28 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {/* Total Pending */}
-        <Link href="/invoices?status=in_review" className="block group">
+        <Link href="/invoices?status=pending" className="block group">
           <div className="h-full bg-white border border-border rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-primary/30">
             <div className="flex items-start justify-between">
               <p className="text-sm font-medium text-muted-foreground">Total Pending</p>
               <FileText className="w-5 h-5 text-muted-foreground/50 group-hover:text-primary/50 transition-colors" />
             </div>
             <p className="text-4xl font-display font-bold text-foreground mt-3">{pending}</p>
-            <p className="text-xs text-muted-foreground mt-1 group-hover:text-primary transition-colors">Requiring action →</p>
+            <p className="text-xs text-muted-foreground mt-1 group-hover:text-primary transition-colors">Awaiting analysis →</p>
+          </div>
+        </Link>
+
+        {/* In Review */}
+        <Link href="/invoices?status=in_review" className="block group">
+          <div className="h-full bg-blue-50 border border-blue-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-blue-400">
+            <div className="flex items-start justify-between">
+              <p className="text-sm font-medium text-blue-700">In Review</p>
+              <Clock className="w-5 h-5 text-blue-500" />
+            </div>
+            <p className="text-4xl font-display font-bold text-blue-700 mt-3">{inReview}</p>
+            <p className="text-xs text-blue-600 mt-1 group-hover:text-blue-800 transition-colors">Under legal review →</p>
           </div>
         </Link>
 
