@@ -266,6 +266,50 @@ export default function Rules() {
         </div>
       </div>
 
+      {/* Legend */}
+      <div className="border border-border rounded-2xl bg-card p-4 shadow-sm space-y-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+          <Info className="w-3.5 h-3.5" />
+          How to read the badges
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2">
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-foreground">Category (rule type)</p>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-start gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-800 shrink-0">Objective</span>
+                <span className="text-xs text-muted-foreground">Deterministic rule — a breach is always a billing error, no judgment needed.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-800 shrink-0">Grey Area</span>
+                <span className="text-xs text-muted-foreground">AI-assessed heuristic — flags cases that warrant human review; not always an error.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 shrink-0">Configurable</span>
+                <span className="text-xs text-muted-foreground">Rule with adjustable thresholds — your team can tune the parameters via Configure.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-800 shrink-0">Warning</span>
+                <span className="text-xs text-muted-foreground">Informational check — flags data quality issues (e.g., missing detail) that may limit analysis accuracy.</span>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-foreground">Severity</p>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-start gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-800 shrink-0">error</span>
+                <span className="text-xs text-muted-foreground">High priority — a clear violation that should be challenged and withheld from payment.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-yellow-100 text-yellow-800 shrink-0">warning</span>
+                <span className="text-xs text-muted-foreground">Medium priority — worth reviewing; may or may not require escalation depending on context.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {!isSuperAdmin && (
         <div className="flex items-start gap-3 border border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 rounded-2xl p-4">
           <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
