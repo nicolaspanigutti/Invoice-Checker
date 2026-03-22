@@ -53,6 +53,7 @@ async function buildInvoiceSummary(invoice: typeof invoicesTable.$inferSelect, i
     projectReference: invoice.projectReference,
     internalRequestorId: invoice.internalRequestorId,
     internalRequestorName,
+    jurisdiction: invoice.jurisdiction,
     invoiceStatus: invoice.invoiceStatus,
     issueCount,
     createdAt: invoice.createdAt,

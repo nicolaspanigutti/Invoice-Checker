@@ -153,6 +153,7 @@ export async function extractInvoiceFromText(rawText: string, documentId?: numbe
           eq(invoiceDocumentsTable.id, documentId),
           eq(invoiceDocumentsTable.textHash, textHash),
           eq(invoiceDocumentsTable.extractionStatus, "done"),
+          eq(invoiceDocumentsTable.promptVersion, EXTRACTION_PROMPT_VERSION),
         )
       )
       .limit(1);
@@ -164,7 +165,7 @@ export async function extractInvoiceFromText(rawText: string, documentId?: numbe
           extracted: cached.extracted,
           confidence: cached.confidence,
           textHash,
-          promptVersion: existing.promptVersion ?? EXTRACTION_PROMPT_VERSION,
+          promptVersion: EXTRACTION_PROMPT_VERSION,
           fromCache: true,
         };
       } catch {
@@ -212,6 +213,7 @@ export async function extractInvoiceFromImage(base64DataUrl: string, mimeType: s
           eq(invoiceDocumentsTable.id, documentId),
           eq(invoiceDocumentsTable.textHash, imageHash),
           eq(invoiceDocumentsTable.extractionStatus, "done"),
+          eq(invoiceDocumentsTable.promptVersion, EXTRACTION_PROMPT_VERSION),
         )
       )
       .limit(1);
@@ -223,7 +225,7 @@ export async function extractInvoiceFromImage(base64DataUrl: string, mimeType: s
           extracted: cached.extracted,
           confidence: cached.confidence,
           textHash: imageHash,
-          promptVersion: existing.promptVersion ?? EXTRACTION_PROMPT_VERSION,
+          promptVersion: EXTRACTION_PROMPT_VERSION,
           fromCache: true,
         };
       } catch {

@@ -7,6 +7,7 @@ import {
   useListUsers,
   useRequestUploadUrl,
   useExtractInvoiceData,
+  useUpdateInvoice,
   type InvoiceSummary,
   type ListInvoicesParams,
   type ExtractionResult,
@@ -143,6 +144,7 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
   const requestUploadUrl = useRequestUploadUrl();
   const createInvoice = useCreateInvoice();
   const extractInvoice = useExtractInvoiceData();
+  const updateInvoice = useUpdateInvoice();
 
   const lawyers = users?.filter(u => u.isActive && (u.role === "internal_lawyer" || u.role === "legal_ops")) ?? [];
 
@@ -266,11 +268,41 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
   };
 
   const handleConfirmReview = () => {
-    if (createdInvoiceId) {
-      navigate(`/invoices/${createdInvoiceId}`);
+    if (!createdInvoiceId) {
+      onClose();
+      resetModal();
+      return;
     }
-    onClose();
-    resetModal();
+
+    const patchData: Record<string, string | null> = {};
+    if (reviewForm.invoiceDate !== undefined) patchData.invoiceDate = reviewForm.invoiceDate ?? null;
+    if (reviewForm.dueDate !== undefined) patchData.dueDate = reviewForm.dueDate ?? null;
+    if (reviewForm.totalAmount !== undefined) patchData.totalAmount = reviewForm.totalAmount ?? null;
+    if (reviewForm.currency) patchData.currency = reviewForm.currency;
+    if (reviewForm.matterName !== undefined) patchData.matterName = reviewForm.matterName ?? null;
+    if (reviewForm.projectReference !== undefined) patchData.projectReference = reviewForm.projectReference ?? null;
+    if (reviewForm.jurisdiction !== undefined) patchData.jurisdiction = reviewForm.jurisdiction ?? null;
+
+    const doNavigate = () => {
+      navigate(`/invoices/${createdInvoiceId}`);
+      onClose();
+      resetModal();
+    };
+
+    if (Object.keys(patchData).length > 0) {
+      updateInvoice.mutate(
+        { id: createdInvoiceId, data: patchData },
+        {
+          onSuccess: doNavigate,
+          onError: () => {
+            toast({ variant: "destructive", title: "Warning", description: "Could not save your edits. Opening invoice anyway." });
+            doNavigate();
+          },
+        }
+      );
+    } else {
+      doNavigate();
+    }
   };
 
   const hasInvoiceFile = uploadedFiles.some(f => f.documentKind === "invoice_file");
@@ -580,10 +612,12 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
             )}
 
             <DialogFooter>
-              <Button onClick={handleConfirmReview} disabled={extracting}>
+              <Button onClick={handleConfirmReview} disabled={extracting || updateInvoice.isPending}>
                 {extracting ? (
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Extracting...</>
-                ) : "Open Invoice"}
+                ) : updateInvoice.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</>
+                ) : "Confirm & Open Invoice"}
               </Button>
             </DialogFooter>
           </div>
@@ -678,6 +712,7 @@ export default function Invoices() {
                 <TableHead>Invoice #</TableHead>
                 <TableHead>Law Firm</TableHead>
                 <TableHead>Matter</TableHead>
+                <TableHead>Jurisdiction</TableHead>
                 <TableHead>Requestor</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Invoice Date</TableHead>
@@ -701,6 +736,9 @@ export default function Invoices() {
                     {inv.projectReference && (
                       <p className="text-xs text-muted-foreground">{inv.projectReference}</p>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm text-muted-foreground">{inv.jurisdiction ?? "—"}</span>
                   </TableCell>
                   <TableCell>
                     <span className="text-sm">{inv.internalRequestorName ?? <span className="text-muted-foreground">—</span>}</span>

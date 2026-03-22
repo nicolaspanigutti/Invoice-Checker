@@ -48,6 +48,7 @@ export interface InvoiceSummary {
   projectReference?: string | null;
   internalRequestorId?: number | null;
   internalRequestorName?: string | null;
+  jurisdiction?: string | null;
   invoiceStatus: InvoiceSummaryInvoiceStatus;
   issueCount: number;
   createdAt: string;

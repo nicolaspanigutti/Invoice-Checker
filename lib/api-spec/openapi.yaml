@@ -792,6 +792,9 @@ components:
         internalRequestorName:
           type: string
           nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
         invoiceStatus:
           type: string
           enum: [extracting_data, in_review, waiting_internal_lawyer, pending_law_firm, ready_to_pay]
