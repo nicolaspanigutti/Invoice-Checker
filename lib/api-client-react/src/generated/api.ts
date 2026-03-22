@@ -57,9 +57,12 @@ import type {
   PostCommentRequest,
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
+  RerunInvoiceAnalysisBody,
+  Rule,
   UpdateDocumentStatusRequest,
   UpdateInvoiceRequest,
   UpdateLawFirmRequest,
+  UpdateRuleBody,
   UpdateUserRequest,
   UpsertLawFirmTermsBody,
 } from "./api.schemas";
@@ -3247,6 +3250,246 @@ export const useGenerateEmailDraft = <
   TContext
 > => {
   return useMutation(getGenerateEmailDraftMutationOptions(options));
+};
+
+/**
+ * @summary Re-run analysis on an invoice (respects current rule activation state)
+ */
+export const getRerunInvoiceAnalysisUrl = (id: number) => {
+  return `/api/invoices/${id}/rerun`;
+};
+
+export const rerunInvoiceAnalysis = async (
+  id: number,
+  rerunInvoiceAnalysisBody?: RerunInvoiceAnalysisBody,
+  options?: RequestInit,
+): Promise<AnalysisRunResult> => {
+  return customFetch<AnalysisRunResult>(getRerunInvoiceAnalysisUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(rerunInvoiceAnalysisBody),
+  });
+};
+
+export const getRerunInvoiceAnalysisMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rerunInvoiceAnalysis>>,
+    TError,
+    { id: number; data: BodyType<RerunInvoiceAnalysisBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rerunInvoiceAnalysis>>,
+  TError,
+  { id: number; data: BodyType<RerunInvoiceAnalysisBody> },
+  TContext
+> => {
+  const mutationKey = ["rerunInvoiceAnalysis"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rerunInvoiceAnalysis>>,
+    { id: number; data: BodyType<RerunInvoiceAnalysisBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return rerunInvoiceAnalysis(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RerunInvoiceAnalysisMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rerunInvoiceAnalysis>>
+>;
+export type RerunInvoiceAnalysisMutationBody =
+  BodyType<RerunInvoiceAnalysisBody>;
+export type RerunInvoiceAnalysisMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Re-run analysis on an invoice (respects current rule activation state)
+ */
+export const useRerunInvoiceAnalysis = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rerunInvoiceAnalysis>>,
+    TError,
+    { id: number; data: BodyType<RerunInvoiceAnalysisBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rerunInvoiceAnalysis>>,
+  TError,
+  { id: number; data: BodyType<RerunInvoiceAnalysisBody> },
+  TContext
+> => {
+  return useMutation(getRerunInvoiceAnalysisMutationOptions(options));
+};
+
+/**
+ * @summary List all compliance rules with their activation state
+ */
+export const getListRulesUrl = () => {
+  return `/api/rules`;
+};
+
+export const listRules = async (options?: RequestInit): Promise<Rule[]> => {
+  return customFetch<Rule[]>(getListRulesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListRulesQueryKey = () => {
+  return [`/api/rules`] as const;
+};
+
+export const getListRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listRules>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listRules>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListRulesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listRules>>> = ({
+    signal,
+  }) => listRules({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listRules>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listRules>>
+>;
+export type ListRulesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all compliance rules with their activation state
+ */
+
+export function useListRules<
+  TData = Awaited<ReturnType<typeof listRules>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listRules>>, TError, TData>;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListRulesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update a rule's activation state or configuration (super_admin only)
+ */
+export const getUpdateRuleUrl = (code: string) => {
+  return `/api/rules/${code}`;
+};
+
+export const updateRule = async (
+  code: string,
+  updateRuleBody: UpdateRuleBody,
+  options?: RequestInit,
+): Promise<Rule> => {
+  return customFetch<Rule>(getUpdateRuleUrl(code), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateRuleBody),
+  });
+};
+
+export const getUpdateRuleMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRule>>,
+    TError,
+    { code: string; data: BodyType<UpdateRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateRule>>,
+  TError,
+  { code: string; data: BodyType<UpdateRuleBody> },
+  TContext
+> => {
+  const mutationKey = ["updateRule"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateRule>>,
+    { code: string; data: BodyType<UpdateRuleBody> }
+  > = (props) => {
+    const { code, data } = props ?? {};
+
+    return updateRule(code, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateRule>>
+>;
+export type UpdateRuleMutationBody = BodyType<UpdateRuleBody>;
+export type UpdateRuleMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Update a rule's activation state or configuration (super_admin only)
+ */
+export const useUpdateRule = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRule>>,
+    TError,
+    { code: string; data: BodyType<UpdateRuleBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateRule>>,
+  TError,
+  { code: string; data: BodyType<UpdateRuleBody> },
+  TContext
+> => {
+  return useMutation(getUpdateRuleMutationOptions(options));
 };
 
 /**

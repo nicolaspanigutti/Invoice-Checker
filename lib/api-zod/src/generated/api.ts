@@ -1068,6 +1068,71 @@ export const GenerateEmailDraftResponse = zod.object({
 });
 
 /**
+ * @summary Re-run analysis on an invoice (respects current rule activation state)
+ */
+export const RerunInvoiceAnalysisParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const RerunInvoiceAnalysisBody = zod.object({
+  reason: zod.string().optional(),
+});
+
+export const RerunInvoiceAnalysisResponse = zod.object({
+  analysisRunId: zod.number(),
+  invoiceId: zod.number(),
+  status: zod.enum(["running", "completed", "failed"]),
+  issueCount: zod.number(),
+  outcome: zod.string().nullish(),
+  amountAtRisk: zod.string().nullish(),
+});
+
+/**
+ * @summary List all compliance rules with their activation state
+ */
+export const ListRulesResponseItem = zod.object({
+  code: zod.string(),
+  displayName: zod.string(),
+  ruleType: zod.enum(["objective", "gray", "configurable", "metadata"]),
+  severity: zod.enum(["error", "warning"]),
+  scope: zod.enum(["invoice", "invoice_item"]),
+  routeToRole: zod.enum(["legal_ops", "internal_lawyer"]),
+  description: zod.string(),
+  hasConfig: zod.boolean(),
+  isActive: zod.boolean(),
+  configJson: zod.object({}).passthrough().nullish(),
+  updatedAt: zod.date().nullish(),
+});
+export const ListRulesResponse = zod.array(ListRulesResponseItem);
+
+/**
+ * @summary Update a rule's activation state or configuration (super_admin only)
+ */
+export const UpdateRuleParams = zod.object({
+  code: zod.coerce.string(),
+});
+
+export const UpdateRuleBody = zod.object({
+  isActive: zod.boolean().optional(),
+  configJson: zod.object({}).passthrough().nullish(),
+  reason: zod.string().optional(),
+});
+
+export const UpdateRuleResponse = zod.object({
+  code: zod.string(),
+  displayName: zod.string(),
+  ruleType: zod.enum(["objective", "gray", "configurable", "metadata"]),
+  severity: zod.enum(["error", "warning"]),
+  scope: zod.enum(["invoice", "invoice_item"]),
+  routeToRole: zod.enum(["legal_ops", "internal_lawyer"]),
+  description: zod.string(),
+  hasConfig: zod.boolean(),
+  isActive: zod.boolean(),
+  configJson: zod.object({}).passthrough().nullish(),
+  updatedAt: zod.date().nullish(),
+});
+
+/**
  * @summary List audit trail events for an invoice
  */
 export const ListInvoiceAuditEventsParams = zod.object({

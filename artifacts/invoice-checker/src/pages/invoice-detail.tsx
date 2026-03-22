@@ -8,6 +8,7 @@ import {
   useAddInvoiceDocument,
   useRequestUploadUrl,
   useRunInvoiceAnalysis,
+  useRerunInvoiceAnalysis,
   useListInvoiceIssues,
   useGetMe,
   useDecideIssue,
@@ -624,6 +625,8 @@ export default function InvoiceDetail() {
   const [auditTrailOpen, setAuditTrailOpen] = useState(false);
   const [lineItemsOpen, setLineItemsOpen] = useState(false);
   const [showAllLinesModal, setShowAllLinesModal] = useState(false);
+  const [rerunOpen, setRerunOpen] = useState(false);
+  const [isRerunning, setIsRerunning] = useState(false);
 
   const { data: invoice, isLoading } = useGetInvoice(id);
   const { data: documents } = useListInvoiceDocuments(id);
@@ -632,6 +635,7 @@ export default function InvoiceDetail() {
   const { data: me } = useGetMe();
   const { data: auditEvents } = useListInvoiceAuditEvents(id);
   const runAnalysis = useRunInvoiceAnalysis();
+  const rerunAnalysis = useRerunInvoiceAnalysis();
 
   const userRole = me?.role ?? null;
 
@@ -690,10 +694,59 @@ export default function InvoiceDetail() {
   const reportableStatuses = ["in_review", "escalated", "disputed", "accepted"];
   const canViewReport = reportableStatuses.includes(invoice.invoiceStatus) && Boolean(invoice.currentAnalysisRunId);
   const canDraftEmail = invoice.invoiceStatus === "disputed";
+  const hasExistingAnalysis = Boolean(invoice.currentAnalysisRunId);
+  const canRerun = hasExistingAnalysis && (userRole === "super_admin" || userRole === "legal_ops");
+
+  const handleRerun = async () => {
+    setIsRerunning(true);
+    try {
+      const result: AnalysisRunResult = await rerunAnalysis.mutateAsync({ id, data: { reason: "Manual re-run from invoice detail" } });
+      setRerunOpen(false);
+      setAnalysisRan(true);
+      const issueCount = result.issueCount ?? 0;
+      const outcome = result.outcome ?? null;
+      if (outcome === "clean") {
+        toast({ title: "Re-run complete — Clean", description: "No compliance issues found." });
+      } else {
+        toast({ title: `Re-run complete — ${issueCount} issue${issueCount !== 1 ? "s" : ""} found`, description: "Issues panel has been refreshed." });
+      }
+      queryClient.invalidateQueries({ queryKey: getGetInvoiceQueryKey(id) });
+      queryClient.invalidateQueries({ queryKey: getListInvoiceIssuesQueryKey(id) });
+    } catch (err: unknown) {
+      const msg = (err as { data?: { error?: string } })?.data?.error ?? "Re-run failed.";
+      toast({ variant: "destructive", title: "Re-run failed", description: msg });
+    } finally {
+      setIsRerunning(false);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <EmailDraftModal invoiceId={id} open={emailDraftOpen} onClose={() => setEmailDraftOpen(false)} />
+
+      {/* Re-run Dialog */}
+      <Dialog open={rerunOpen} onOpenChange={setRerunOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Re-run Compliance Analysis</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              This will run the full compliance check again using the <strong>current rule activation state</strong>. Existing open issues will be marked as superseded and new issues will be generated.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Use this after deactivating rules or changing configuration thresholds to see updated results.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRerunOpen(false)} disabled={isRerunning}>Cancel</Button>
+            <Button onClick={handleRerun} disabled={isRerunning} className="gap-2">
+              {isRerunning && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isRerunning ? "Running…" : "Re-run Analysis"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Line Items Modal */}
       <Dialog open={lineItemsOpen} onOpenChange={setLineItemsOpen}>
@@ -845,6 +898,11 @@ export default function InvoiceDetail() {
           <Button size="sm" variant="outline" onClick={() => setAuditTrailOpen(true)} className="gap-2">
             <Activity className="h-4 w-4" /> Audit Trail
           </Button>
+          {canRerun && (
+            <Button size="sm" variant="outline" onClick={() => setRerunOpen(true)} className="gap-2">
+              <Sparkles className="h-4 w-4" /> Re-run Analysis
+            </Button>
+          )}
           {canDraftEmail && (
             <Button size="sm" variant="outline" onClick={() => setEmailDraftOpen(true)} className="gap-2">
               <Mail className="h-4 w-4" /> Draft Email

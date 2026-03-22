@@ -41,7 +41,7 @@ function getTerm(terms: { termKey: string; termValueJson: unknown }[], key: stri
   return terms.find(t => t.termKey === key)?.termValueJson ?? null;
 }
 
-export async function runAnalysis(invoiceId: number, startedById: number): Promise<{
+export async function runAnalysis(invoiceId: number, startedById: number, triggerReason?: string): Promise<{
   analysisRunId: number;
   issueCount: number;
   outcome: string | null;
@@ -75,8 +75,15 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
         .where(eq(panelBaselineDocumentsTable.verificationStatus, "active"))
     : [];
 
-  const meetingConfig = await db.select().from(rulesConfigTable).where(eq(rulesConfigTable.ruleCode, "MEETING_OVERSTAFFING")).limit(1);
-  const meetingConfigJson = (meetingConfig[0]?.configJson as Record<string, unknown> | null) ?? {};
+  const allRulesConfig = await db.select().from(rulesConfigTable);
+  const rulesConfigMap = new Map(allRulesConfig.map(c => [c.ruleCode, c]));
+  const isRuleActive = (code: string): boolean => {
+    const cfg = rulesConfigMap.get(code);
+    return cfg ? cfg.isActive === "true" : true;
+  };
+
+  const meetingConfigRow = rulesConfigMap.get("MEETING_OVERSTAFFING");
+  const meetingConfigJson = (meetingConfigRow?.configJson as Record<string, unknown> | null) ?? {};
   const meetingMinAttendees = (meetingConfigJson.min_attendees as number | null) ?? (meetingConfigJson.threshold as number | null) ?? 3;
   const meetingMaxAttendees = (meetingConfigJson.max_attendees as number | null) ?? 5;
 
@@ -95,13 +102,15 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     await db.update(analysisRunsTable)
       .set({ status: "obsolete" })
       .where(eq(analysisRunsTable.invoiceId, invoiceId));
-    await db.delete(issuesTable).where(eq(issuesTable.invoiceId, invoiceId));
+    await db.update(issuesTable)
+      .set({ issueStatus: "no_longer_applicable" })
+      .where(eq(issuesTable.invoiceId, invoiceId));
   }
 
   const [run] = await db.insert(analysisRunsTable).values({
     invoiceId,
     versionNo,
-    triggerReason: "manual",
+    triggerReason: triggerReason ?? "manual",
     status: "running",
     startedById,
     startedAt: new Date(),
@@ -151,7 +160,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   const hasAllHours = items.every(i => i.hours !== null);
   const hasAllRates = items.every(i => i.isExpenseLine || i.rateCharged !== null);
 
-  if (!hasLineDetail && items.length > 0) {
+  if (!hasLineDetail && items.length > 0 && isRuleActive("MISSING_LINE_DETAIL")) {
     issues.push({
       invoiceId,
       analysisRunId: run.id,
@@ -174,7 +183,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   }
 
   const firmHasMultipleJurisdictions = (firm?.jurisdictionsJson as string[] | null ?? []).length > 1;
-  if (!invoice.jurisdiction && firmHasMultipleJurisdictions) {
+  if (!invoice.jurisdiction && firmHasMultipleJurisdictions && isRuleActive("JURISDICTION_UNCLEAR")) {
     issues.push({
       invoiceId,
       analysisRunId: run.id,
@@ -196,7 +205,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
 
   const agreedCurrency = (getTerm(firmTerms, "agreed_currency") as string | null)
     ?? (elData?.currency as string | null);
-  if (agreedCurrency && invoice.currency && agreedCurrency.toUpperCase() !== invoice.currency.toUpperCase()) {
+  if (agreedCurrency && invoice.currency && agreedCurrency.toUpperCase() !== invoice.currency.toUpperCase() && isRuleActive("WRONG_CURRENCY")) {
     const sourceDoc = elData ? "Engagement Letter" : "Panel T&C";
     issues.push({
       invoiceId,
@@ -220,7 +229,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
 
   if (invoice.billingType === "fixed_scope" || invoice.billingType === "closed_scope") {
     const hasEL = docs.some(d => d.documentKind === "engagement_letter");
-    if (!hasEL) {
+    if (!hasEL && isRuleActive("MISSING_DOCUMENTS_FIXED_SCOPE")) {
       issues.push({
         invoiceId,
         analysisRunId: run.id,
@@ -241,7 +250,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
 
     const agreedFee = n(elData?.totalAmount as string | null);
     const invoiceTotal = n(invoice.totalAmount);
-    if (agreedFee > 0 && invoiceTotal > agreedFee) {
+    if (agreedFee > 0 && invoiceTotal > agreedFee && isRuleActive("FIXED_SCOPE_AMOUNT_MISMATCH")) {
       const excess = invoiceTotal - agreedFee;
       issues.push({
         invoiceId,
@@ -267,7 +276,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
       });
     }
 
-    if (items.length > 0) {
+    if (items.length > 0 && isRuleActive("LINE_ITEMS_IN_FIXED_SCOPE")) {
       const lineItemsWithHours = items.filter(i => !i.isExpenseLine && i.hours !== null);
       if (lineItemsWithHours.length > 0) {
         issues.push({
@@ -322,7 +331,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   const taxAmount = n(invoice.taxAmount);
   const subtotal = n(invoice.subtotalAmount);
   const total = n(invoice.totalAmount);
-  if (subtotal > 0 && taxAmount >= 0) {
+  if (subtotal > 0 && taxAmount >= 0 && isRuleActive("TAX_OR_VAT_MISMATCH")) {
     const expectedTotal = subtotal + taxAmount;
     const diff = Math.abs(total - expectedTotal);
     if (diff > 0.01) {
@@ -353,7 +362,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   }
 
   const discountThresholds = getTerm(firmTerms, "discount_thresholds_json") as { threshold: number; pct: number; method?: string }[] | null;
-  if (discountThresholds && discountThresholds.length > 0 && invoice.invoiceDate) {
+  if (discountThresholds && discountThresholds.length > 0 && invoice.invoiceDate && isRuleActive("VOLUME_DISCOUNT_NOT_APPLIED")) {
     const year = new Date(invoice.invoiceDate).getFullYear();
     const priorInvoicesResult = await db.execute(sql`
       SELECT COALESCE(SUM(CAST(total_amount AS DECIMAL)), 0) as total
@@ -463,7 +472,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     if (!expType || authorisedTypes.length === 0) continue;
 
     const found = authorisedTypes.find(t => expType.includes(t.toLowerCase()));
-    if (!found) {
+    if (!found && isRuleActive("UNAUTHORIZED_EXPENSE_TYPE")) {
       issues.push({
         invoiceId,
         analysisRunId: run.id,
@@ -487,7 +496,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
         recoverableAmount: amount.toFixed(2),
         recoveryGroupKey: `unauth_expense_${item.lineNo}`,
       });
-    } else if (expensePolicy![found]?.cap !== undefined) {
+    } else if (found && expensePolicy![found]?.cap !== undefined && isRuleActive("EXPENSE_CAP_EXCEEDED")) {
       const cap = expensePolicy![found].cap!;
       if (amount > cap) {
         const excess = amount - cap;
@@ -519,7 +528,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   }
 
   const seenPairs = new Set<string>();
-  for (let i = 0; i < items.length; i++) {
+  if (isRuleActive("DUPLICATE_LINE")) for (let i = 0; i < items.length; i++) {
     for (let j = i + 1; j < items.length; j++) {
       const a = items[i];
       const b = items[j];
@@ -574,7 +583,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     }
   }
 
-  for (const item of items) {
+  if (isRuleActive("ARITHMETIC_ERROR")) for (const item of items) {
     if (item.isExpenseLine || !item.hours || !item.rateCharged || !item.amount) continue;
     const expected = n(item.hours) * n(item.rateCharged);
     const actual = n(item.amount);
@@ -610,7 +619,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
 
   const maxDailyHours = (getTerm(firmTerms, "max_daily_hours_per_timekeeper") as number | null) ?? 8;
   const dailyMap = new Map<string, { total: number; lineNos: number[]; role: string | null }>();
-  for (const item of items) {
+  if (isRuleActive("DAILY_HOURS_EXCEEDED")) for (const item of items) {
     if (item.isExpenseLine || !item.workDate || !item.timekeeperLabel || !item.hours) continue;
     const key = `${item.timekeeperLabel}|${item.workDate}`;
     const existing = dailyMap.get(key) ?? { total: 0, lineNos: [], role: item.roleRaw };
@@ -650,7 +659,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
 
   const elStart = elData?.billingPeriodStart as string | null;
   const elEnd = elData?.billingPeriodEnd as string | null;
-  if (elStart && elEnd) {
+  if (elStart && elEnd && isRuleActive("BILLING_PERIOD_OUTSIDE_EL")) {
     const outOfPeriod = items.filter(item =>
       !item.isExpenseLine && item.workDate &&
       (item.workDate < elStart || item.workDate > elEnd)
@@ -691,7 +700,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
     timekeeperRates.set(item.timekeeperLabel, existing);
   }
 
-  for (const [timekeeper, data] of timekeeperRates.entries()) {
+  if (isRuleActive("INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER")) for (const [timekeeper, data] of timekeeperRates.entries()) {
     if (data.rates.size >= 2) {
       const panelRate = panelRates.find(pr =>
         pr.r.roleCode === data.roleNorm && pr.r.jurisdiction === invoice.jurisdiction && pr.r.currency === invoice.currency
@@ -750,7 +759,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
           })
         : allMatchingRates;
 
-      if (allMatchingRates.length === 0 || validMatchingRates.length === 0) {
+      if ((allMatchingRates.length === 0 || validMatchingRates.length === 0) && isRuleActive("RATE_CARD_EXPIRED_OR_MISSING")) {
         seenMissingCombinations.add(combKey);
         const affectedLines = items.filter(i => i.roleNormalizedComputed === item.roleNormalizedComputed).map(i => i.lineNo);
         const latestValidTo = allMatchingRates.length > 0
@@ -789,7 +798,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   const missingRoleLines = items.filter(item =>
     !item.isExpenseLine && item.roleRaw !== null && item.roleNormalizedComputed === null
   );
-  for (const item of missingRoleLines) {
+  if (isRuleActive("LAWYER_ROLE_MISMATCH")) for (const item of missingRoleLines) {
     const isUnauth = item.isUnauthorized;
     const recoverableAmt = isUnauth && item.amount ? n(item.amount) : null;
     issues.push({
@@ -822,7 +831,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
 
   const rolesMismatched = new Set(missingRoleLines.map(i => i.lineNo));
 
-  for (const item of items) {
+  if (isRuleActive("RATE_EXCESS")) for (const item of items) {
     if (item.isExpenseLine || rolesMismatched.has(item.lineNo) || !item.roleNormalizedComputed || !item.rateCharged) continue;
 
     const applicableRates = panelRates.filter(pr =>
@@ -875,7 +884,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
 
   const meetingKeywords = ["meeting", "call", "conference", "hearing", "session", "videoconference", "teleconference", "webinar"];
   const dateGroups = new Map<string, Map<string, InvoiceItem[]>>();
-  for (const item of items) {
+  if (isRuleActive("MEETING_OVERSTAFFING")) for (const item of items) {
     if (!item.workDate || !item.description) continue;
     const descLower = item.description.toLowerCase();
     const isMeeting = meetingKeywords.some(kw => descLower.includes(kw));
@@ -924,7 +933,7 @@ export async function runAnalysis(invoiceId: number, startedById: number): Promi
   let greyRulesFailed = false;
   if (items.length > 0) {
     try {
-      greyIssues = await runGreyRules(invoiceId, run.id, invoice, firm, items, elData, budgetData, panelRates);
+      greyIssues = await runGreyRules(invoiceId, run.id, invoice, firm, items, elData, budgetData, panelRates, isRuleActive);
     } catch (greyErr) {
       console.error("Grey rule AI evaluation failed; continuing with objective results:", greyErr);
       greyRulesFailed = true;
@@ -1007,6 +1016,7 @@ async function runGreyRules(
   elData: Record<string, unknown> | null,
   budgetData: Record<string, unknown> | null,
   panelRates: { r: typeof panelRatesTable.$inferSelect; d: typeof panelBaselineDocumentsTable.$inferSelect }[],
+  isRuleActive: (code: string) => boolean,
 ): Promise<IssueInsert[]> {
   const linesSummary = items.map(i => ({
     line: i.lineNo,
@@ -1173,7 +1183,7 @@ Return valid JSON only. No markdown, no explanation.`;
     const greyIssues: IssueInsert[] = [];
 
     const elConflict = parsed["EL_CONFLICT_WITH_PANEL_BASELINE"] as { fires?: boolean; conflict_description?: string; baseline_source?: string; baseline_value?: string; el_value?: string } | null;
-    if (elConflict?.fires && elConflict.conflict_description) {
+    if (elConflict?.fires && elConflict.conflict_description && isRuleActive("EL_CONFLICT_WITH_PANEL_BASELINE")) {
       greyIssues.push({
         invoiceId,
         analysisRunId: runId,
@@ -1197,7 +1207,7 @@ Return valid JSON only. No markdown, no explanation.`;
     }
 
     const hoursDisp = parsed["HOURS_DISPROPORTIONATE"] as Array<{ fires?: boolean; timekeeper_label?: string; role_normalized?: string; total_hours?: number; billing_period?: string; task_description?: string; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(hoursDisp)) {
+    if (Array.isArray(hoursDisp) && isRuleActive("HOURS_DISPROPORTIONATE")) {
       for (const h of hoursDisp) {
         if (!h.fires || !h.timekeeper_label) continue;
         greyIssues.push({
@@ -1224,7 +1234,7 @@ Return valid JSON only. No markdown, no explanation.`;
     }
 
     const parallelBilling = parsed["PARALLEL_BILLING"] as Array<{ fires?: boolean; date?: string; timekeeper_list?: string[]; descriptions?: string[]; hours_each?: unknown[]; amounts_each?: unknown[]; total_hours?: number; total_amount?: number; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(parallelBilling)) {
+    if (Array.isArray(parallelBilling) && isRuleActive("PARALLEL_BILLING")) {
       for (const pb of parallelBilling) {
         if (!pb.fires || !pb.date) continue;
         greyIssues.push({
@@ -1253,7 +1263,7 @@ Return valid JSON only. No markdown, no explanation.`;
     }
 
     const scopeCreep = parsed["SCOPE_CREEP"] as Array<{ fires?: boolean; line_no?: number; description?: string; el_scope_summary?: string; el_date?: string; matter_name?: string; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(scopeCreep)) {
+    if (Array.isArray(scopeCreep) && isRuleActive("SCOPE_CREEP")) {
       for (const sc of scopeCreep) {
         if (!sc.fires || !sc.line_no) continue;
         const lineItem = items.find(i => i.lineNo === sc.line_no);
@@ -1282,7 +1292,7 @@ Return valid JSON only. No markdown, no explanation.`;
     }
 
     const seniorityOverkill = parsed["SENIORITY_OVERKILL"] as Array<{ fires?: boolean; line_no?: number; timekeeper_label?: string; role_normalized?: string; rate_charged?: number; hours?: number; amount?: number; description?: string; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(seniorityOverkill)) {
+    if (Array.isArray(seniorityOverkill) && isRuleActive("SENIORITY_OVERKILL")) {
       for (const so of seniorityOverkill) {
         if (!so.fires || !so.line_no) continue;
         const lineItem = items.find(i => i.lineNo === so.line_no);
@@ -1313,7 +1323,7 @@ Return valid JSON only. No markdown, no explanation.`;
     }
 
     const estimateExcess = parsed["ESTIMATE_EXCESS"] as { fires?: boolean; estimate_amount?: number; source_document?: string; source_date?: string; cumulative_fees?: number; excess_amount?: number; excess_pct?: number; revised_estimate_provided?: boolean } | null;
-    if (estimateExcess?.fires && estimateExcess.estimate_amount) {
+    if (estimateExcess?.fires && estimateExcess.estimate_amount && isRuleActive("ESTIMATE_EXCESS")) {
       greyIssues.push({
         invoiceId,
         analysisRunId: runId,
@@ -1338,7 +1348,7 @@ Return valid JSON only. No markdown, no explanation.`;
     }
 
     const internalCoord = parsed["INTERNAL_COORDINATION"] as Array<{ fires?: boolean; line_no?: number; timekeeper_label?: string; role_normalized?: string; hours?: number; amount?: number; description?: string; heuristic_reasoning?: string }> | null;
-    if (Array.isArray(internalCoord)) {
+    if (Array.isArray(internalCoord) && isRuleActive("INTERNAL_COORDINATION")) {
       for (const ic of internalCoord) {
         if (!ic.fires || !ic.line_no) continue;
         const lineItem = items.find(i => i.lineNo === ic.line_no);

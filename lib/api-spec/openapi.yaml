@@ -22,6 +22,8 @@ tags:
     description: Invoice management
   - name: storage
     description: Object storage
+  - name: rules
+    description: Compliance rules management
 paths:
   /healthz:
     get:
@@ -946,6 +948,106 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invoices/{id}/rerun:
+    post:
+      operationId: rerunInvoiceAnalysis
+      tags: [invoices]
+      summary: Re-run analysis on an invoice (respects current rule activation state)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Re-run complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisRunResult"
+        "422":
+          description: Completeness gate failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /rules:
+    get:
+      operationId: listRules
+      tags: [rules]
+      summary: List all compliance rules with their activation state
+      responses:
+        "200":
+          description: List of rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Rule"
+
+  /rules/{code}:
+    patch:
+      operationId: updateRule
+      tags: [rules]
+      summary: Update a rule's activation state or configuration (super_admin only)
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isActive:
+                  type: boolean
+                configJson:
+                  type: object
+                  nullable: true
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Updated rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rule"
+        "404":
+          description: Rule not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden
           content:
             application/json:
               schema:
@@ -2225,6 +2327,49 @@ components:
         - openIssues
         - auditTrail
         - generatedAt
+
+    Rule:
+      type: object
+      properties:
+        code:
+          type: string
+        displayName:
+          type: string
+        ruleType:
+          type: string
+          enum: [objective, gray, configurable, metadata]
+        severity:
+          type: string
+          enum: [error, warning]
+        scope:
+          type: string
+          enum: [invoice, invoice_item]
+        routeToRole:
+          type: string
+          enum: [legal_ops, internal_lawyer]
+        description:
+          type: string
+        hasConfig:
+          type: boolean
+        isActive:
+          type: boolean
+        configJson:
+          type: object
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - code
+        - displayName
+        - ruleType
+        - severity
+        - scope
+        - routeToRole
+        - description
+        - hasConfig
+        - isActive
 
     EmailDraft:
       type: object

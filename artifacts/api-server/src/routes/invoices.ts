@@ -555,6 +555,61 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
   }
 });
 
+router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const actorId = req.session.userId!;
+  const reason = (req.body?.reason as string | undefined) ?? "Manual re-run triggered by user";
+
+  await db.insert(auditEventsTable).values({
+    entityType: "invoice",
+    entityId: id,
+    eventType: "analysis_started",
+    actorId,
+    afterJson: null,
+    reason,
+  });
+
+  try {
+    const result = await runAnalysis(id, actorId, "rerun");
+    if (result.status === "gate_failed") {
+      await db.insert(auditEventsTable).values({
+        entityType: "invoice",
+        entityId: id,
+        eventType: "analysis_failed",
+        actorId,
+        afterJson: { reason: "gate_failed" },
+        reason: "Completeness gate failed",
+      });
+      res.status(422).json({
+        error: "Cannot re-run analysis: completeness gate failed.",
+        analysisRunId: result.analysisRunId,
+      });
+      return;
+    }
+    await db.insert(auditEventsTable).values({
+      entityType: "invoice",
+      entityId: id,
+      eventType: "analysis_completed",
+      actorId,
+      afterJson: { issueCount: result.issueCount, outcome: result.outcome, amountAtRisk: result.amountAtRisk, rerun: true },
+      reason,
+    });
+    await recalculateRecovery(id);
+    res.json({
+      analysisRunId: result.analysisRunId,
+      invoiceId: id,
+      status: result.status,
+      issueCount: result.issueCount,
+      outcome: result.outcome,
+      amountAtRisk: result.amountAtRisk,
+    });
+  } catch (err) {
+    console.error("Re-run analysis failed:", err);
+    res.status(500).json({ error: "Re-run analysis failed unexpectedly." });
+  }
+});
+
 router.get("/invoices/:id/analysis-runs", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }

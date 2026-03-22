@@ -767,6 +767,53 @@ export interface InvoiceReport {
   generatedAt: string;
 }
 
+export type RuleRuleType = (typeof RuleRuleType)[keyof typeof RuleRuleType];
+
+export const RuleRuleType = {
+  objective: "objective",
+  gray: "gray",
+  configurable: "configurable",
+  metadata: "metadata",
+} as const;
+
+export type RuleSeverity = (typeof RuleSeverity)[keyof typeof RuleSeverity];
+
+export const RuleSeverity = {
+  error: "error",
+  warning: "warning",
+} as const;
+
+export type RuleScope = (typeof RuleScope)[keyof typeof RuleScope];
+
+export const RuleScope = {
+  invoice: "invoice",
+  invoice_item: "invoice_item",
+} as const;
+
+export type RuleRouteToRole =
+  (typeof RuleRouteToRole)[keyof typeof RuleRouteToRole];
+
+export const RuleRouteToRole = {
+  legal_ops: "legal_ops",
+  internal_lawyer: "internal_lawyer",
+} as const;
+
+export type RuleConfigJson = { [key: string]: unknown } | null;
+
+export interface Rule {
+  code: string;
+  displayName: string;
+  ruleType: RuleRuleType;
+  severity: RuleSeverity;
+  scope: RuleScope;
+  routeToRole: RuleRouteToRole;
+  description: string;
+  hasConfig: boolean;
+  isActive: boolean;
+  configJson?: RuleConfigJson;
+  updatedAt?: string | null;
+}
+
 export interface EmailDraft {
   to?: string | null;
   subject: string;
@@ -847,3 +894,15 @@ export const ListInvoiceCommentsScope = {
   escalation: "escalation",
   decision: "decision",
 } as const;
+
+export type RerunInvoiceAnalysisBody = {
+  reason?: string;
+};
+
+export type UpdateRuleBodyConfigJson = { [key: string]: unknown } | null;
+
+export type UpdateRuleBody = {
+  isActive?: boolean;
+  configJson?: UpdateRuleBodyConfigJson;
+  reason?: string;
+};
