@@ -70,14 +70,14 @@ function MainApp() {
   return (
     <AppLayout user={user}>
       <Switch>
-        <Route path="/" component={() => <ProtectedRoute component={Dashboard} user={user} />} />
-        <Route path="/invoices" component={() => <ProtectedRoute component={Invoices} user={user} />} />
-        <Route path="/invoices/:id" component={() => <ProtectedRoute component={InvoiceDetail} user={user} />} />
-        <Route path="/law-firms" component={() => <ProtectedRoute component={LawFirms} allowedRoles={["super_admin", "legal_ops"]} user={user} />} />
-        <Route path="/rates" component={() => <ProtectedRoute component={Rates} allowedRoles={["super_admin", "legal_ops"]} user={user} />} />
-        <Route path="/rules" component={() => <ProtectedRoute component={Rules} user={user} />} />
-        <Route path="/users" component={() => <ProtectedRoute component={Users} allowedRoles={["super_admin"]} user={user} />} />
-        <Route component={NotFound} />
+        <Route path="/"><ProtectedRoute component={Dashboard} user={user} /></Route>
+        <Route path="/invoices"><ProtectedRoute component={Invoices} user={user} /></Route>
+        <Route path="/invoices/:id"><ProtectedRoute component={InvoiceDetail} user={user} /></Route>
+        <Route path="/law-firms"><ProtectedRoute component={LawFirms} allowedRoles={["super_admin", "legal_ops"]} user={user} /></Route>
+        <Route path="/rates"><ProtectedRoute component={Rates} allowedRoles={["super_admin", "legal_ops"]} user={user} /></Route>
+        <Route path="/rules"><ProtectedRoute component={Rules} user={user} /></Route>
+        <Route path="/users"><ProtectedRoute component={Users} allowedRoles={["super_admin"]} user={user} /></Route>
+        <Route><NotFound /></Route>
       </Switch>
     </AppLayout>
   );
