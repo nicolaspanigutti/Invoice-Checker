@@ -77,48 +77,56 @@ export default function Dashboard() {
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Total Pending */}
-        <div className="bg-white border border-border rounded-2xl p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <p className="text-sm font-medium text-muted-foreground">Total Pending</p>
-            <FileText className="w-5 h-5 text-muted-foreground/50" />
+        <Link href="/invoices?status=in_review" className="block group">
+          <div className="bg-white border border-border rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-primary/30">
+            <div className="flex items-start justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Total Pending</p>
+              <FileText className="w-5 h-5 text-muted-foreground/50 group-hover:text-primary/50 transition-colors" />
+            </div>
+            <p className="text-4xl font-display font-bold text-foreground mt-3">{pending}</p>
+            <p className="text-xs text-muted-foreground mt-1 group-hover:text-primary transition-colors">View invoices requiring action →</p>
           </div>
-          <p className="text-4xl font-display font-bold text-foreground mt-3">{pending}</p>
-          <p className="text-xs text-muted-foreground mt-1">Invoices requiring action</p>
-        </div>
+        </Link>
 
         {/* Escalated */}
-        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <p className="text-sm font-medium text-orange-600">Escalated</p>
-            <AlertTriangle className="w-5 h-5 text-orange-500" />
+        <Link href="/invoices?status=waiting_internal_lawyer" className="block group">
+          <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-orange-400">
+            <div className="flex items-start justify-between">
+              <p className="text-sm font-medium text-orange-600">Escalated</p>
+              <AlertTriangle className="w-5 h-5 text-orange-500" />
+            </div>
+            <p className="text-4xl font-display font-bold text-orange-600 mt-3">{escalated}</p>
+            <p className="text-xs text-orange-500 mt-1 group-hover:text-orange-700 transition-colors">Awaiting Legal review →</p>
           </div>
-          <p className="text-4xl font-display font-bold text-orange-600 mt-3">{escalated}</p>
-          <p className="text-xs text-orange-500 mt-1">Awaiting Legal review</p>
-        </div>
+        </Link>
 
         {/* Approved */}
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <p className="text-sm font-medium text-green-700">Approved</p>
-            <CheckCircle2 className="w-5 h-5 text-green-600" />
+        <Link href="/invoices?status=ready_to_pay" className="block group">
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-green-400">
+            <div className="flex items-start justify-between">
+              <p className="text-sm font-medium text-green-700">Approved</p>
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
+            </div>
+            <p className="text-4xl font-display font-bold text-green-700 mt-3">{approved}</p>
+            <p className="text-xs text-green-600 mt-1 group-hover:text-green-800 transition-colors">Successfully processed →</p>
           </div>
-          <p className="text-4xl font-display font-bold text-green-700 mt-3">{approved}</p>
-          <p className="text-xs text-green-600 mt-1">Successfully processed</p>
-        </div>
+        </Link>
 
         {/* Total Value */}
-        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 shadow-sm">
-          <div className="flex items-start justify-between">
-            <p className="text-sm font-medium text-blue-700">Total Value</p>
-            <TrendingDown className="w-5 h-5 text-blue-600" />
+        <Link href="/invoices" className="block group">
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-blue-400">
+            <div className="flex items-start justify-between">
+              <p className="text-sm font-medium text-blue-700">Total Value</p>
+              <TrendingDown className="w-5 h-5 text-blue-600" />
+            </div>
+            <p className="text-2xl font-display font-bold text-blue-700 mt-3 leading-tight">
+              {totalAmount > 0
+                ? new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", notation: "compact", maximumFractionDigits: 1 }).format(totalAmount)
+                : "—"}
+            </p>
+            <p className="text-xs text-blue-600 mt-1 group-hover:text-blue-800 transition-colors">{invoices.length} invoice{invoices.length !== 1 ? "s" : ""} tracked →</p>
           </div>
-          <p className="text-2xl font-display font-bold text-blue-700 mt-3 leading-tight">
-            {totalAmount > 0
-              ? new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", notation: "compact", maximumFractionDigits: 1 }).format(totalAmount)
-              : "—"}
-          </p>
-          <p className="text-xs text-blue-600 mt-1">{invoices.length} invoice{invoices.length !== 1 ? "s" : ""} tracked</p>
-        </div>
+        </Link>
       </div>
 
       {/* Content Row */}

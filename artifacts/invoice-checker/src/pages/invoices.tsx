@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { useState, useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
 import {
   useListInvoices,
   useCreateInvoice,
@@ -721,11 +721,21 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
 
 export default function Invoices() {
   const [, navigate] = useLocation();
+  const searchString = useSearch();
+
+  const initialStatus = new URLSearchParams(searchString).get("status") ?? "";
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [addOpen, setAddOpen] = useState(false);
+
+  useEffect(() => {
+    const s = new URLSearchParams(searchString).get("status") ?? "";
+    setStatusFilter(s);
+    setPage(1);
+  }, [searchString]);
 
   const params: ListInvoicesParams = {
     page,
