@@ -911,13 +911,22 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
   issues.push(...greyIssues);
 
   if (prevRunIds.length > 0) {
-    const newRuleCodes = new Set(issues.map(iss => iss.ruleCode));
+    const immediatelyPreviousRunId = Math.max(...prevRunIds);
+    const newIssueSignatures = new Set(
+      issues.map(iss => `${iss.ruleCode}::${iss.invoiceItemId ?? "invoice"}`)
+    );
     const oldIssues = await db
-      .select({ id: issuesTable.id, ruleCode: issuesTable.ruleCode })
+      .select({ id: issuesTable.id, ruleCode: issuesTable.ruleCode, invoiceItemId: issuesTable.invoiceItemId, issueStatus: issuesTable.issueStatus })
       .from(issuesTable)
-      .where(inArray(issuesTable.analysisRunId, prevRunIds));
+      .where(eq(issuesTable.analysisRunId, immediatelyPreviousRunId));
     const staleIssueIds = oldIssues
-      .filter(iss => !newRuleCodes.has(iss.ruleCode))
+      .filter(iss => {
+        const sig = `${iss.ruleCode}::${iss.invoiceItemId ?? "invoice"}`;
+        const stillFires = newIssueSignatures.has(sig);
+        const decidedStatuses: string[] = ["accepted_by_legal_ops", "rejected_by_legal_ops", "accepted_by_internal_lawyer", "rejected_by_internal_lawyer", "no_longer_applicable"];
+        const isDecided = decidedStatuses.includes(iss.issueStatus ?? "open");
+        return !stillFires && !isDecided;
+      })
       .map(iss => iss.id);
     if (staleIssueIds.length > 0) {
       await db.update(issuesTable)

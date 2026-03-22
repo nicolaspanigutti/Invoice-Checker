@@ -643,6 +643,22 @@ router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), asyn
     });
   } catch (err) {
     console.error("Re-run analysis failed:", err);
+    try {
+      await db.update(invoicesTable)
+        .set({ invoiceStatus: oldStatus })
+        .where(eq(invoicesTable.id, id));
+      await db.insert(auditEventsTable).values({
+        entityType: "invoice",
+        entityId: id,
+        eventType: "state_change",
+        actorId,
+        beforeJson: { status: "extracting_data" },
+        afterJson: { status: oldStatus },
+        reason: "Re-run failed unexpectedly — invoice status restored",
+      });
+    } catch (rollbackErr) {
+      console.error("Failed to restore invoice status after re-run error:", rollbackErr);
+    }
     res.status(500).json({ error: "Re-run analysis failed unexpectedly." });
   }
 });
