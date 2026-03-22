@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListLawFirms,
@@ -33,11 +33,81 @@ const TERM_LABELS: Record<string, string> = {
   best_friend_firms_json: "Best Friend Firms",
 };
 
-function formatTermValue(value: unknown): string {
+type DiscountBand = { from?: number; to?: number | null; pct?: number; threshold?: number; method?: string };
+type ExpensePolicy = { allowed?: string[]; not_allowed?: string[]; caps?: Record<string, number> };
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return `${n / 1_000_000}M`;
+  if (n >= 1_000) return `${n / 1_000}k`;
+  return String(n);
+}
+
+function formatDiscountThresholds(bands: DiscountBand[]): React.ReactNode {
+  if (!bands.length) return "—";
+  return (
+    <div className="space-y-0.5">
+      {bands.map((b, i) => {
+        const from = b.from ?? b.threshold ?? 0;
+        const to = b.to;
+        const pct = b.pct ?? 0;
+        const range = to != null ? `${fmtNum(from)} – ${fmtNum(to)}` : `${fmtNum(from)}+`;
+        return (
+          <div key={i} className="text-xs text-right">
+            <span className="text-muted-foreground">{range}:</span>{" "}
+            <span className="font-semibold">{pct}%</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function formatExpensePolicy(policy: ExpensePolicy): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  if (policy.allowed?.length) {
+    parts.push(
+      <div key="allowed" className="text-xs text-right">
+        <span className="text-muted-foreground">Allowed: </span>
+        <span className="font-medium">{policy.allowed.join(", ")}</span>
+      </div>
+    );
+  }
+  if (policy.not_allowed?.length) {
+    parts.push(
+      <div key="denied" className="text-xs text-right">
+        <span className="text-muted-foreground">Not allowed: </span>
+        <span className="font-medium">{policy.not_allowed.join(", ")}</span>
+      </div>
+    );
+  }
+  if (policy.caps && Object.keys(policy.caps).length > 0) {
+    parts.push(
+      <div key="caps" className="text-xs text-right">
+        <span className="text-muted-foreground">Caps: </span>
+        <span className="font-medium">
+          {Object.entries(policy.caps).map(([k, v]) => `${k} £${v}`).join(", ")}
+        </span>
+      </div>
+    );
+  }
+  return parts.length ? <div className="space-y-0.5">{parts}</div> : "—";
+}
+
+function formatTermValue(termKey: string, value: unknown): React.ReactNode {
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "string" || typeof value === "number") return String(value);
-  if (Array.isArray(value)) return value.join(", ");
+
+  if (termKey === "discount_thresholds_json" && Array.isArray(value)) {
+    return formatDiscountThresholds(value as DiscountBand[]);
+  }
+  if (termKey === "expense_policy_json" && typeof value === "object" && !Array.isArray(value)) {
+    return formatExpensePolicy(value as ExpensePolicy);
+  }
+  if (termKey === "best_friend_firms_json" && Array.isArray(value)) {
+    return (value as string[]).join(", ");
+  }
+  if (Array.isArray(value)) return (value as unknown[]).map(v => typeof v === "string" ? v : JSON.stringify(v)).join(", ");
   return JSON.stringify(value);
 }
 
@@ -301,12 +371,12 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
                   <div className="space-y-2 bg-muted/30 rounded-2xl p-4">
                     {typedFirm.terms.map(term => (
                       <div key={term.id} className="flex items-start justify-between gap-4 text-sm">
-                        <span className="text-muted-foreground min-w-0 flex-1">{TERM_LABELS[term.termKey] ?? term.termKey}</span>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-foreground text-right text-xs max-w-[160px] truncate">{formatTermValue(term.termValue)}</span>
+                        <span className="text-muted-foreground min-w-0 flex-1 pt-0.5">{TERM_LABELS[term.termKey] ?? term.termKey}</span>
+                        <div className="flex items-start gap-2 flex-shrink-0">
+                          <div className="text-foreground text-right text-xs max-w-[200px]">{formatTermValue(term.termKey, term.termValue)}</div>
                           {term.verificationStatus === "verified"
-                            ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                            : <div className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 flex-shrink-0" />}
+                            ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                            : <div className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 flex-shrink-0 mt-0.5" />}
                         </div>
                       </div>
                     ))}
