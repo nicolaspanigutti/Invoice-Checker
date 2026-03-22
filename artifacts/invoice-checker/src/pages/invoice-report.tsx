@@ -3,7 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { useGenerateInvoiceReport, useGetInvoice, type InvoiceReport } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Download, Loader2, CheckCircle2, XCircle, Clock, AlertCircle, TriangleAlert, ChevronRight, FileText } from "lucide-react";
+import { ArrowLeft, Download, Loader2, CheckCircle2, XCircle, Clock, AlertCircle, TriangleAlert, ChevronRight, FileText, Users } from "lucide-react";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pending",
@@ -34,19 +34,6 @@ const RULE_TYPE_LABELS: Record<string, string> = {
   metadata: "Metadata",
 };
 
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  invoice_created: "Invoice created",
-  analysis_started: "Analysis started",
-  analysis_completed: "Analysis completed",
-  analysis_failed: "Analysis failed",
-  status_transition: "Status changed",
-  issue_accept: "Issue accepted",
-  issue_reject: "Issue rejected",
-  issue_delegate: "Issue delegated to Internal Lawyer",
-  issue_return: "Issue returned to Legal Ops",
-  comment_posted: "Comment posted",
-  document_added: "Document added",
-};
 
 function fmt(amount: string | null | undefined, currency: string) {
   if (!amount) return "—";
@@ -70,6 +57,37 @@ function SeverityIcon({ severity }: { severity: string }) {
 
 type ReportIssueItem = InvoiceReport["rejectedIssues"][0];
 
+const ROLE_LABELS: Record<string, string> = {
+  super_admin: "Admin",
+  legal_ops: "Legal Ops",
+  internal_lawyer: "Internal Lawyer",
+};
+
+const ACTION_COLOURS: Record<string, string> = {
+  accept: "bg-green-50 text-green-700 border-green-200",
+  reject: "bg-red-50 text-red-700 border-red-200",
+  delegate: "bg-purple-50 text-purple-700 border-purple-200",
+  return: "bg-blue-50 text-blue-700 border-blue-200",
+};
+
+function ParticipantChips({ participants }: { participants: ReportIssueItem["participants"] }) {
+  if (!participants || participants.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+      <Users className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+      {participants.map((p, i) => (
+        <span
+          key={i}
+          className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium ${ACTION_COLOURS[p.action] ?? "bg-muted text-muted-foreground border-border"}`}
+        >
+          {p.name}
+          <span className="opacity-60 font-normal">· {ROLE_LABELS[p.role] ?? p.role}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function IssueTable({ issues, title, colour }: { issues: ReportIssueItem[]; title: string; colour: string }) {
   if (issues.length === 0) return null;
   return (
@@ -83,13 +101,13 @@ function IssueTable({ issues, title, colour }: { issues: ReportIssueItem[]; titl
               <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Issue</th>
               <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden md:table-cell">Type</th>
               <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Recovery</th>
-              <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden lg:table-cell">Decision</th>
+              <th className="text-left px-4 py-2.5 font-medium text-muted-foreground hidden lg:table-cell">Decision &amp; Participants</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {issues.map(issue => (
               <tr key={issue.id} className="hover:bg-muted/20">
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 align-top">
                   <SeverityIcon severity={issue.severity} />
                 </td>
                 <td className="px-4 py-3">
@@ -98,26 +116,26 @@ function IssueTable({ issues, title, colour }: { issues: ReportIssueItem[]; titl
                     <p className="text-xs text-muted-foreground mt-1 italic">{issue.suggestedAction}</p>
                   )}
                 </td>
-                <td className="px-4 py-3 hidden md:table-cell">
+                <td className="px-4 py-3 hidden md:table-cell align-top">
                   <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
                     {RULE_TYPE_LABELS[issue.ruleType] ?? issue.ruleType}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-sm">
+                <td className="px-4 py-3 text-right font-mono text-sm align-top">
                   {issue.recoverableAmount ? (
                     <span className="text-red-700 font-semibold">
                       {parseFloat(issue.recoverableAmount).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </span>
                   ) : <span className="text-muted-foreground">—</span>}
                 </td>
-                <td className="px-4 py-3 hidden lg:table-cell">
+                <td className="px-4 py-3 hidden lg:table-cell align-top">
                   {issue.decisionAction ? (
                     <div className="text-xs">
-                      <span className="font-medium capitalize">{issue.decisionAction}</span>
-                      {issue.decisionActorName && <span className="text-muted-foreground"> by {issue.decisionActorName}</span>}
+                      <span className="font-medium capitalize">{issue.decisionAction.replace(/_/g, " ")}</span>
                       {issue.decisionNote && <p className="text-muted-foreground italic mt-0.5">"{issue.decisionNote}"</p>}
                     </div>
                   ) : <span className="text-muted-foreground text-xs">—</span>}
+                  <ParticipantChips participants={issue.participants} />
                 </td>
               </tr>
             ))}
@@ -321,31 +339,6 @@ export default function InvoiceReportPage() {
               <IssueTable issues={report.openIssues} title="Open Issues" colour="text-gray-600" />
             </section>
 
-            <section>
-              <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-                <ChevronRight className="h-4 w-4 text-primary" /> Audit Trail
-              </h2>
-              <div className="space-y-0 border border-border rounded-xl overflow-hidden">
-                {report.auditTrail.map((event, i) => (
-                  <div key={i} className={`flex items-start gap-3 px-4 py-3 text-sm ${i % 2 === 0 ? "bg-white" : "bg-muted/20"}`}>
-                    <div className="w-36 flex-shrink-0 text-xs text-muted-foreground font-mono pt-0.5">
-                      {fmtDateTime(event.createdAt)}
-                    </div>
-                    <div className="flex-1">
-                      <span className="font-medium text-foreground">
-                        {EVENT_TYPE_LABELS[event.eventType] ?? event.eventType.replace(/_/g, " ")}
-                      </span>
-                      {event.actorName && (
-                        <span className="text-muted-foreground ml-1">by {event.actorName}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {report.auditTrail.length === 0 && (
-                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">No audit events recorded</div>
-                )}
-              </div>
-            </section>
           </div>
         </div>
       </div>

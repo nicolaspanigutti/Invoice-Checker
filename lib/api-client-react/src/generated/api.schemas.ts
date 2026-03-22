@@ -762,6 +762,12 @@ export interface AuditEventResponse {
   createdAt: string;
 }
 
+export interface IssueParticipant {
+  name: string;
+  role: string;
+  action: string;
+}
+
 export interface ReportIssueItem {
   id: number;
   ruleCode: string;
@@ -776,6 +782,7 @@ export interface ReportIssueItem {
   decisionNote?: string | null;
   decisionActorName?: string | null;
   decisionActorRole?: string | null;
+  participants: IssueParticipant[];
 }
 
 export interface ReportAuditItem {

@@ -1083,6 +1083,13 @@ export const GenerateInvoiceReportResponse = zod.object({
       decisionNote: zod.string().nullish(),
       decisionActorName: zod.string().nullish(),
       decisionActorRole: zod.string().nullish(),
+      participants: zod.array(
+        zod.object({
+          name: zod.string(),
+          role: zod.string(),
+          action: zod.string(),
+        }),
+      ),
     }),
   ),
   acceptedIssues: zod.array(
@@ -1100,6 +1107,13 @@ export const GenerateInvoiceReportResponse = zod.object({
       decisionNote: zod.string().nullish(),
       decisionActorName: zod.string().nullish(),
       decisionActorRole: zod.string().nullish(),
+      participants: zod.array(
+        zod.object({
+          name: zod.string(),
+          role: zod.string(),
+          action: zod.string(),
+        }),
+      ),
     }),
   ),
   escalatedIssues: zod.array(
@@ -1117,6 +1131,13 @@ export const GenerateInvoiceReportResponse = zod.object({
       decisionNote: zod.string().nullish(),
       decisionActorName: zod.string().nullish(),
       decisionActorRole: zod.string().nullish(),
+      participants: zod.array(
+        zod.object({
+          name: zod.string(),
+          role: zod.string(),
+          action: zod.string(),
+        }),
+      ),
     }),
   ),
   openIssues: zod.array(
@@ -1134,6 +1155,13 @@ export const GenerateInvoiceReportResponse = zod.object({
       decisionNote: zod.string().nullish(),
       decisionActorName: zod.string().nullish(),
       decisionActorRole: zod.string().nullish(),
+      participants: zod.array(
+        zod.object({
+          name: zod.string(),
+          role: zod.string(),
+          action: zod.string(),
+        }),
+      ),
     }),
   ),
   auditTrail: zod.array(

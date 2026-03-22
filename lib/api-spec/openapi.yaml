@@ -2395,6 +2395,20 @@ components:
         - eventType
         - createdAt
 
+    IssueParticipant:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+        action:
+          type: string
+      required:
+        - name
+        - role
+        - action
+
     ReportIssueItem:
       type: object
       properties:
@@ -2431,6 +2445,10 @@ components:
         decisionActorRole:
           type: string
           nullable: true
+        participants:
+          type: array
+          items:
+            $ref: "#/components/schemas/IssueParticipant"
       required:
         - id
         - ruleCode
@@ -2438,6 +2456,7 @@ components:
         - severity
         - issueStatus
         - explanationText
+        - participants
 
     ReportAuditItem:
       type: object

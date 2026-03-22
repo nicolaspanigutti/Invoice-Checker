@@ -1148,29 +1148,42 @@ router.post("/invoices/:id/report", requireRole("super_admin", "legal_ops", "int
     .where(and(...conditions))
     .orderBy(issuesTable.id);
 
-  const latestDecisions = await db
-    .select()
+  // All decisions (chronological) for participant tracking
+  const allDecisions = await db
+    .select({ d: issueDecisionsTable, actorName: usersTable.displayName, actorRole: usersTable.role })
     .from(issueDecisionsTable)
-    .where(sql`issue_id IN (SELECT id FROM issues WHERE invoice_id = ${id})`)
-    .orderBy(desc(issueDecisionsTable.createdAt));
+    .leftJoin(usersTable, eq(issueDecisionsTable.actorId, usersTable.id))
+    .where(sql`${issueDecisionsTable.issueId} IN (SELECT id FROM issues WHERE invoice_id = ${id})`)
+    .orderBy(asc(issueDecisionsTable.createdAt));
 
-  const decisionByIssue = new Map<number, typeof issueDecisionsTable.$inferSelect & { actorName?: string | null }>();
-  for (const d of latestDecisions) {
-    if (!decisionByIssue.has(d.issueId)) {
-      decisionByIssue.set(d.issueId, d);
+  // Latest decision per issue (for decisionAction / decisionActorName)
+  const decisionByIssue = new Map<number, typeof allDecisions[0]>();
+  for (const row of [...allDecisions].reverse()) {
+    if (!decisionByIssue.has(row.d.issueId)) {
+      decisionByIssue.set(row.d.issueId, row);
     }
   }
 
-  const decisionActorNames = new Map<number, string | null>();
-  const uniqueActorIds = [...new Set(latestDecisions.map(d => d.actorId).filter(Boolean) as number[])];
-  if (uniqueActorIds.length > 0) {
-    const actors = await db.select({ id: usersTable.id, name: usersTable.displayName }).from(usersTable).where(sql`id = ANY(ARRAY[${sql.join(uniqueActorIds.map(aid => sql`${aid}`), sql`, `)}]::int[])`);
-    for (const a of actors) decisionActorNames.set(a.id, a.name);
+  // All unique participants per issue (dedup by actorId + action)
+  const participantsByIssue = new Map<number, Array<{ name: string; role: string; action: string }>>();
+  for (const row of allDecisions) {
+    const issueId = row.d.issueId;
+    if (!participantsByIssue.has(issueId)) participantsByIssue.set(issueId, []);
+    const list = participantsByIssue.get(issueId)!;
+    const alreadyPresent = list.some(
+      p => p.name === (row.actorName ?? "Unknown") && p.action === row.d.action
+    );
+    if (!alreadyPresent) {
+      list.push({
+        name: row.actorName ?? "Unknown",
+        role: row.actorRole ?? "unknown",
+        action: row.d.action,
+      });
+    }
   }
 
   function mapIssue(row: typeof allIssues[0]) {
-    const decision = decisionByIssue.get(row.i.id);
-    const actorName = decision?.actorId ? decisionActorNames.get(decision.actorId) ?? null : null;
+    const decisionRow = decisionByIssue.get(row.i.id);
     return {
       id: row.i.id,
       ruleCode: row.i.ruleCode,
@@ -1181,10 +1194,11 @@ router.post("/invoices/:id/report", requireRole("super_admin", "legal_ops", "int
       suggestedAction: row.i.suggestedAction,
       recoverableAmount: row.i.recoverableAmount,
       recoveryGroupKey: row.i.recoveryGroupKey,
-      decisionAction: decision?.action ?? null,
-      decisionNote: decision?.note ?? null,
-      decisionActorName: actorName,
-      decisionActorRole: decision?.actorRole ?? null,
+      decisionAction: decisionRow?.d.action ?? null,
+      decisionNote: decisionRow?.d.note ?? null,
+      decisionActorName: decisionRow?.actorName ?? null,
+      decisionActorRole: decisionRow?.actorRole ?? null,
+      participants: participantsByIssue.get(row.i.id) ?? [],
     };
   }
 
@@ -1239,7 +1253,7 @@ router.post("/invoices/:id/report", requireRole("super_admin", "legal_ops", "int
   let executiveSummary = "";
   try {
     const aiResponse = await openai.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-5.2",
       max_completion_tokens: 300,
       messages: [
         { role: "system", content: "You are a senior legal operations analyst. Write a concise 3-5 sentence executive summary for a law firm invoice review report. Use professional, plain English — no jargon, no internal metric names, no system codes. Output only the summary paragraph." },
@@ -1327,7 +1341,7 @@ router.post("/invoices/:id/email-draft", requireRole("super_admin", "legal_ops",
   let body = "";
   try {
     const aiResponse = await openai.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-5.2",
       max_completion_tokens: 600,
       messages: [
         {
@@ -1416,7 +1430,7 @@ router.get("/invoices/:id/report/pdf", requireRole("super_admin", "legal_ops", "
   let executiveSummary = "";
   try {
     const aiResp = await openai.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-5.2",
       max_completion_tokens: 300,
       messages: [
         { role: "system", content: "You are a senior legal operations analyst. Write a concise 3-5 sentence executive summary for a law firm invoice review report. Use professional, plain English — no jargon, no internal metric names, no system codes. Output only the summary paragraph." },
