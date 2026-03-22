@@ -931,7 +931,7 @@ router.post("/invoices/:id/comments", requireRole("super_admin", "legal_ops", "i
     invoiceItemId?: number;
   };
 
-  const VALID_COMMENT_SCOPES = new Set(["general", "issue", "line_item", "issue_inline"]);
+  const VALID_COMMENT_SCOPES = new Set(["general", "issue_inline", "line_inline", "escalation", "decision"]);
   if (!content?.trim()) { res.status(400).json({ error: "content is required" }); return; }
   if (!commentScope || !VALID_COMMENT_SCOPES.has(commentScope)) {
     res.status(400).json({ error: `commentScope must be one of: ${[...VALID_COMMENT_SCOPES].join(", ")}` });
