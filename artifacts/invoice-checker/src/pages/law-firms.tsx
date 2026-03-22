@@ -137,6 +137,108 @@ type FormData = {
   jurisdictions: string; practiceAreas: string;
 };
 
+const PRACTICE_AREAS = [
+  "Mergers & Acquisitions",
+  "Corporate Finance",
+  "Regulatory & Compliance",
+  "Litigation & Dispute Resolution",
+  "Real Estate",
+  "Employment & Labor",
+  "Tax",
+  "Intellectual Property",
+  "Banking & Finance",
+  "Restructuring & Insolvency",
+];
+
+const RELATIONSHIP_PARTNERS = [
+  "Alexandra Morgan",
+  "James Harrington",
+  "Sophia Belmont",
+  "David Caldwell",
+  "Emma Richardson",
+  "Michael Fraser",
+  "Catherine Lawton",
+  "Robert Ashford",
+  "Victoria Pence",
+  "Thomas Whitmore",
+];
+
+const JURISDICTIONS = [
+  "England & Wales",
+  "United States (NY)",
+  "Spain",
+  "Germany",
+  "France",
+  "Netherlands",
+  "Singapore",
+  "Hong Kong",
+  "UAE (DIFC)",
+  "Australia",
+];
+
+function MultiSelectDropdown({ options, value, onChange, placeholder }: {
+  options: string[];
+  value: string;
+  onChange: (val: string) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = value ? value.split(",").map(s => s.trim()).filter(Boolean) : [];
+
+  React.useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  function toggle(opt: string) {
+    const next = selected.includes(opt)
+      ? selected.filter(s => s !== opt)
+      : [...selected, opt];
+    onChange(next.join(", "));
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all text-sm text-left flex items-center justify-between gap-2"
+      >
+        <span className={selected.length === 0 ? "text-muted-foreground" : "text-foreground"}>
+          {selected.length === 0 ? placeholder : selected.join(", ")}
+        </span>
+        <svg className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-background border border-border rounded-xl shadow-lg overflow-hidden">
+          <div className="max-h-52 overflow-y-auto py-1">
+            {options.map(opt => (
+              <label key={opt} className="flex items-center gap-2.5 px-4 py-2 hover:bg-muted/40 cursor-pointer text-sm">
+                <input
+                  type="checkbox"
+                  className="accent-primary h-3.5 w-3.5 flex-shrink-0"
+                  checked={selected.includes(opt)}
+                  onChange={() => toggle(opt)}
+                />
+                <span>{opt}</span>
+              </label>
+            ))}
+          </div>
+          {selected.length > 0 && (
+            <div className="border-t border-border px-4 py-2">
+              <button type="button" onClick={() => onChange("")} className="text-xs text-muted-foreground hover:text-foreground">Clear all</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FirmFormFields({ data, onChange }: { data: FormData; onChange: (field: string, value: string) => void }) {
   const inputClass = "w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all text-sm";
 
@@ -155,7 +257,10 @@ function FirmFormFields({ data, onChange }: { data: FormData; onChange: (field: 
       </div>
       <div>
         <label className="block text-sm font-semibold text-foreground mb-1.5">Relationship Partner</label>
-        <input className={inputClass} value={data.relationshipPartner} onChange={e => onChange("relationshipPartner", e.target.value)} placeholder="e.g. Alexandra Morgan" />
+        <select className={inputClass} value={data.relationshipPartner} onChange={e => onChange("relationshipPartner", e.target.value)}>
+          <option value="">— Select partner —</option>
+          {RELATIONSHIP_PARTNERS.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
       </div>
       <div>
         <label className="block text-sm font-semibold text-foreground mb-1.5">Contact Name</label>
@@ -170,12 +275,22 @@ function FirmFormFields({ data, onChange }: { data: FormData; onChange: (field: 
         <input className={inputClass} value={data.contactPhone} onChange={e => onChange("contactPhone", e.target.value)} placeholder="e.g. +44 20 7000 0001" />
       </div>
       <div className="col-span-2">
-        <label className="block text-sm font-semibold text-foreground mb-1.5">Jurisdictions <span className="text-muted-foreground font-normal">(comma-separated)</span></label>
-        <input className={inputClass} value={data.jurisdictions} onChange={e => onChange("jurisdictions", e.target.value)} placeholder="e.g. England & Wales, Spain" />
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Jurisdictions</label>
+        <MultiSelectDropdown
+          options={JURISDICTIONS}
+          value={data.jurisdictions}
+          onChange={val => onChange("jurisdictions", val)}
+          placeholder="Select jurisdictions…"
+        />
       </div>
       <div className="col-span-2">
-        <label className="block text-sm font-semibold text-foreground mb-1.5">Practice Areas <span className="text-muted-foreground font-normal">(comma-separated)</span></label>
-        <input className={inputClass} value={data.practiceAreas} onChange={e => onChange("practiceAreas", e.target.value)} placeholder="e.g. M&A, Finance, Regulatory" />
+        <label className="block text-sm font-semibold text-foreground mb-1.5">Practice Areas</label>
+        <MultiSelectDropdown
+          options={PRACTICE_AREAS}
+          value={data.practiceAreas}
+          onChange={val => onChange("practiceAreas", val)}
+          placeholder="Select practice areas…"
+        />
       </div>
       <div className="col-span-2">
         <label className="block text-sm font-semibold text-foreground mb-1.5">Notes</label>
