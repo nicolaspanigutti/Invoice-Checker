@@ -1,4 +1,4 @@
-import { db, invoicesTable, invoiceDocumentsTable, lawFirmsTable, panelBaselineDocumentsTable } from "@workspace/db";
+import { db, invoicesTable, invoiceDocumentsTable, lawFirmsTable, panelBaselineDocumentsTable, firmTermsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 export interface CompletenessIssue {
@@ -106,11 +106,20 @@ export async function checkCompleteness(invoiceId: number): Promise<Completeness
           .limit(1);
 
         if (!activeTCDoc) {
-          issues.push({
-            code: "REQUIRED_SOURCE_MISSING",
-            message: "No active Panel T&C document exists. Activate a T&C document before running analysis on panel firm invoices.",
-            field: "panelTC",
-          });
+          // Also accept law-firm-level terms extracted from a T&C uploaded during firm creation
+          const [firmTerm] = await db
+            .select({ id: firmTermsTable.id })
+            .from(firmTermsTable)
+            .where(eq(firmTermsTable.lawFirmId, firm.id))
+            .limit(1);
+
+          if (!firmTerm) {
+            issues.push({
+              code: "REQUIRED_SOURCE_MISSING",
+              message: "No Panel T&C document exists for this firm. Upload a T&C document on the Law Firm page or activate a global Panel T&C baseline.",
+              field: "panelTC",
+            });
+          }
         }
       }
     }
