@@ -20,6 +20,13 @@ import {
   ShieldCheck, Archive, CheckCircle2, Clock, AlertCircle,
   Upload, Sparkles, Pencil, Check,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -529,8 +536,12 @@ function RatesTable({ documentId, firmFilter, jurisdictionFilter }: { documentId
 function RatesDocumentsSection() {
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [firmFilter, setFirmFilter] = useState("");
-  const [jurisdictionFilter, setJurisdictionFilter] = useState("");
+  const [firmFilter, setFirmFilter] = useState("__all__");
+  const [jurisdictionFilter, setJurisdictionFilter] = useState("__all__");
+
+  const { data: allRatesForOptions = [] } = useListPanelRates({});
+  const uniqueFirmNames = [...new Set(allRatesForOptions.map(r => r.lawFirmName))].sort();
+  const uniqueJurisdictions = [...new Set(allRatesForOptions.map(r => r.jurisdiction))].sort();
 
   const { data: documents = [], isLoading: docsLoading } = useListPanelBaselineDocuments(
     { documentKind: "rates" },
@@ -581,17 +592,45 @@ function RatesDocumentsSection() {
 
       {/* Rates table with filters */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input value={firmFilter} onChange={e => setFirmFilter(e.target.value)} placeholder="Filter by firm name..." className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 text-sm" />
+        <div className="flex-1">
+          <Select value={firmFilter} onValueChange={setFirmFilter}>
+            <SelectTrigger className="w-full rounded-xl border border-border bg-card text-sm h-10">
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <SelectValue placeholder="Filter by firm name..." />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All firms</SelectItem>
+              {uniqueFirmNames.map(name => (
+                <SelectItem key={name} value={name}>{name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <div className="relative flex-1">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input value={jurisdictionFilter} onChange={e => setJurisdictionFilter(e.target.value)} placeholder="Filter by jurisdiction..." className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 text-sm" />
+        <div className="flex-1">
+          <Select value={jurisdictionFilter} onValueChange={setJurisdictionFilter}>
+            <SelectTrigger className="w-full rounded-xl border border-border bg-card text-sm h-10">
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <SelectValue placeholder="Filter by jurisdiction..." />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All jurisdictions</SelectItem>
+              {uniqueJurisdictions.map(j => (
+                <SelectItem key={j} value={j}>{j}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
-      <RatesTable documentId={activeDoc?.id} firmFilter={firmFilter} jurisdictionFilter={jurisdictionFilter} />
+      <RatesTable
+        documentId={activeDoc?.id}
+        firmFilter={firmFilter === "__all__" ? "" : firmFilter}
+        jurisdictionFilter={jurisdictionFilter === "__all__" ? "" : jurisdictionFilter}
+      />
 
       {showCreate && <AddRatesDocumentModal onClose={() => setShowCreate(false)} />}
     </div>
