@@ -70,34 +70,36 @@ function formatDiscountThresholds(bands: DiscountBand[]): React.ReactNode {
 }
 
 function formatExpensePolicy(policy: ExpensePolicy): React.ReactNode {
-  const parts: React.ReactNode[] = [];
-  if (policy.allowed?.length) {
-    parts.push(
-      <div key="allowed" className="text-xs text-right">
-        <span className="text-muted-foreground">Allowed: </span>
-        <span className="font-medium">{policy.allowed.join(", ")}</span>
-      </div>
-    );
-  }
-  if (policy.not_allowed?.length) {
-    parts.push(
-      <div key="denied" className="text-xs text-right">
-        <span className="text-muted-foreground">Not allowed: </span>
-        <span className="font-medium">{policy.not_allowed.join(", ")}</span>
-      </div>
-    );
-  }
-  if (policy.caps && Object.keys(policy.caps).length > 0) {
-    parts.push(
-      <div key="caps" className="text-xs text-right">
-        <span className="text-muted-foreground">Caps: </span>
-        <span className="font-medium">
-          {Object.entries(policy.caps).map(([k, v]) => `${k} £${v}`).join(", ")}
-        </span>
-      </div>
-    );
-  }
-  return parts.length ? <div className="space-y-0.5">{parts}</div> : "—";
+  return (
+    <div className="grid grid-cols-2 gap-3 w-full">
+      {(policy.allowed?.length ?? 0) > 0 && (
+        <div>
+          <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide">Allowed</span>
+          <ul className="mt-1 space-y-1">
+            {policy.allowed!.map((item, i) => (
+              <li key={i} className="flex items-start gap-1 text-xs text-foreground">
+                <span className="text-emerald-500 shrink-0 mt-0.5">✓</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(policy.not_allowed?.length ?? 0) > 0 && (
+        <div>
+          <span className="text-[10px] font-semibold text-red-600 uppercase tracking-wide">Not Allowed</span>
+          <ul className="mt-1 space-y-1">
+            {policy.not_allowed!.map((item, i) => (
+              <li key={i} className="flex items-start gap-1 text-xs text-foreground">
+                <span className="text-red-500 shrink-0 mt-0.5">✕</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function formatTermValue(termKey: string, value: unknown): React.ReactNode {
@@ -877,32 +879,49 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
                 )}
                 {typedFirm.terms && typedFirm.terms.length > 0 && !showTcUpload && (
                   <div className="space-y-2 bg-muted/30 rounded-2xl p-4">
-                    {typedFirm.terms.map(term => (
+                    {typedFirm.terms.map(term => {
+                      const isWide = term.termKey === "travel_policy" || term.termKey === "expense_policy_json";
+                      const verifyBtn = term.verificationStatus === "verified" ? (
+                        <span title="Verified manually"><CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" /></span>
+                      ) : (
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span title="AI-extracted — pending manual verification"><Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" /></span>
+                          <button
+                            onClick={() => handleVerifyTerm(term.termKey)}
+                            disabled={verifyingTermKey === term.termKey}
+                            title="Click to verify this term"
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-emerald-400 text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {verifyingTermKey === term.termKey
+                              ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                              : <CheckCircle2 className="w-2.5 h-2.5" />}
+                            Verify
+                          </button>
+                        </div>
+                      );
+
+                      if (isWide) {
+                        return (
+                          <div key={term.id} className="flex flex-col gap-1.5 text-sm pt-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-muted-foreground text-xs font-medium">{TERM_LABELS[term.termKey] ?? term.termKey}</span>
+                              {verifyBtn}
+                            </div>
+                            <div className="text-foreground text-xs">{formatTermValue(term.termKey, term.termValue)}</div>
+                          </div>
+                        );
+                      }
+
+                      return (
                       <div key={term.id} className="flex items-start justify-between gap-4 text-sm">
                         <span className="text-muted-foreground min-w-0 flex-1 pt-0.5">{TERM_LABELS[term.termKey] ?? term.termKey}</span>
                         <div className="flex items-start gap-2 flex-shrink-0">
                           <div className="text-foreground text-right text-xs max-w-[200px]">{formatTermValue(term.termKey, term.termValue)}</div>
-                          {term.verificationStatus === "verified" ? (
-                            <span title="Verified manually"><CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" /></span>
-                          ) : (
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <span title="AI-extracted — pending manual verification"><Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" /></span>
-                              <button
-                                onClick={() => handleVerifyTerm(term.termKey)}
-                                disabled={verifyingTermKey === term.termKey}
-                                title="Click to verify this term"
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-emerald-400 text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {verifyingTermKey === term.termKey
-                                  ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                  : <CheckCircle2 className="w-2.5 h-2.5" />}
-                                Verify
-                              </button>
-                            </div>
-                          )}
+                          {verifyBtn}
                         </div>
                       </div>
-                    ))}
+                    );
+                    })}
                     <div className="pt-2 mt-1 border-t border-border/50 flex items-center gap-4 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <CheckCircle className="w-3 h-3 text-emerald-500" />

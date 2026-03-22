@@ -330,6 +330,8 @@ const TC_TERM_LABELS: Record<string, string> = {
   best_friend_firms_json: "Best Friend Firms",
 };
 
+const WIDE_TERM_KEYS = new Set(["travel_policy", "expense_policy_json"]);
+
 function formatTCTermValue(termKey: string, value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -346,17 +348,54 @@ function formatTCTermValue(termKey: string, value: unknown): string {
     if (termKey === "best_friend_firms_json") return (value as string[]).join(", ");
     return JSON.stringify(value);
   }
-  if (typeof value === "object") {
-    if (termKey === "expense_policy_json") {
-      const p = value as { allowed?: string[]; not_allowed?: string[] };
-      const parts = [];
-      if (p.allowed?.length) parts.push(`Allowed: ${p.allowed.join(", ")}`);
-      if (p.not_allowed?.length) parts.push(`Not allowed: ${p.not_allowed.join(", ")}`);
-      return parts.join(" · ") || "—";
-    }
-    return JSON.stringify(value);
-  }
+  if (typeof value === "object") return JSON.stringify(value);
   return "—";
+}
+
+function TravelPolicyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="px-5 py-3 flex flex-col gap-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <p className="text-xs text-foreground leading-relaxed">{value}</p>
+    </div>
+  );
+}
+
+function ExpensePolicyRow({ label, value }: { label: string; value: unknown }) {
+  const p = (value ?? {}) as { allowed?: string[]; not_allowed?: string[] };
+  return (
+    <div className="px-5 py-3 flex flex-col gap-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="grid grid-cols-2 gap-4">
+        {(p.allowed?.length ?? 0) > 0 && (
+          <div>
+            <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wide">Allowed</span>
+            <ul className="mt-1.5 space-y-1">
+              {p.allowed!.map((item, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-xs text-foreground">
+                  <span className="text-emerald-500 shrink-0 mt-0.5">✓</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {(p.not_allowed?.length ?? 0) > 0 && (
+          <div>
+            <span className="text-[10px] font-semibold text-red-600 uppercase tracking-wide">Not Allowed</span>
+            <ul className="mt-1.5 space-y-1">
+              {p.not_allowed!.map((item, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-xs text-foreground">
+                  <span className="text-red-500 shrink-0 mt-0.5">✕</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function FirmTermCard({ firm }: { firm: LawFirm }) {
@@ -384,14 +423,23 @@ function FirmTermCard({ firm }: { firm: LawFirm }) {
         <span className="ml-auto text-xs text-muted-foreground">{terms.length} terms</span>
       </div>
       <div className="divide-y divide-border">
-        {terms.map(term => (
-          <div key={term.termKey} className="flex items-start justify-between gap-4 px-5 py-2.5">
-            <span className="text-xs text-muted-foreground">{TC_TERM_LABELS[term.termKey] ?? term.termKey}</span>
-            <span className="text-xs text-foreground font-medium text-right max-w-[220px]">
-              {formatTCTermValue(term.termKey, term.termValue)}
-            </span>
-          </div>
-        ))}
+        {terms.map(term => {
+          const label = TC_TERM_LABELS[term.termKey] ?? term.termKey;
+          if (term.termKey === "travel_policy" && typeof term.termValue === "string") {
+            return <TravelPolicyRow key={term.termKey} label={label} value={term.termValue} />;
+          }
+          if (term.termKey === "expense_policy_json") {
+            return <ExpensePolicyRow key={term.termKey} label={label} value={term.termValue} />;
+          }
+          return (
+            <div key={term.termKey} className="flex items-start justify-between gap-4 px-5 py-2.5">
+              <span className="text-xs text-muted-foreground">{label}</span>
+              <span className="text-xs text-foreground font-medium text-right max-w-[220px]">
+                {formatTCTermValue(term.termKey, term.termValue)}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
