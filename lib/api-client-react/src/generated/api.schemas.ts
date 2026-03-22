@@ -720,20 +720,58 @@ export interface AuditEventResponse {
   createdAt: string;
 }
 
-export type ListInvoiceCommentsParamsScope =
-  (typeof ListInvoiceCommentsParamsScope)[keyof typeof ListInvoiceCommentsParamsScope];
+export interface ReportIssueItem {
+  id: number;
+  ruleCode: string;
+  ruleType: string;
+  severity: string;
+  issueStatus: string;
+  explanationText: string;
+  suggestedAction?: string | null;
+  recoverableAmount?: string | null;
+  recoveryGroupKey?: string | null;
+  decisionAction?: string | null;
+  decisionNote?: string | null;
+  decisionActorName?: string | null;
+  decisionActorRole?: string | null;
+}
 
-export const ListInvoiceCommentsParamsScope = {
-  general: "general",
-  issue_inline: "issue_inline",
-  line_inline: "line_inline",
-  escalation: "escalation",
-  decision: "decision",
-} as const;
+export interface ReportAuditItem {
+  eventType: string;
+  actorName?: string | null;
+  actorRole?: string | null;
+  createdAt: string;
+  detail?: unknown | null;
+}
 
-export interface ListInvoiceCommentsParams {
-  issueId?: number;
-  scope?: ListInvoiceCommentsParamsScope;
+export interface InvoiceReport {
+  invoiceId: number;
+  invoiceNumber: string;
+  lawFirmName?: string | null;
+  matterName?: string | null;
+  jurisdiction?: string | null;
+  currency: string;
+  totalAmount?: string | null;
+  invoiceDate?: string | null;
+  reviewOutcome?: string | null;
+  invoiceStatus: string;
+  amountAtRisk?: string | null;
+  confirmedRecovery?: string | null;
+  executiveSummary: string;
+  rejectedIssues: ReportIssueItem[];
+  acceptedIssues: ReportIssueItem[];
+  escalatedIssues: ReportIssueItem[];
+  openIssues: ReportIssueItem[];
+  auditTrail: ReportAuditItem[];
+  generatedAt: string;
+}
+
+export interface EmailDraft {
+  to?: string | null;
+  subject: string;
+  body: string;
+  lawFirmName?: string | null;
+  lawFirmContactName?: string | null;
 }
 
 export type ListLawFirmsParams = {
@@ -791,6 +829,11 @@ export const ListInvoicesStatus = {
 
 export type ListInvoiceIssuesParams = {
   analysisRunId?: number;
+};
+
+export type ListInvoiceCommentsParams = {
+  issueId?: number;
+  scope?: ListInvoiceCommentsScope;
 };
 
 export type ListInvoiceCommentsScope =

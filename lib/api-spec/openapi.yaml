@@ -895,6 +895,62 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /invoices/{id}/report:
+    post:
+      operationId: generateInvoiceReport
+      tags: [invoices]
+      summary: Generate structured review report with AI executive summary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Generated report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceReport"
+        "404":
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /invoices/{id}/email-draft:
+    post:
+      operationId: generateEmailDraft
+      tags: [invoices]
+      summary: Generate AI email draft to disputed law firm
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Email draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailDraft"
+        "400":
+          description: Invoice not in pending_law_firm state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /invoices/{id}/audit-events:
     get:
       operationId: listInvoiceAuditEvents
@@ -2030,11 +2086,159 @@ components:
         - eventType
         - createdAt
 
-    ListInvoiceCommentsParams:
+    ReportIssueItem:
       type: object
       properties:
-        issueId:
+        id:
           type: integer
-        scope:
+        ruleCode:
           type: string
-          enum: [general, issue_inline, line_inline, escalation, decision]
+        ruleType:
+          type: string
+        severity:
+          type: string
+        issueStatus:
+          type: string
+        explanationText:
+          type: string
+        suggestedAction:
+          type: string
+          nullable: true
+        recoverableAmount:
+          type: string
+          nullable: true
+        recoveryGroupKey:
+          type: string
+          nullable: true
+        decisionAction:
+          type: string
+          nullable: true
+        decisionNote:
+          type: string
+          nullable: true
+        decisionActorName:
+          type: string
+          nullable: true
+        decisionActorRole:
+          type: string
+          nullable: true
+      required:
+        - id
+        - ruleCode
+        - ruleType
+        - severity
+        - issueStatus
+        - explanationText
+
+    ReportAuditItem:
+      type: object
+      properties:
+        eventType:
+          type: string
+        actorName:
+          type: string
+          nullable: true
+        actorRole:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        detail:
+          nullable: true
+      required:
+        - eventType
+        - createdAt
+
+    InvoiceReport:
+      type: object
+      properties:
+        invoiceId:
+          type: integer
+        invoiceNumber:
+          type: string
+        lawFirmName:
+          type: string
+          nullable: true
+        matterName:
+          type: string
+          nullable: true
+        jurisdiction:
+          type: string
+          nullable: true
+        currency:
+          type: string
+        totalAmount:
+          type: string
+          nullable: true
+        invoiceDate:
+          type: string
+          nullable: true
+        reviewOutcome:
+          type: string
+          nullable: true
+        invoiceStatus:
+          type: string
+        amountAtRisk:
+          type: string
+          nullable: true
+        confirmedRecovery:
+          type: string
+          nullable: true
+        executiveSummary:
+          type: string
+        rejectedIssues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportIssueItem"
+        acceptedIssues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportIssueItem"
+        escalatedIssues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportIssueItem"
+        openIssues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportIssueItem"
+        auditTrail:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportAuditItem"
+        generatedAt:
+          type: string
+          format: date-time
+      required:
+        - invoiceId
+        - invoiceNumber
+        - currency
+        - invoiceStatus
+        - executiveSummary
+        - rejectedIssues
+        - acceptedIssues
+        - escalatedIssues
+        - openIssues
+        - auditTrail
+        - generatedAt
+
+    EmailDraft:
+      type: object
+      properties:
+        to:
+          type: string
+          nullable: true
+        subject:
+          type: string
+        body:
+          type: string
+        lawFirmName:
+          type: string
+          nullable: true
+        lawFirmContactName:
+          type: string
+          nullable: true
+      required:
+        - subject
+        - body

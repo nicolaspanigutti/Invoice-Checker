@@ -9,6 +9,7 @@ import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Invoices from "@/pages/invoices";
 import InvoiceDetail from "@/pages/invoice-detail";
+import InvoiceReport from "@/pages/invoice-report";
 import LawFirms from "@/pages/law-firms";
 import Rates from "@/pages/rates";
 import Rules from "@/pages/rules";
@@ -72,6 +73,7 @@ function MainApp() {
       <Switch>
         <Route path="/"><ProtectedRoute component={Dashboard} user={user} /></Route>
         <Route path="/invoices"><ProtectedRoute component={Invoices} user={user} /></Route>
+        <Route path="/invoices/:id/report"><ProtectedRoute component={InvoiceReport} user={user} /></Route>
         <Route path="/invoices/:id"><ProtectedRoute component={InvoiceDetail} user={user} /></Route>
         <Route path="/law-firms"><ProtectedRoute component={LawFirms} allowedRoles={["super_admin", "legal_ops"]} user={user} /></Route>
         <Route path="/rates"><ProtectedRoute component={Rates} allowedRoles={["super_admin", "legal_ops"]} user={user} /></Route>

@@ -962,6 +962,122 @@ export const PostInvoiceCommentBody = zod.object({
 });
 
 /**
+ * @summary Generate structured review report with AI executive summary
+ */
+export const GenerateInvoiceReportParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GenerateInvoiceReportResponse = zod.object({
+  invoiceId: zod.number(),
+  invoiceNumber: zod.string(),
+  lawFirmName: zod.string().nullish(),
+  matterName: zod.string().nullish(),
+  jurisdiction: zod.string().nullish(),
+  currency: zod.string(),
+  totalAmount: zod.string().nullish(),
+  invoiceDate: zod.string().nullish(),
+  reviewOutcome: zod.string().nullish(),
+  invoiceStatus: zod.string(),
+  amountAtRisk: zod.string().nullish(),
+  confirmedRecovery: zod.string().nullish(),
+  executiveSummary: zod.string(),
+  rejectedIssues: zod.array(
+    zod.object({
+      id: zod.number(),
+      ruleCode: zod.string(),
+      ruleType: zod.string(),
+      severity: zod.string(),
+      issueStatus: zod.string(),
+      explanationText: zod.string(),
+      suggestedAction: zod.string().nullish(),
+      recoverableAmount: zod.string().nullish(),
+      recoveryGroupKey: zod.string().nullish(),
+      decisionAction: zod.string().nullish(),
+      decisionNote: zod.string().nullish(),
+      decisionActorName: zod.string().nullish(),
+      decisionActorRole: zod.string().nullish(),
+    }),
+  ),
+  acceptedIssues: zod.array(
+    zod.object({
+      id: zod.number(),
+      ruleCode: zod.string(),
+      ruleType: zod.string(),
+      severity: zod.string(),
+      issueStatus: zod.string(),
+      explanationText: zod.string(),
+      suggestedAction: zod.string().nullish(),
+      recoverableAmount: zod.string().nullish(),
+      recoveryGroupKey: zod.string().nullish(),
+      decisionAction: zod.string().nullish(),
+      decisionNote: zod.string().nullish(),
+      decisionActorName: zod.string().nullish(),
+      decisionActorRole: zod.string().nullish(),
+    }),
+  ),
+  escalatedIssues: zod.array(
+    zod.object({
+      id: zod.number(),
+      ruleCode: zod.string(),
+      ruleType: zod.string(),
+      severity: zod.string(),
+      issueStatus: zod.string(),
+      explanationText: zod.string(),
+      suggestedAction: zod.string().nullish(),
+      recoverableAmount: zod.string().nullish(),
+      recoveryGroupKey: zod.string().nullish(),
+      decisionAction: zod.string().nullish(),
+      decisionNote: zod.string().nullish(),
+      decisionActorName: zod.string().nullish(),
+      decisionActorRole: zod.string().nullish(),
+    }),
+  ),
+  openIssues: zod.array(
+    zod.object({
+      id: zod.number(),
+      ruleCode: zod.string(),
+      ruleType: zod.string(),
+      severity: zod.string(),
+      issueStatus: zod.string(),
+      explanationText: zod.string(),
+      suggestedAction: zod.string().nullish(),
+      recoverableAmount: zod.string().nullish(),
+      recoveryGroupKey: zod.string().nullish(),
+      decisionAction: zod.string().nullish(),
+      decisionNote: zod.string().nullish(),
+      decisionActorName: zod.string().nullish(),
+      decisionActorRole: zod.string().nullish(),
+    }),
+  ),
+  auditTrail: zod.array(
+    zod.object({
+      eventType: zod.string(),
+      actorName: zod.string().nullish(),
+      actorRole: zod.string().nullish(),
+      createdAt: zod.date(),
+      detail: zod.unknown().nullish(),
+    }),
+  ),
+  generatedAt: zod.date(),
+});
+
+/**
+ * @summary Generate AI email draft to disputed law firm
+ */
+export const GenerateEmailDraftParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GenerateEmailDraftResponse = zod.object({
+  to: zod.string().nullish(),
+  subject: zod.string(),
+  body: zod.string(),
+  lawFirmName: zod.string().nullish(),
+  lawFirmContactName: zod.string().nullish(),
+});
+
+/**
  * @summary List audit trail events for an invoice
  */
 export const ListInvoiceAuditEventsParams = zod.object({

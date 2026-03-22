@@ -29,6 +29,7 @@ import type {
   CreatePanelBaselineDocumentRequest,
   CreateUserRequest,
   DecideIssueRequest,
+  EmailDraft,
   ErrorResponse,
   ExtractionResult,
   FirmTerm,
@@ -38,6 +39,7 @@ import type {
   InvoiceIssue,
   InvoiceItem,
   InvoiceListResponse,
+  InvoiceReport,
   LawFirm,
   LawFirmDetail,
   ListInvoiceCommentsParams,
@@ -3077,6 +3079,174 @@ export const usePostInvoiceComment = <
   TContext
 > => {
   return useMutation(getPostInvoiceCommentMutationOptions(options));
+};
+
+/**
+ * @summary Generate structured review report with AI executive summary
+ */
+export const getGenerateInvoiceReportUrl = (id: number) => {
+  return `/api/invoices/${id}/report`;
+};
+
+export const generateInvoiceReport = async (
+  id: number,
+  options?: RequestInit,
+): Promise<InvoiceReport> => {
+  return customFetch<InvoiceReport>(getGenerateInvoiceReportUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getGenerateInvoiceReportMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateInvoiceReport>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateInvoiceReport>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["generateInvoiceReport"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateInvoiceReport>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return generateInvoiceReport(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateInvoiceReportMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateInvoiceReport>>
+>;
+
+export type GenerateInvoiceReportMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Generate structured review report with AI executive summary
+ */
+export const useGenerateInvoiceReport = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateInvoiceReport>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateInvoiceReport>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getGenerateInvoiceReportMutationOptions(options));
+};
+
+/**
+ * @summary Generate AI email draft to disputed law firm
+ */
+export const getGenerateEmailDraftUrl = (id: number) => {
+  return `/api/invoices/${id}/email-draft`;
+};
+
+export const generateEmailDraft = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EmailDraft> => {
+  return customFetch<EmailDraft>(getGenerateEmailDraftUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getGenerateEmailDraftMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateEmailDraft>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateEmailDraft>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["generateEmailDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateEmailDraft>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return generateEmailDraft(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateEmailDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateEmailDraft>>
+>;
+
+export type GenerateEmailDraftMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Generate AI email draft to disputed law firm
+ */
+export const useGenerateEmailDraft = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateEmailDraft>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateEmailDraft>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getGenerateEmailDraftMutationOptions(options));
 };
 
 /**

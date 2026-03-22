@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useParams, useLocation } from "wouter";
+import { EmailDraftModal } from "@/components/EmailDraftModal";
 import {
   useGetInvoice,
   useListInvoiceDocuments,
@@ -80,6 +81,7 @@ import {
   Send,
   Activity,
   UserCircle,
+  Mail,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -642,6 +644,7 @@ export default function InvoiceDetail() {
   const [extracting, setExtracting] = useState(false);
   const [analysisRan, setAnalysisRan] = useState(false);
   const [generalComment, setGeneralComment] = useState("");
+  const [emailDraftOpen, setEmailDraftOpen] = useState(false);
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
   const { data: invoice, isLoading } = useGetInvoice(id);
@@ -724,9 +727,14 @@ export default function InvoiceDetail() {
     }
   };
 
+  const reportableStatuses = ["in_review", "waiting_internal_lawyer", "pending_law_firm", "ready_to_pay"];
+  const canViewReport = reportableStatuses.includes(invoice.invoiceStatus);
+  const canDraftEmail = invoice.invoiceStatus === "pending_law_firm";
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center gap-3">
+      <EmailDraftModal invoiceId={id} open={emailDraftOpen} onClose={() => setEmailDraftOpen(false)} />
+      <div className="flex items-center gap-3 flex-wrap">
         <Button variant="ghost" size="sm" onClick={() => navigate("/invoices")} className="gap-2">
           <ArrowLeft className="h-4 w-4" /> Back
         </Button>
@@ -735,12 +743,24 @@ export default function InvoiceDetail() {
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOURS[invoice.invoiceStatus] ?? "bg-gray-100 text-gray-700"}`}>
           {STATUS_LABELS[invoice.invoiceStatus] ?? invoice.invoiceStatus}
         </span>
-        {invoice.amountAtRisk && parseFloat(invoice.amountAtRisk) > 0 && (
-          <span className="ml-auto inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200">
-            <AlertCircle className="h-3.5 w-3.5" />
-            {invoice.currency} {parseFloat(invoice.amountAtRisk).toLocaleString("en-GB", { minimumFractionDigits: 2 })} at risk
-          </span>
-        )}
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {invoice.amountAtRisk && parseFloat(invoice.amountAtRisk) > 0 && (
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-200">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {invoice.currency} {parseFloat(invoice.amountAtRisk).toLocaleString("en-GB", { minimumFractionDigits: 2 })} at risk
+            </span>
+          )}
+          {canDraftEmail && (
+            <Button size="sm" variant="outline" onClick={() => setEmailDraftOpen(true)} className="gap-2">
+              <Mail className="h-4 w-4" /> Draft Email
+            </Button>
+          )}
+          {canViewReport && (
+            <Button size="sm" onClick={() => navigate(`/invoices/${id}/report`)} className="gap-2">
+              <FileText className="h-4 w-4" /> Generate Report
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

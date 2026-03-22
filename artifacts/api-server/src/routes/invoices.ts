@@ -8,6 +8,7 @@ import { ObjectStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer, imageBufferToBase64 } from "../lib/extractText";
 import { runAnalysis } from "../lib/runAnalysis";
 import { evaluateInvoiceState } from "../lib/stateTransition";
+import { openai } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
 const objectStorage = new ObjectStorageService();
@@ -725,6 +726,7 @@ router.post("/invoices/:id/issues/:issueId/decide", requireRole("super_admin", "
   });
 
   await evaluateInvoiceState(invoiceId, actorId, `issue ${action} by ${actorRole}`);
+  await recalculateRecovery(invoiceId);
 
   const [updatedIssue] = await db.select().from(issuesTable).where(eq(issuesTable.id, issueId)).limit(1);
   const [actorUser] = await db.select({ displayName: usersTable.displayName }).from(usersTable).where(eq(usersTable.id, actorId)).limit(1);
@@ -854,6 +856,67 @@ router.post("/invoices/:id/comments", requireRole("super_admin", "legal_ops", "i
   });
 });
 
+async function recalculateRecovery(invoiceId: number): Promise<void> {
+  const [invoice] = await db
+    .select({ currentAnalysisRunId: invoicesTable.currentAnalysisRunId })
+    .from(invoicesTable)
+    .where(eq(invoicesTable.id, invoiceId))
+    .limit(1);
+
+  const rejectedStatuses = [
+    "rejected_by_legal_ops",
+    "rejected_by_internal_lawyer",
+  ];
+
+  const conditions = [eq(issuesTable.invoiceId, invoiceId)];
+  if (invoice?.currentAnalysisRunId) {
+    conditions.push(eq(issuesTable.analysisRunId, invoice.currentAnalysisRunId));
+  }
+
+  const rejectedIssues = await db
+    .select({
+      recoverableAmount: issuesTable.recoverableAmount,
+      recoveryGroupKey: issuesTable.recoveryGroupKey,
+      issueStatus: issuesTable.issueStatus,
+    })
+    .from(issuesTable)
+    .where(and(...conditions));
+
+  const rejected = rejectedIssues.filter(i => rejectedStatuses.includes(i.issueStatus));
+
+  const groupMaxMap = new Map<string, number>();
+  let ungroupedTotal = 0;
+
+  for (const issue of rejected) {
+    const amt = issue.recoverableAmount ? parseFloat(issue.recoverableAmount) : 0;
+    if (!amt) continue;
+
+    if (issue.recoveryGroupKey) {
+      const prev = groupMaxMap.get(issue.recoveryGroupKey) ?? 0;
+      groupMaxMap.set(issue.recoveryGroupKey, Math.max(prev, amt));
+    } else {
+      ungroupedTotal += amt;
+    }
+  }
+
+  let confirmedRecovery = ungroupedTotal;
+  for (const v of groupMaxMap.values()) {
+    confirmedRecovery += v;
+  }
+
+  const openStatuses = ["open", "escalated_to_internal_lawyer"];
+  const openIssues = rejectedIssues.filter(i => openStatuses.includes(i.issueStatus));
+  const amountAtRisk = openIssues.reduce((sum, i) => {
+    return sum + (i.recoverableAmount ? parseFloat(i.recoverableAmount) : 0);
+  }, 0);
+
+  await db.update(invoicesTable).set({
+    confirmedRecovery: confirmedRecovery.toFixed(2),
+    amountAtRisk: amountAtRisk.toFixed(2),
+    updatedAt: new Date(),
+  }).where(eq(invoicesTable.id, invoiceId));
+}
+
 router.get("/invoices/:id/audit-events", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
@@ -903,6 +966,286 @@ router.get("/invoices/:id/audit-events", requireRole("super_admin", "legal_ops",
     reason: row.e.reason,
     createdAt: row.e.createdAt,
   })));
+});
+
+const RULE_LABELS: Record<string, string> = {
+  WRONG_CURRENCY: "Wrong Currency",
+  MISSING_DOCUMENTS_FIXED_SCOPE: "Missing Engagement Letter (Fixed Scope)",
+  FIXED_SCOPE_AMOUNT_MISMATCH: "Fixed Scope Amount Mismatch",
+  LINE_ITEMS_IN_FIXED_SCOPE: "Line Items in Fixed Scope",
+  TAX_OR_VAT_MISMATCH: "Tax / VAT Mismatch",
+  VOLUME_DISCOUNT_NOT_APPLIED: "Volume Discount Not Applied",
+  UNAUTHORIZED_EXPENSE_TYPE: "Unauthorised Expense Type",
+  EXPENSE_CAP_EXCEEDED: "Expense Cap Exceeded",
+  DUPLICATE_LINE: "Duplicate Line Item",
+  ARITHMETIC_ERROR: "Arithmetic Error",
+  DAILY_HOURS_EXCEEDED: "Daily Hours Exceeded",
+  BILLING_PERIOD_OUTSIDE_EL: "Billing Outside Engagement Letter Period",
+  INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER: "Inconsistent Rate for Timekeeper",
+  RATE_CARD_EXPIRED_OR_MISSING: "Rate Card Missing or Expired",
+  LAWYER_ROLE_MISMATCH: "Role Not Recognised",
+  RATE_EXCESS: "Rate Exceeds Panel Maximum",
+  MEETING_OVERSTAFFING: "Meeting Overstaffing",
+  EL_CONFLICT_WITH_PANEL_BASELINE: "Engagement Letter / Panel Conflict",
+  HOURS_DISPROPORTIONATE: "Hours Disproportionate",
+  PARALLEL_BILLING: "Parallel Billing",
+  SCOPE_CREEP: "Scope Creep",
+  SENIORITY_OVERKILL: "Seniority Overkill",
+  ESTIMATE_EXCESS: "Estimate Exceeded",
+  INTERNAL_COORDINATION: "Internal Coordination Billed",
+  MISSING_LINE_DETAIL: "Missing Line Detail",
+  JURISDICTION_UNCLEAR: "Jurisdiction Unclear",
+};
+
+router.post("/invoices/:id/report", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
+  if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  let lawFirmName: string | null = null;
+  if (invoice.lawFirmId) {
+    const [firm] = await db.select({ name: lawFirmsTable.name }).from(lawFirmsTable).where(eq(lawFirmsTable.id, invoice.lawFirmId)).limit(1);
+    lawFirmName = firm?.name ?? null;
+  }
+
+  const conditions = [eq(issuesTable.invoiceId, id)];
+  if (invoice.currentAnalysisRunId) {
+    conditions.push(eq(issuesTable.analysisRunId, invoice.currentAnalysisRunId));
+  }
+
+  const allIssues = await db
+    .select({ i: issuesTable, actorName: usersTable.displayName })
+    .from(issuesTable)
+    .leftJoin(
+      issueDecisionsTable,
+      and(
+        eq(issueDecisionsTable.issueId, issuesTable.id),
+        sql`${issueDecisionsTable.id} = (SELECT MAX(id) FROM issue_decisions WHERE issue_id = ${issuesTable.id})`
+      )
+    )
+    .leftJoin(usersTable, eq(issueDecisionsTable.actorId, usersTable.id))
+    .where(and(...conditions))
+    .orderBy(issuesTable.id);
+
+  const latestDecisions = await db
+    .select()
+    .from(issueDecisionsTable)
+    .where(sql`issue_id IN (SELECT id FROM issues WHERE invoice_id = ${id})`)
+    .orderBy(desc(issueDecisionsTable.createdAt));
+
+  const decisionByIssue = new Map<number, typeof issueDecisionsTable.$inferSelect & { actorName?: string | null }>();
+  for (const d of latestDecisions) {
+    if (!decisionByIssue.has(d.issueId)) {
+      decisionByIssue.set(d.issueId, d);
+    }
+  }
+
+  const decisionActorNames = new Map<number, string | null>();
+  const uniqueActorIds = [...new Set(latestDecisions.map(d => d.actorId).filter(Boolean) as number[])];
+  if (uniqueActorIds.length > 0) {
+    const actors = await db.select({ id: usersTable.id, name: usersTable.displayName }).from(usersTable).where(sql`id = ANY(ARRAY[${sql.join(uniqueActorIds.map(aid => sql`${aid}`), sql`, `)}]::int[])`);
+    for (const a of actors) decisionActorNames.set(a.id, a.name);
+  }
+
+  function mapIssue(row: typeof allIssues[0]) {
+    const decision = decisionByIssue.get(row.i.id);
+    const actorName = decision?.actorId ? decisionActorNames.get(decision.actorId) ?? null : null;
+    return {
+      id: row.i.id,
+      ruleCode: row.i.ruleCode,
+      ruleType: row.i.ruleType,
+      severity: row.i.severity,
+      issueStatus: row.i.issueStatus,
+      explanationText: row.i.explanationText,
+      suggestedAction: row.i.suggestedAction,
+      recoverableAmount: row.i.recoverableAmount,
+      recoveryGroupKey: row.i.recoveryGroupKey,
+      decisionAction: decision?.action ?? null,
+      decisionNote: decision?.note ?? null,
+      decisionActorName: actorName,
+      decisionActorRole: decision?.actorRole ?? null,
+    };
+  }
+
+  const rejectedStatuses = ["rejected_by_legal_ops", "rejected_by_internal_lawyer"];
+  const acceptedStatuses = ["accepted_by_legal_ops", "accepted_by_internal_lawyer"];
+  const escalatedStatuses = ["escalated_to_internal_lawyer"];
+  const openStatuses = ["open"];
+
+  const rejectedIssues = allIssues.filter(r => rejectedStatuses.includes(r.i.issueStatus)).map(mapIssue);
+  const acceptedIssues = allIssues.filter(r => acceptedStatuses.includes(r.i.issueStatus)).map(mapIssue);
+  const escalatedIssues = allIssues.filter(r => escalatedStatuses.includes(r.i.issueStatus)).map(mapIssue);
+  const openIssues = allIssues.filter(r => openStatuses.includes(r.i.issueStatus)).map(mapIssue);
+
+  const events = await db
+    .select({ e: auditEventsTable, actorName: usersTable.displayName, actorRole: usersTable.role })
+    .from(auditEventsTable)
+    .leftJoin(usersTable, eq(auditEventsTable.actorId, usersTable.id))
+    .where(or(
+      and(eq(auditEventsTable.entityType, "invoice"), eq(auditEventsTable.entityId, id)),
+      and(
+        eq(auditEventsTable.entityType, "issue"),
+        sql`${auditEventsTable.entityId} IN (SELECT id FROM issues WHERE invoice_id = ${id})`
+      )
+    ))
+    .orderBy(asc(auditEventsTable.createdAt));
+
+  const auditTrail = events.map(row => ({
+    eventType: row.e.eventType,
+    actorName: row.actorName ?? null,
+    actorRole: row.actorRole ?? null,
+    createdAt: row.e.createdAt,
+    detail: row.e.afterJson ?? null,
+  }));
+
+  const rejectedForAI = rejectedIssues.map(i => ({
+    rule: RULE_LABELS[i.ruleCode] ?? i.ruleCode,
+    severity: i.severity,
+    explanation: i.explanationText,
+    recovery: i.recoverableAmount ? `${invoice.currency} ${parseFloat(i.recoverableAmount).toLocaleString()}` : null,
+  }));
+
+  const prompt = `You are a senior legal operations analyst. Write a concise 3–5 sentence executive summary for a law firm invoice review report. Use professional, plain English — no jargon, no internal metric names.
+
+Invoice: ${invoice.invoiceNumber}
+Law firm: ${lawFirmName ?? "unknown"}
+Matter: ${invoice.matterName ?? "unspecified"}
+Total invoiced: ${invoice.currency} ${invoice.totalAmount ? parseFloat(invoice.totalAmount).toLocaleString() : "unknown"}
+Review outcome: ${invoice.reviewOutcome ?? "in progress"}
+Amount at risk: ${invoice.currency} ${invoice.amountAtRisk ? parseFloat(invoice.amountAtRisk).toLocaleString() : "0"}
+Confirmed recovery: ${invoice.currency} ${invoice.confirmedRecovery ? parseFloat(invoice.confirmedRecovery).toLocaleString() : "0"}
+Issues found: ${allIssues.length} total (${rejectedIssues.length} rejected, ${acceptedIssues.length} accepted, ${escalatedIssues.length} escalated, ${openIssues.length} open)
+
+Rejected issues:
+${rejectedForAI.length === 0 ? "None" : rejectedForAI.map((i, n) => `${n + 1}. ${i.rule}: ${i.explanation}${i.recovery ? ` (recovery: ${i.recovery})` : ""}`).join("\n")}
+
+Write only the executive summary paragraph. Do not include a title or heading.`;
+
+  let executiveSummary = "";
+  try {
+    const aiResponse = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      max_completion_tokens: 400,
+      messages: [{ role: "user", content: prompt }],
+    });
+    executiveSummary = aiResponse.choices[0]?.message?.content?.trim() ?? "Executive summary unavailable.";
+  } catch {
+    executiveSummary = `Review of invoice ${invoice.invoiceNumber} from ${lawFirmName ?? "the law firm"} identified ${allIssues.length} compliance issues requiring attention. ${rejectedIssues.length} issue(s) were rejected with a confirmed recovery of ${invoice.currency} ${invoice.confirmedRecovery ? parseFloat(invoice.confirmedRecovery).toLocaleString() : "0"}.`;
+  }
+
+  res.json({
+    invoiceId: invoice.id,
+    invoiceNumber: invoice.invoiceNumber,
+    lawFirmName,
+    matterName: invoice.matterName,
+    jurisdiction: invoice.jurisdiction,
+    currency: invoice.currency,
+    totalAmount: invoice.totalAmount,
+    invoiceDate: invoice.invoiceDate,
+    reviewOutcome: invoice.reviewOutcome,
+    invoiceStatus: invoice.invoiceStatus,
+    amountAtRisk: invoice.amountAtRisk,
+    confirmedRecovery: invoice.confirmedRecovery,
+    executiveSummary,
+    rejectedIssues,
+    acceptedIssues,
+    escalatedIssues,
+    openIssues,
+    auditTrail,
+    generatedAt: new Date(),
+  });
+});
+
+router.post("/invoices/:id/email-draft", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const [invoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
+  if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  if (invoice.invoiceStatus !== "pending_law_firm") {
+    res.status(400).json({ error: "Email draft is only available when the invoice is in 'Pending Law Firm' state" });
+    return;
+  }
+
+  let lawFirmName: string | null = null;
+  let contactName: string | null = null;
+  let contactEmail: string | null = null;
+
+  if (invoice.lawFirmId) {
+    const [firm] = await db.select({
+      name: lawFirmsTable.name,
+      contactName: lawFirmsTable.contactName,
+      contactEmail: lawFirmsTable.contactEmail,
+    }).from(lawFirmsTable).where(eq(lawFirmsTable.id, invoice.lawFirmId)).limit(1);
+    lawFirmName = firm?.name ?? null;
+    contactName = firm?.contactName ?? null;
+    contactEmail = firm?.contactEmail ?? null;
+  }
+
+  const conditions = [eq(issuesTable.invoiceId, id)];
+  if (invoice.currentAnalysisRunId) {
+    conditions.push(eq(issuesTable.analysisRunId, invoice.currentAnalysisRunId));
+  }
+
+  const rejectedStatuses = ["rejected_by_legal_ops", "rejected_by_internal_lawyer"];
+  const rejectedIssues = await db
+    .select()
+    .from(issuesTable)
+    .where(and(...conditions, sql`issue_status IN ('rejected_by_legal_ops', 'rejected_by_internal_lawyer')`))
+    .orderBy(issuesTable.id);
+
+  const rejectedForPrompt = rejectedIssues.map((i, n) => {
+    const amt = i.recoverableAmount ? parseFloat(i.recoverableAmount) : null;
+    return `${n + 1}. ${i.explanationText}${amt ? ` (disputed amount: ${invoice.currency} ${amt.toLocaleString()})` : ""}`;
+  });
+
+  const prompt = `You are a senior in-house legal counsel writing a formal, professional email to a law firm to dispute specific items in an invoice.
+
+Context:
+- Law firm: ${lawFirmName ?? "the firm"}
+- Invoice reference: ${invoice.invoiceNumber}
+- Matter: ${invoice.matterName ?? "the matter"}
+- Total invoiced: ${invoice.currency} ${invoice.totalAmount ? parseFloat(invoice.totalAmount).toLocaleString() : "unknown"}
+- Confirmed recovery amount: ${invoice.currency} ${invoice.confirmedRecovery ? parseFloat(invoice.confirmedRecovery).toLocaleString() : "0"}
+
+Rejected items (${rejectedIssues.length} total):
+${rejectedForPrompt.length === 0 ? "None" : rejectedForPrompt.join("\n")}
+
+Write a professional email that:
+1. Opens with a courteous acknowledgement of the invoice
+2. States clearly which items are disputed and why (use plain language, not rule codes)
+3. Requests correction or credit note for the disputed items
+4. Closes professionally
+5. Is firm but respectful — no aggressive language
+6. Does NOT mention internal systems, rule codes, or compliance scores
+7. Does NOT include subject line or To/From headers — only the email body
+
+Write only the email body text.`;
+
+  let body = "";
+  try {
+    const aiResponse = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      max_completion_tokens: 800,
+      messages: [{ role: "user", content: prompt }],
+    });
+    body = aiResponse.choices[0]?.message?.content?.trim() ?? "";
+  } catch {
+    body = `Dear ${contactName ?? "Billing Team"},\n\nThank you for submitting invoice ${invoice.invoiceNumber}. Following our internal review, we have identified ${rejectedIssues.length} item(s) that require clarification or adjustment.\n\nPlease review the highlighted items and issue a credit note or revised invoice at your earliest convenience.\n\nKind regards`;
+  }
+
+  const subject = `Re: Invoice ${invoice.invoiceNumber}${invoice.matterName ? ` — ${invoice.matterName}` : ""} — Billing Query`;
+
+  res.json({
+    to: contactEmail,
+    subject,
+    body,
+    lawFirmName,
+    lawFirmContactName: contactName,
+  });
 });
 
 export default router;
