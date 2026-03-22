@@ -31,7 +31,7 @@ router.get("/rules", requireRole("super_admin", "legal_ops", "internal_lawyer"),
 });
 
 router.patch("/rules/:code", requireRole("super_admin"), async (req: Request, res: Response) => {
-  const { code } = req.params;
+  const code = String(req.params.code);
   const rule = RULES_REGISTRY.find(r => r.code === code);
   if (!rule) {
     res.status(404).json({ error: "Rule not found" });

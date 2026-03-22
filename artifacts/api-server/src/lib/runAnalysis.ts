@@ -98,6 +98,17 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
   const prevRuns = await db.select({ id: analysisRunsTable.id }).from(analysisRunsTable).where(eq(analysisRunsTable.invoiceId, invoiceId));
   const versionNo = prevRuns.length + 1;
 
+  const completeness = await checkCompleteness(invoiceId);
+  if (!completeness.canRunAnalysis) {
+    return {
+      analysisRunId: -1,
+      issueCount: 0,
+      outcome: null,
+      amountAtRisk: null,
+      status: "gate_failed",
+    };
+  }
+
   if (prevRuns.length > 0) {
     const prevRunIds = prevRuns.map(r => r.id);
     await db.update(analysisRunsTable)
@@ -119,25 +130,6 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
     extractionPromptVersion: EXTRACTION_PROMPT_VERSION,
     heuristicPromptVersion: HEURISTIC_PROMPT_VERSION,
   }).returning();
-
-  const completeness = await checkCompleteness(invoiceId);
-  if (!completeness.canRunAnalysis) {
-    await db.update(analysisRunsTable).set({
-      status: "failed",
-      finishedAt: new Date(),
-      summaryJson: {
-        error: "completeness_gate_failed",
-        blockingIssues: completeness.blockingIssues,
-      },
-    }).where(eq(analysisRunsTable.id, run.id));
-    return {
-      analysisRunId: run.id,
-      issueCount: 0,
-      outcome: null,
-      amountAtRisk: null,
-      status: "gate_failed",
-    };
-  }
 
   try {
   const issues: IssueInsert[] = [];
@@ -301,33 +293,6 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
     }
   }
 
-  if (invoice.billingType !== "fixed_scope" && invoice.billingType !== "closed_scope") {
-    const hasEL = docs.some(d => d.documentKind === "engagement_letter");
-    const hasBudget = docs.some(d => d.documentKind === "budget_estimate");
-    const hasRateCard = firm?.firmType === "panel" && panelRates.length > 0;
-    const hasAnySource = hasEL || hasBudget || hasRateCard;
-    if (!hasAnySource) {
-      issues.push({
-        invoiceId,
-        analysisRunId: run.id,
-        ruleCode: "REQUIRED_SOURCE_MISSING",
-        ruleType: "objective",
-        severity: "error",
-        evaluatorType: "deterministic",
-        issueStatus: "open",
-        routeToRole: "legal_ops",
-        explanationText: `No source document (Engagement Letter, Budget Estimate, or active Panel Rate Card) has been linked to this invoice. Without at least one source document, it is not possible to verify rates, scope compliance, or billing terms. Please upload the relevant document(s) before analysis can be completed reliably.`,
-        evidenceJson: {
-          billing_type: invoice.billingType,
-          has_engagement_letter: hasEL,
-          has_budget_estimate: hasBudget,
-          has_panel_rate_card: hasRateCard,
-          documents_present: docs.map(d => d.documentKind),
-        },
-        suggestedAction: "Upload Engagement Letter, Budget Estimate, or confirm Panel Rate Card is active",
-      });
-    }
-  }
 
   const taxAmount = n(invoice.taxAmount);
   const subtotal = n(invoice.subtotalAmount);
