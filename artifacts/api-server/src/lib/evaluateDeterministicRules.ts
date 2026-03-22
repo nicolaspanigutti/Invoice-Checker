@@ -628,28 +628,54 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
           rolesMatch(pr.r.roleCode, data.roleNorm) && pr.r.jurisdiction === invoice.jurisdiction && pr.r.currency === invoice.currency
         );
         const maxApproved = panelRate ? n(panelRate.r.maxRate) : null;
-        const ratesAboveMin = items.filter(i => i.timekeeperLabel === timekeeper && n(i.rateCharged) > data.minRate);
-        const excessAmount = ratesAboveMin.reduce((sum, i) => sum + (n(i.rateCharged) - data.minRate) * n(i.hours), 0);
+        const highestCharged = data.maxRate;
+
+        // Upside-exposure: if the firm corrects lower-rate lines up to the highest rate charged,
+        // how much additional cost could they claim?  This is the relevant risk when all rates
+        // are within the approved cap — not an excess, but a potential future dispute.
+        const lowerRateLines = items.filter(i => i.timekeeperLabel === timekeeper && !i.isExpenseLine && n(i.rateCharged) < highestCharged);
+        const upsideExposure = lowerRateLines.reduce((sum, i) => sum + (highestCharged - n(i.rateCharged)) * n(i.hours), 0);
+
+        // If the highest rate already exceeds the approved cap, that is handled by RATE_EXCESS.
+        // Here we only flag the inconsistency itself; severity depends on whether any rate
+        // exceeds the approved cap (error) or all are within cap (warning).
+        const anyRateAboveCap = maxApproved !== null && highestCharged > maxApproved;
+        const severity = anyRateAboveCap ? "error" : "warning";
+
+        const ratesDisplay = Array.from(data.rates)
+          .map(r => `${invoice.currency} ${n(r).toFixed(2)}`)
+          .join(" and ");
+
+        const capNote = maxApproved
+          ? ` The maximum approved rate for this role is ${invoice.currency} ${maxApproved.toFixed(2)}/h — all rates charged are within this cap.`
+          : "";
+        const exposureNote = upsideExposure > 0
+          ? ` If the firm seeks to apply the higher rate (${invoice.currency} ${highestCharged.toFixed(2)}/h) to all lines, the additional exposure would be ${invoice.currency} ${upsideExposure.toFixed(2)}.`
+          : "";
+
         issues.push({
           invoiceId,
           analysisRunId: runId,
           ruleCode: "INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER",
           ruleType: "objective",
-          severity: "error",
+          severity,
           evaluatorType: "deterministic",
           issueStatus: "open",
           routeToRole: "legal_ops",
-          explanationText: `${timekeeper} (${data.roleNorm ?? "unknown role"}) appears on ${data.lineNos.length} lines with inconsistent rates: ${Array.from(data.rates).join(", ")} ${invoice.currency}/h. ${maxApproved ? `The maximum approved rate for this role and jurisdiction is ${invoice.currency} ${maxApproved.toFixed(2)}.` : ""} Estimated excess (lines above minimum): ${invoice.currency} ${excessAmount.toFixed(2)}.`,
+          explanationText: `${timekeeper} (${data.roleNorm ?? "unknown role"}) is billed at inconsistent rates across ${data.lineNos.length} lines: ${ratesDisplay}/h.${capNote}${exposureNote} Please confirm which rate applies and request a corrected invoice if needed.`,
           evidenceJson: {
             timekeeper_label: timekeeper,
             role_normalized: data.roleNorm,
-            rates_observed: Array.from(data.rates),
+            rates_observed: Array.from(data.rates).map(r => n(r)),
+            highest_rate_charged: highestCharged,
+            lowest_rate_charged: data.minRate,
             max_approved_rate: maxApproved,
             affected_line_nos: data.lineNos,
-            excess_amount: excessAmount,
+            lower_rate_line_nos: lowerRateLines.map(i => i.lineNo),
+            upside_exposure: upsideExposure,
           },
           suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
-          recoverableAmount: excessAmount > 0 ? excessAmount.toFixed(2) : null,
+          recoverableAmount: upsideExposure > 0 ? upsideExposure.toFixed(2) : null,
           recoveryGroupKey: `inconsistent_rate_${timekeeper}`,
         });
       }
