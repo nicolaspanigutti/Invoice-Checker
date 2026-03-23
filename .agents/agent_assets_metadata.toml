@@ -42,3 +42,9 @@ id = "l5trOj5DNfTcs9mJ6dhcD"
 uri = "file://demo/Hargreaves_Sutton_LLP_Engagement_Letter_2026.pdf"
 type = "pdf"
 title = "T&C — Hargreaves & Sutton LLP (para subir como nueva firma)"
+
+[[outputs]]
+id = "CWRXfh4lc937Tir7TGBi-"
+uri = "file://docs/invoice-checker.md"
+type = "text"
+title = "Invoice Checker — Documentación completa"
