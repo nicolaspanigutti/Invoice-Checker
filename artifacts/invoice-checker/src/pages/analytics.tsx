@@ -261,11 +261,11 @@ export default function Analytics() {
       </div>
 
       {/* ── 2. Supporting context ─────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard
           label="Amount Still at Risk"
           value={fmtCurrency(summary.totalAmountAtRisk, true)}
-          sub="Recoverable amount in issues not yet resolved — needs attention"
+          sub="Recoverable amount in issues not yet resolved"
           icon={ShieldAlert}
           accent="bg-amber-500"
         />
@@ -275,6 +275,20 @@ export default function Analytics() {
           sub={`${summary.acceptedInvoices} cleared · ${summary.inProgressInvoices} under review`}
           icon={FileText}
           accent="bg-slate-700"
+        />
+        <KpiCard
+          label="Total Issues Detected"
+          value={String(summary.totalIssues)}
+          sub={`${summary.confirmedIssues} confirmed errors · ${summary.falsePositives} false positives`}
+          icon={AlertTriangle}
+          accent="bg-slate-700"
+        />
+        <KpiCard
+          label="False Positive Rate"
+          value={fmtPct(summary.totalIssues > 0 ? (summary.falsePositives / summary.totalIssues) * 100 : 0)}
+          sub="Issues flagged by the system that reviewers dismissed"
+          icon={ShieldAlert}
+          accent="bg-amber-500"
         />
       </div>
 
