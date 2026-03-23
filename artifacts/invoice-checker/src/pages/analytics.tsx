@@ -1,12 +1,12 @@
-import React, { useState } from "react";
+import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, PieChart, Pie, Cell, Legend, Area, AreaChart,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  CartesianGrid, Cell, Legend,
 } from "recharts";
 import {
-  TrendingUp, TrendingDown, DollarSign, FileText, AlertTriangle,
-  CheckCircle2, ShieldAlert, BarChart2, Building2, Globe, Loader2, Handshake,
+  TrendingUp, FileText, AlertTriangle,
+  ShieldAlert, BarChart2, Building2, Globe, Loader2, Handshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -110,33 +110,6 @@ function shortMonth(m: string): string {
   return d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
 }
 
-const BILLING_TYPE_LABELS: Record<string, string> = {
-  time_and_materials: "Time & Materials",
-  fixed_scope: "Fixed Scope",
-  closed_scope: "Closed Scope",
-  unknown: "Unknown",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  open: "Open",
-  accepted_by_legal_ops: "False Positive (Legal Ops)",
-  rejected_by_legal_ops: "Confirmed (Legal Ops)",
-  escalated_to_internal_lawyer: "Escalated",
-  accepted_by_internal_lawyer: "False Positive (Lawyer)",
-  rejected_by_internal_lawyer: "Confirmed (Lawyer)",
-  no_longer_applicable: "No Longer Applicable",
-};
-
-const STATUS_COLOURS: Record<string, string> = {
-  open: "#94a3b8",
-  accepted_by_legal_ops: "#f59e0b",
-  rejected_by_legal_ops: "#EC0000",
-  escalated_to_internal_lawyer: "#8b5cf6",
-  accepted_by_internal_lawyer: "#f59e0b",
-  rejected_by_internal_lawyer: "#EC0000",
-  no_longer_applicable: "#cbd5e1",
-};
-
 // ── Sub-components ────────────────────────────────────────────────────────────
 function KpiCard({
   label, value, sub, icon: Icon, accent, trend,
@@ -161,7 +134,6 @@ function KpiCard({
         {sub && (
           <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
             {trend === "up" && <TrendingUp className="w-3 h-3 text-emerald-500" />}
-            {trend === "down" && <TrendingDown className="w-3 h-3 text-red-500" />}
             {sub}
           </p>
         )}
@@ -179,13 +151,15 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
   );
 }
 
-function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+function ChartCard({ title, subtitle, children }: { title?: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div className="bg-card rounded-2xl border border-border p-5">
-      <div className="mb-4">
-        <p className="text-sm font-semibold text-foreground">{title}</p>
-        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
-      </div>
+      {title && (
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+        </div>
+      )}
       {children}
     </div>
   );
@@ -209,10 +183,7 @@ function CurrencyTooltip({ active, payload, label }: Record<string, unknown>) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-type FirmTab = "recovery" | "volume" | "issues";
-
 export default function Analytics() {
-  const [firmTab, setFirmTab] = useState<FirmTab>("recovery");
 
   const { data, isLoading, isError } = useQuery<AnalyticsData>({
     queryKey: ["analytics"],
@@ -242,147 +213,84 @@ export default function Analytics() {
     );
   }
 
-  const { summary, roiSummary, recoveryByMonth, rejectedVsAcknowledgedByMonth, issuesByRule, issuesByStatus, byFirm, byJurisdiction, byBillingType } = data;
-
-  // Billing type pie
-  const billingPieData = byBillingType.map(b => ({
-    name: BILLING_TYPE_LABELS[b.billingType] ?? b.billingType,
-    value: b.count,
-  }));
-
-  // Issue status pie (group minor statuses)
-  const statusPieData = issuesByStatus.map(s => ({
-    name: STATUS_LABELS[s.status] ?? s.status,
-    value: s.count,
-    color: STATUS_COLOURS[s.status] ?? "#94a3b8",
-  }));
+  const { summary, roiSummary, rejectedVsAcknowledgedByMonth, issuesByRule, byFirm, byJurisdiction } = data;
 
   // Top 10 rules by issue count
   const topRules = issuesByRule.slice(0, 10);
 
-  // Firm chart data depending on selected tab
-  const firmChartData = byFirm.map(f => ({
-    name: f.firmName.length > 18 ? f.firmName.slice(0, 16) + "…" : f.firmName,
-    fullName: f.firmName,
-    recovery: f.confirmedRecovery,
-    amount: f.totalAmount,
-    issues: f.issueCount,
-    confirmed: f.confirmedIssues,
-  }));
-
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8">
-      {/* Page header */}
+
+      {/* ── 1. Savings funnel — the main story ───────────────────── */}
       <div>
-        <h1 className="text-2xl font-display font-bold text-foreground">Analytics</h1>
-        <p className="text-sm text-muted-foreground mt-1">Invoice review performance, savings, and billing compliance trends.</p>
+        <div className="mb-5">
+          <h1 className="text-2xl font-display font-bold text-foreground">Analytics</h1>
+          <p className="text-xs text-muted-foreground mt-1">Financial impact of invoice review across all law firms.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <KpiCard
+            label="Amount Reviewed"
+            value={fmtCurrency(summary.totalAmountReviewed, true)}
+            sub={`${summary.totalInvoices} invoices · ${summary.inProgressInvoices} currently in review`}
+            icon={FileText}
+            accent="bg-slate-700"
+          />
+          <KpiCard
+            label="Potential Savings"
+            value={fmtCurrency(roiSummary.totalDetectedValue, true)}
+            sub="Recoverable amount flagged by the system"
+            icon={AlertTriangle}
+            accent="bg-amber-500"
+          />
+          <KpiCard
+            label="Amount Disputed"
+            value={fmtCurrency(roiSummary.totalRejectedValue, true)}
+            sub={`Formally challenged with the firm · ${roiSummary.rejectedCount} issue${roiSummary.rejectedCount !== 1 ? "s" : ""}`}
+            icon={TrendingUp}
+            accent="bg-red-600"
+          />
+          <KpiCard
+            label="Amount Recovered"
+            value={fmtCurrency(roiSummary.totalAcknowledgedValue, true)}
+            sub={`Accepted by the firm · ${fmtPct(roiSummary.acknowledgementRate)} of what was disputed`}
+            icon={Handshake}
+            accent="bg-teal-600"
+            trend="up"
+          />
+        </div>
       </div>
 
-      {/* ── KPI summary row ─────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* ── 2. Supporting context ─────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <KpiCard
-          label="Total Invoices Reviewed"
-          value={String(summary.totalInvoices)}
-          sub={`${summary.acceptedInvoices} accepted · ${summary.disputedInvoices} disputed`}
+          label="Amount Still at Risk"
+          value={fmtCurrency(summary.totalAmountAtRisk, true)}
+          sub="Recoverable amount in issues not yet resolved — needs attention"
+          icon={ShieldAlert}
+          accent="bg-amber-500"
+        />
+        <KpiCard
+          label="Invoices in Dispute"
+          value={String(summary.disputedInvoices)}
+          sub={`${summary.acceptedInvoices} cleared · ${summary.inProgressInvoices} under review`}
           icon={FileText}
           accent="bg-slate-700"
         />
-        <KpiCard
-          label="Total Amount Reviewed"
-          value={`${fmtCurrency(summary.totalAmountReviewed, true)}`}
-          sub={`${summary.inProgressInvoices} currently in review`}
-          icon={DollarSign}
-          accent="bg-slate-700"
-        />
-        <KpiCard
-          label="Confirmed Recovery"
-          value={fmtCurrency(summary.totalConfirmedRecovery, true)}
-          sub={`${fmtPct(summary.recoveryRate)} of amount reviewed`}
-          icon={TrendingUp}
-          accent="bg-red-600"
-          trend="up"
-        />
-        <KpiCard
-          label="Amount at Risk"
-          value={fmtCurrency(summary.totalAmountAtRisk, true)}
-          sub="Across open issues"
-          icon={ShieldAlert}
-          accent="bg-amber-500"
-        />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard
-          label="Total Issues Detected"
-          value={String(summary.totalIssues)}
-          sub={`${summary.confirmedIssues} confirmed · ${summary.falsePositives} false positives`}
-          icon={AlertTriangle}
-          accent="bg-slate-700"
-        />
-        <KpiCard
-          label="Confirmation Rate"
-          value={fmtPct(summary.confirmRate)}
-          sub="Issues confirmed as billing errors"
-          icon={CheckCircle2}
-          accent="bg-emerald-600"
-          trend="up"
-        />
-        <KpiCard
-          label="False Positive Rate"
-          value={fmtPct(summary.totalIssues > 0 ? (summary.falsePositives / summary.totalIssues) * 100 : 0)}
-          sub="Issues dismissed by reviewers"
-          icon={TrendingDown}
-          accent="bg-amber-500"
-        />
-        <KpiCard
-          label="Escalation Rate"
-          value={fmtPct(summary.escalationRate)}
-          sub="Issues sent to Internal Lawyer"
-          icon={ShieldAlert}
-          accent="bg-violet-600"
-        />
-      </div>
-
-      {/* ── Savings funnel ───────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <KpiCard
-          label="Potential Savings"
-          value={fmtCurrency(roiSummary.totalDetectedValue, true)}
-          sub="Total recoverable amount flagged across all reviewed invoices"
-          icon={DollarSign}
-          accent="bg-slate-700"
-        />
-        <KpiCard
-          label="Amount Disputed"
-          value={fmtCurrency(roiSummary.totalRejectedValue, true)}
-          sub={`Formally challenged with the law firm · ${roiSummary.rejectedCount} issue${roiSummary.rejectedCount !== 1 ? "s" : ""}`}
-          icon={TrendingUp}
-          accent="bg-red-600"
-          trend="up"
-        />
-        <KpiCard
-          label="Amount Recovered"
-          value={fmtCurrency(roiSummary.totalAcknowledgedValue, true)}
-          sub={`Accepted by the firm · ${fmtPct(roiSummary.acknowledgementRate)} of disputed amount · ${roiSummary.acknowledgedCount} issue${roiSummary.acknowledgedCount !== 1 ? "s" : ""}`}
-          icon={Handshake}
-          accent="bg-teal-600"
-          trend="up"
-        />
-      </div>
-
-      {/* ── Disputed vs Recovered by month ───────────────────────── */}
+      {/* ── 3. Recovery trend ─────────────────────────────────────── */}
       {rejectedVsAcknowledgedByMonth.length > 0 && (
         <div>
           <SectionHeader
             title="Disputes & Recoveries Over Time"
-            subtitle="How much of what we challenge each month the firm ends up accepting"
+            subtitle="What we challenged each month vs what the firm accepted — shows how effectively disputes convert into savings"
           />
-          <ChartCard title="Amount Disputed vs Recovered (monthly)" subtitle="Red = challenged with firm · Teal = accepted by firm">
+          <ChartCard>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={rejectedVsAcknowledgedByMonth} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="month" tickFormatter={shortMonth} tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={v => fmtCurrency(v, true)} tick={{ fontSize: 11 }} width={52} />
+                <YAxis tickFormatter={v => fmtCurrency(v, true)} tick={{ fontSize: 11 }} width={56} />
                 <Tooltip content={<CurrencyTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Bar dataKey="rejectedValue" name="Disputed with firm" fill={BRAND} radius={[4, 4, 0, 0]} />
@@ -393,274 +301,13 @@ export default function Analytics() {
         </div>
       )}
 
-      {/* ── Recovery over time ───────────────────────────────────── */}
-      {recoveryByMonth.length > 0 && (
-        <div>
-          <SectionHeader title="Recovery & Volume Over Time" subtitle="Last 12 months · confirmed recovery and amount reviewed by invoice creation date" />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ChartCard title="Confirmed Recovery (monthly)" subtitle="Sum of confirmed billing error recoveries">
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={recoveryByMonth} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                  <defs>
-                    <linearGradient id="recoveryGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={BRAND} stopOpacity={0.18} />
-                      <stop offset="95%" stopColor={BRAND} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="month" tickFormatter={shortMonth} tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={v => fmtCurrency(v, true)} tick={{ fontSize: 11 }} width={52} />
-                  <Tooltip content={<CurrencyTooltip />} />
-                  <Area type="monotone" dataKey="confirmedRecovery" name="Recovery" stroke={BRAND} fill="url(#recoveryGrad)" strokeWidth={2} dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            <ChartCard title="Invoice Volume & Amount Reviewed (monthly)">
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={recoveryByMonth} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="month" tickFormatter={shortMonth} tick={{ fontSize: 11 }} />
-                  <YAxis tickFormatter={v => fmtCurrency(v, true)} tick={{ fontSize: 11 }} width={52} />
-                  <Tooltip content={<CurrencyTooltip />} />
-                  <Bar dataKey="amountReviewed" name="Amount Reviewed" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="amountAtRisk" name="At Risk" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-          </div>
-        </div>
-      )}
-
-      {/* ── By firm ─────────────────────────────────────────────── */}
+      {/* ── 4. Which firms are the problem ───────────────────────── */}
       {byFirm.length > 0 && (
         <div>
-          <SectionHeader title="Performance by Law Firm" subtitle="Top 10 firms by amount reviewed" />
-          <ChartCard
-            title="Law Firm Comparison"
-            subtitle={firmTab === "recovery" ? "Confirmed recovery" : firmTab === "volume" ? "Total amount reviewed" : "Issues detected vs confirmed"}
-          >
-            {/* Tab strip */}
-            <div className="flex gap-1 mb-4 p-1 bg-muted rounded-xl w-fit">
-              {([["recovery", "Recovery"], ["volume", "Volume"], ["issues", "Issues"]] as [FirmTab, string][]).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setFirmTab(key)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                    firmTab === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <ResponsiveContainer width="100%" height={260}>
-              {firmTab === "issues" ? (
-                <BarChart data={firmChartData} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
-                  <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (!active || !Array.isArray(payload) || !payload.length) return null;
-                      return (
-                        <div className={CustomTooltipStyle}>
-                          <p className="font-semibold mb-1">{String(label)}</p>
-                          {payload.map((p: Record<string, unknown>, i: number) => (
-                            <p key={i} style={{ color: String(p.color) }}>{String(p.name)}: {String(p.value)}</p>
-                          ))}
-                        </div>
-                      );
-                    }}
-                  />
-                  <Bar dataKey="issues" name="Total Issues" fill="#94a3b8" radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="confirmed" name="Confirmed" fill={BRAND} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              ) : (
-                <BarChart data={firmChartData} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                  <XAxis type="number" tickFormatter={v => fmtCurrency(v, true)} tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
-                  <Tooltip content={<CurrencyTooltip />} />
-                  <Bar
-                    dataKey={firmTab === "recovery" ? "recovery" : "amount"}
-                    name={firmTab === "recovery" ? "Confirmed Recovery" : "Amount Reviewed"}
-                    fill={firmTab === "recovery" ? BRAND : "#3b82f6"}
-                    radius={[0, 4, 4, 0]}
-                  />
-                </BarChart>
-              )}
-            </ResponsiveContainer>
-          </ChartCard>
-        </div>
-      )}
-
-      {/* ── Issues by rule & by status ────────────────────────── */}
-      <div>
-        <SectionHeader title="Issue Analysis" subtitle="Rule frequency, decision outcomes, and issue routing" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Top rules bar chart */}
-          <div className="lg:col-span-2">
-            <ChartCard title="Top Rules by Issue Frequency" subtitle="Number of times each rule fired across all analysis runs">
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={topRules} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="ruleCode" tick={{ fontSize: 10 }} width={180} />
-                  <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (!active || !Array.isArray(payload) || !payload.length) return null;
-                      const rule = topRules.find(r => r.ruleCode === label);
-                      return (
-                        <div className={CustomTooltipStyle}>
-                          <p className="font-semibold mb-1">{String(label)}</p>
-                          <p>Total: {rule?.issueCount ?? 0}</p>
-                          <p className="text-red-600">Confirmed: {rule?.confirmedCount ?? 0}</p>
-                          <p className="text-amber-600">False positive: {rule?.falsePositiveCount ?? 0}</p>
-                          <p className="text-slate-500">Recoverable: {fmtCurrency(rule?.totalRecoverable ?? 0)}</p>
-                        </div>
-                      );
-                    }}
-                  />
-                  <Bar dataKey="issueCount" name="Total Issues" radius={[0, 4, 4, 0]}>
-                    {topRules.map((r, i) => (
-                      <Cell key={i} fill={r.severity === "error" ? BRAND : "#f59e0b"} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <div className="flex gap-4 mt-3 justify-center text-xs text-muted-foreground">
-                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#EC0000] inline-block" /> Error</span>
-                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Warning</span>
-              </div>
-            </ChartCard>
-          </div>
-
-          {/* Issue status pie */}
-          <ChartCard title="Issue Decision Outcomes" subtitle="How issues were resolved by reviewers">
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={statusPieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={48}
-                  outerRadius={80}
-                  paddingAngle={2}
-                  dataKey="value"
-                >
-                  {statusPieData.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  content={({ active, payload }) => {
-                    if (!active || !Array.isArray(payload) || !payload.length) return null;
-                    const p = payload[0] as Record<string, unknown>;
-                    return (
-                      <div className={CustomTooltipStyle}>
-                        <p className="font-semibold">{String(p.name)}</p>
-                        <p>{String(p.value)} issues</p>
-                      </div>
-                    );
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="space-y-1.5 mt-2">
-              {statusPieData.map((s, i) => (
-                <div key={i} className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }} />
-                    <span className="text-muted-foreground truncate max-w-[150px]">{s.name}</span>
-                  </span>
-                  <span className="font-medium text-foreground">{s.value}</span>
-                </div>
-              ))}
-            </div>
-          </ChartCard>
-        </div>
-      </div>
-
-      {/* ── Jurisdiction & Billing type ───────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* By jurisdiction */}
-        {byJurisdiction.length > 0 && (
-          <ChartCard title="By Jurisdiction" subtitle="Invoice volume and recovery by applicable law">
-            <div className="space-y-2 mt-1">
-              {byJurisdiction.slice(0, 8).map((j, i) => {
-                const pct = summary.totalAmountReviewed > 0
-                  ? (j.totalAmount / summary.totalAmountReviewed) * 100
-                  : 0;
-                return (
-                  <div key={i}>
-                    <div className="flex items-center justify-between text-xs mb-0.5">
-                      <span className="flex items-center gap-1.5 text-foreground font-medium">
-                        <Globe className="w-3 h-3 text-muted-foreground" />
-                        {j.jurisdiction}
-                        <span className="text-muted-foreground font-normal">({j.invoiceCount} inv.)</span>
-                      </span>
-                      <span className="text-muted-foreground">
-                        {fmtCurrency(j.confirmedRecovery, true)} recovered
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${Math.min(pct, 100)}%`, background: PALETTE[i % PALETTE.length] }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </ChartCard>
-        )}
-
-        {/* By billing type */}
-        {byBillingType.length > 0 && (
-          <ChartCard title="Billing Type Distribution" subtitle="Invoice count by agreed billing structure">
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={billingPieData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  paddingAngle={3}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  labelLine={false}
-                >
-                  {billingPieData.map((_, i) => (
-                    <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  content={({ active, payload }) => {
-                    if (!active || !Array.isArray(payload) || !payload.length) return null;
-                    const p = payload[0] as Record<string, unknown>;
-                    const bt = byBillingType.find(b => BILLING_TYPE_LABELS[b.billingType] === p.name || b.billingType === p.name);
-                    return (
-                      <div className={CustomTooltipStyle}>
-                        <p className="font-semibold">{String(p.name)}</p>
-                        <p>{String(p.value)} invoices</p>
-                        {bt && <p className="text-muted-foreground">Amount: {fmtCurrency(bt.totalAmount, true)}</p>}
-                      </div>
-                    );
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartCard>
-        )}
-      </div>
-
-      {/* ── Firm league table ─────────────────────────────────── */}
-      {byFirm.length > 0 && (
-        <div>
-          <SectionHeader title="Law Firm League Table" subtitle="Summary metrics across all reviewed invoices" />
+          <SectionHeader
+            title="Ranking by Law Firm"
+            subtitle="Which firms have the most billing errors and how much money is at stake"
+          />
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead>
@@ -668,10 +315,10 @@ export default function Analytics() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">Firm</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Invoices</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Amount Reviewed</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Issues</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Confirmed</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Recovery</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Recovery %</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Issues Found</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Errors Confirmed</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Amount Disputed</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Dispute Rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -690,13 +337,13 @@ export default function Analytics() {
                       </td>
                       <td className="px-4 py-3 text-right text-muted-foreground">{f.invoiceCount}</td>
                       <td className="px-4 py-3 text-right font-mono text-xs">{fmtCurrency(f.totalAmount)}</td>
-                      <td className="px-4 py-3 text-right">{f.issueCount}</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{f.issueCount}</td>
                       <td className="px-4 py-3 text-right">
                         <span className={cn("font-semibold", f.confirmedIssues > 0 ? "text-red-600" : "text-muted-foreground")}>
                           {f.confirmedIssues}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-emerald-700">
+                      <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-red-700">
                         {fmtCurrency(f.confirmedRecovery)}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -713,6 +360,85 @@ export default function Analytics() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* ── 5. Most common error types ────────────────────────────── */}
+      {topRules.length > 0 && (
+        <div>
+          <SectionHeader
+            title="Most Common Billing Errors"
+            subtitle="Types of errors detected most often — useful for negotiating better terms with firms or flagging systemic issues"
+          />
+          <ChartCard>
+            <ResponsiveContainer width="100%" height={Math.max(240, topRules.length * 30)}>
+              <BarChart data={topRules} layout="vertical" margin={{ top: 0, right: 24, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="ruleCode" tick={{ fontSize: 10 }} width={190} />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !Array.isArray(payload) || !payload.length) return null;
+                    const rule = topRules.find(r => r.ruleCode === label);
+                    return (
+                      <div className={CustomTooltipStyle}>
+                        <p className="font-semibold mb-1">{String(label)}</p>
+                        <p>Times detected: {rule?.issueCount ?? 0}</p>
+                        <p className="text-red-600">Confirmed errors: {rule?.confirmedCount ?? 0}</p>
+                        <p className="text-slate-500">Recoverable value: {fmtCurrency(rule?.totalRecoverable ?? 0)}</p>
+                      </div>
+                    );
+                  }}
+                />
+                <Bar dataKey="issueCount" name="Times detected" radius={[0, 4, 4, 0]}>
+                  {topRules.map((r, i) => (
+                    <Cell key={i} fill={r.severity === "error" ? BRAND : "#f59e0b"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+            <div className="flex gap-4 mt-3 justify-center text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#EC0000] inline-block" /> Critical error</span>
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> Warning</span>
+            </div>
+          </ChartCard>
+        </div>
+      )}
+
+      {/* ── 6. By jurisdiction ────────────────────────────────────── */}
+      {byJurisdiction.length > 1 && (
+        <div>
+          <SectionHeader
+            title="By Jurisdiction"
+            subtitle="Invoice volume and amount reviewed per applicable law — highlights where most billing exposure sits"
+          />
+          <ChartCard>
+            <div className="space-y-3">
+              {byJurisdiction.slice(0, 8).map((j, i) => {
+                const pct = summary.totalAmountReviewed > 0
+                  ? (j.totalAmount / summary.totalAmountReviewed) * 100
+                  : 0;
+                return (
+                  <div key={i}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="flex items-center gap-1.5 text-foreground font-medium">
+                        <Globe className="w-3 h-3 text-muted-foreground" />
+                        {j.jurisdiction}
+                        <span className="text-muted-foreground font-normal">· {j.invoiceCount} invoice{j.invoiceCount !== 1 ? "s" : ""}</span>
+                      </span>
+                      <span className="font-mono text-xs text-foreground">{fmtCurrency(j.totalAmount)}</span>
+                    </div>
+                    <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${Math.min(pct, 100)}%`, background: PALETTE[i % PALETTE.length] }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ChartCard>
         </div>
       )}
 
