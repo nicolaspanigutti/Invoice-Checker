@@ -390,7 +390,7 @@ function IssueCard({ issue, invoiceId, invoiceStatus, userRole, onDecided }: {
           <div className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs border ${issue.firmAcknowledged ? "bg-teal-50 border-teal-200 text-teal-800" : "bg-gray-50 border-gray-200 text-gray-600"}`}>
             <div className="flex items-center gap-2">
               <Handshake className={`h-3.5 w-3.5 flex-shrink-0 ${issue.firmAcknowledged ? "text-teal-600" : "text-gray-400"}`} />
-              <span className="font-medium">{issue.firmAcknowledged ? "Acknowledged by firm" : "Awaiting firm acknowledgement"}</span>
+              <span className="font-medium">{issue.firmAcknowledged ? "Accepted by firm" : "Pending firm response"}</span>
               {issue.firmAcknowledgedAt && (
                 <span className="opacity-60">— {format(new Date(issue.firmAcknowledgedAt as string), "d MMM yyyy")}</span>
               )}
@@ -400,7 +400,7 @@ function IssueCard({ issue, invoiceId, invoiceStatus, userRole, onDecided }: {
               onClick={() => acknowledgeIssue.mutate(!issue.firmAcknowledged)}
               disabled={acknowledgeIssue.isPending}
             >
-              {acknowledgeIssue.isPending ? "…" : issue.firmAcknowledged ? "Unmark" : "Mark Acknowledged"}
+              {acknowledgeIssue.isPending ? "…" : issue.firmAcknowledged ? "Undo" : "Mark as Accepted"}
             </button>
           </div>
         )}
@@ -522,7 +522,7 @@ function IssuesPanel({ invoiceId, invoiceStatus, currency, userRole }: { invoice
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: getListInvoiceIssuesQueryKey(invoiceId) });
-      toast({ title: "Verify All done", description: `${data.acknowledgedCount} issue${data.acknowledgedCount !== 1 ? "s" : ""} marked as acknowledged by firm.` });
+      toast({ title: "Done", description: `${data.acknowledgedCount} issue${data.acknowledgedCount !== 1 ? "s" : ""} marked as accepted by the firm.` });
     },
     onError: () => {
       toast({ variant: "destructive", title: "Error", description: "Failed to acknowledge all issues." });
@@ -577,7 +577,7 @@ function IssuesPanel({ invoiceId, invoiceStatus, currency, userRole }: { invoice
           {invoiceStatus === "disputed" && rejectedIssues.length > 0 && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200">
               <Handshake className="h-3.5 w-3.5" />
-              {rejectedIssues.length - unacknowledgedRejected.length}/{rejectedIssues.length} acknowledged
+              {rejectedIssues.length - unacknowledgedRejected.length}/{rejectedIssues.length} accepted by firm
             </span>
           )}
         </div>
@@ -598,7 +598,7 @@ function IssuesPanel({ invoiceId, invoiceStatus, currency, userRole }: { invoice
               {verifyAll.isPending
                 ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 : <CheckSquare className="h-3.5 w-3.5" />}
-              Verify All ({unacknowledgedRejected.length})
+              Mark All as Accepted ({unacknowledgedRejected.length})
             </Button>
           )}
         </div>

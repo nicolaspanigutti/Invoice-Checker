@@ -343,41 +343,41 @@ export default function Analytics() {
         />
       </div>
 
-      {/* ── Firm acknowledgement / ROI funnel ───────────────────── */}
+      {/* ── Savings funnel ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KpiCard
-          label="Value Detected"
+          label="Potential Savings"
           value={fmtCurrency(roiSummary.totalDetectedValue, true)}
-          sub={`Recoverable across all reviewed issues`}
+          sub="Total recoverable amount flagged across all reviewed invoices"
           icon={DollarSign}
           accent="bg-slate-700"
         />
         <KpiCard
-          label="Rejected (Confirmed Errors)"
+          label="Amount Disputed"
           value={fmtCurrency(roiSummary.totalRejectedValue, true)}
-          sub={`${roiSummary.rejectedCount} issue${roiSummary.rejectedCount !== 1 ? "s" : ""} disputed with firms`}
+          sub={`Formally challenged with the law firm · ${roiSummary.rejectedCount} issue${roiSummary.rejectedCount !== 1 ? "s" : ""}`}
           icon={TrendingUp}
           accent="bg-red-600"
           trend="up"
         />
         <KpiCard
-          label="Acknowledged by Firm"
+          label="Amount Recovered"
           value={fmtCurrency(roiSummary.totalAcknowledgedValue, true)}
-          sub={`${fmtPct(roiSummary.acknowledgementRate)} acknowledgement rate · ${roiSummary.acknowledgedCount} issue${roiSummary.acknowledgedCount !== 1 ? "s" : ""}`}
+          sub={`Accepted by the firm · ${fmtPct(roiSummary.acknowledgementRate)} of disputed amount · ${roiSummary.acknowledgedCount} issue${roiSummary.acknowledgedCount !== 1 ? "s" : ""}`}
           icon={Handshake}
           accent="bg-teal-600"
           trend="up"
         />
       </div>
 
-      {/* ── Rejected vs Firm-Acknowledged by month ───────────────── */}
+      {/* ── Disputed vs Recovered by month ───────────────────────── */}
       {rejectedVsAcknowledgedByMonth.length > 0 && (
         <div>
           <SectionHeader
-            title="Disputed vs Firm-Acknowledged (Monthly)"
-            subtitle="Comparison of value disputed with firms vs confirmed by firm acknowledgement"
+            title="Disputes & Recoveries Over Time"
+            subtitle="How much of what we challenge each month the firm ends up accepting"
           />
-          <ChartCard title="Rejected vs Acknowledged Value" subtitle="Monthly trend — disputes raised vs firm acceptance">
+          <ChartCard title="Amount Disputed vs Recovered (monthly)" subtitle="Red = challenged with firm · Teal = accepted by firm">
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={rejectedVsAcknowledgedByMonth} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -385,8 +385,8 @@ export default function Analytics() {
                 <YAxis tickFormatter={v => fmtCurrency(v, true)} tick={{ fontSize: 11 }} width={52} />
                 <Tooltip content={<CurrencyTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="rejectedValue" name="Disputed (Rejected)" fill={BRAND} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="acknowledgedValue" name="Acknowledged by Firm" fill="#0d9488" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="rejectedValue" name="Disputed with firm" fill={BRAND} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="acknowledgedValue" name="Accepted by firm" fill="#0d9488" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
