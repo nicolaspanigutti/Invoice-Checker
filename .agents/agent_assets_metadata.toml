@@ -48,3 +48,39 @@ id = "CWRXfh4lc937Tir7TGBi-"
 uri = "file://docs/invoice-checker.md"
 type = "text"
 title = "Invoice Checker — Documentación completa"
+
+[[outputs]]
+id = "O23aXBR80AdxQtM4PFMs0"
+uri = "file://demo/Quinn_Abernethy_LLP_Engagement_Letter_2026.pdf"
+type = "pdf"
+title = "T&C — Quinn Abernethy LLP (GBP, Partner máx £700/h)"
+
+[[outputs]]
+id = "SlQ-UyFK3vExQar1DOMj3"
+uri = "file://demo/Stavros_Nikolopoulos_Engagement_Letter_2026.pdf"
+type = "pdf"
+title = "T&C — Stavros Nikolopoulos & Partners (EUR, Partner máx €720/h)"
+
+[[outputs]]
+id = "VS_CKFXK0MWOejzYEyJi3"
+uri = "file://demo/Quinn_Abernethy_INV-2026-0112_Clean.pdf"
+type = "pdf"
+title = "Factura limpia — Quinn Abernethy INV-2026-0112 (IP Portfolio, GBP)"
+
+[[outputs]]
+id = "vhB3zhZfgV-GyUHxHI7N_"
+uri = "file://demo/Stavros_Nikolopoulos_INV-2026-0083_Clean.pdf"
+type = "pdf"
+title = "Factura limpia — Stavros Nikolopoulos INV-2026-0083 (JV Advisory, EUR)"
+
+[[outputs]]
+id = "dOt5mwMWmvi-rpMsuh4zs"
+uri = "file://demo/Quinn_Abernethy_INV-2026-0145_RateExcess.pdf"
+type = "pdf"
+title = "Factura con error — Quinn Abernethy INV-2026-0145 (RATE_EXCESS: Partner £880 vs máx £700)"
+
+[[outputs]]
+id = "wZcxC_WsNhBZVDQcTpxpD"
+uri = "file://demo/Stavros_Nikolopoulos_INV-2026-0097_Issues.pdf"
+type = "pdf"
+title = "Factura con errores — Stavros Nikolopoulos INV-2026-0097 (DAILY_HOURS + INTERNAL_COORD)"
