@@ -226,6 +226,38 @@ router.patch("/invoices/:id", requireRole("super_admin", "legal_ops"), async (re
   res.json(detail);
 });
 
+router.delete("/invoices/:id", requireRole("super_admin"), async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
+
+  const [existing] = await db.select({ id: invoicesTable.id, invoiceNumber: invoicesTable.invoiceNumber }).from(invoicesTable).where(eq(invoicesTable.id, id)).limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Invoice not found" });
+    return;
+  }
+
+  // Nullify currentAnalysisRunId first to break circular FK reference
+  await db.update(invoicesTable).set({ currentAnalysisRunId: null }).where(eq(invoicesTable.id, id));
+
+  // Cascade delete: issueDecisions → comments → issues → analysisRuns → invoiceItems → invoiceDocuments → auditEvents → invoice
+  const issueIds = (await db.select({ id: issuesTable.id }).from(issuesTable).where(eq(issuesTable.invoiceId, id))).map(r => r.id);
+  if (issueIds.length > 0) {
+    await db.execute(sql`DELETE FROM issue_decisions WHERE issue_id = ANY(ARRAY[${sql.raw(issueIds.join(","))}]::int[])`);
+  }
+  await db.delete(commentsTable).where(eq(commentsTable.invoiceId, id));
+  await db.delete(issuesTable).where(eq(issuesTable.invoiceId, id));
+  await db.delete(analysisRunsTable).where(eq(analysisRunsTable.invoiceId, id));
+  await db.delete(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, id));
+  await db.delete(invoiceDocumentsTable).where(eq(invoiceDocumentsTable.invoiceId, id));
+  await db.delete(auditEventsTable).where(and(eq(auditEventsTable.entityType, "invoice"), eq(auditEventsTable.entityId, id)));
+  await db.delete(invoicesTable).where(eq(invoicesTable.id, id));
+
+  res.status(204).send();
+});
+
 router.get("/invoices/:id/documents", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (isNaN(id)) {

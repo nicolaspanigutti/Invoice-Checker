@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useListInvoices,
   useCreateInvoice,
@@ -7,7 +8,9 @@ import {
   useRequestUploadUrl,
   useExtractInvoiceData,
   useUpdateInvoice,
+  useDeleteInvoice,
   useGetInvoiceCompleteness,
+  useGetMe,
   type InvoiceSummary,
   type ListInvoicesParams,
   type ExtractionResult,
@@ -53,6 +56,7 @@ import {
   Clock,
   Building2,
   X,
+  Trash2,
 } from "lucide-react";
 import { format } from "date-fns";
 const STATUS_LABELS: Record<string, string> = {
@@ -702,6 +706,8 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
 export default function Invoices() {
   const [, navigate] = useLocation();
   const searchString = useSearch();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const initialStatus = new URLSearchParams(searchString).get("status") ?? "";
 
@@ -710,6 +716,23 @@ export default function Invoices() {
   const [searchInput, setSearchInput] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus);
   const [addOpen, setAddOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<InvoiceSummary | null>(null);
+
+  const { data: me } = useGetMe();
+  const isSuperAdmin = (me as { role?: string } | undefined)?.role === "super_admin";
+
+  const deleteInvoice = useDeleteInvoice({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        toast({ title: "Invoice deleted", description: `${deleteTarget?.invoiceNumber} has been permanently deleted.` });
+        setDeleteTarget(null);
+      },
+      onError: () => {
+        toast({ variant: "destructive", title: "Delete failed", description: "Could not delete the invoice. Please try again." });
+      },
+    },
+  });
 
   useEffect(() => {
     const s = new URLSearchParams(searchString).get("status") ?? "";
@@ -800,6 +823,7 @@ export default function Invoices() {
                 <TableHead>Invoice Date</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Issues</TableHead>
+                {isSuperAdmin && <TableHead className="w-12" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -849,6 +873,19 @@ export default function Invoices() {
                       <span className="text-muted-foreground text-sm">0</span>
                     )}
                   </TableCell>
+                  {isSuperAdmin && (
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        onClick={e => { e.stopPropagation(); setDeleteTarget(inv); }}
+                        title="Delete invoice"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -884,6 +921,42 @@ export default function Invoices() {
       </div>
 
       <AddInvoiceModal open={addOpen} onClose={() => setAddOpen(false)} />
+
+      <Dialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Delete Invoice
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              You are about to permanently delete invoice{" "}
+              <span className="font-mono font-semibold text-foreground">{deleteTarget?.invoiceNumber}</span>
+              {deleteTarget?.lawFirmName && (
+                <> from <span className="font-medium text-foreground">{deleteTarget.lawFirmName}</span></>
+              )}.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              This will also delete all associated documents, extracted line items, analysis runs, issues, and audit history. <span className="font-semibold text-destructive">This action cannot be undone.</span>
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleteInvoice.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && deleteInvoice.mutate({ id: deleteTarget.id })}
+              disabled={deleteInvoice.isPending}
+            >
+              {deleteInvoice.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              Delete Permanently
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
