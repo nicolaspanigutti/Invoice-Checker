@@ -45,7 +45,7 @@ router.get(
               COUNT(*) FILTER (WHERE i.firm_acknowledged = true)::int               AS acknowledged_count
             FROM issues i
             JOIN analysis_runs ar ON ar.id = i.analysis_run_id
-            WHERE ar.status = 'completed'
+            WHERE ar.status = 'complete'
           `),
 
           // ── Recovery & volume by month ────────────────────────────────
@@ -79,7 +79,7 @@ router.get(
               COUNT(*) FILTER (WHERE i.firm_acknowledged = true)::int AS acknowledged_count
             FROM issues i
             JOIN analysis_runs ar ON ar.id = i.analysis_run_id
-            WHERE ar.status = 'completed'
+            WHERE ar.status = 'complete'
               AND i.created_at >= NOW() - INTERVAL '12 months'
             GROUP BY DATE_TRUNC('month', i.created_at)
             ORDER BY DATE_TRUNC('month', i.created_at)
@@ -101,7 +101,7 @@ router.get(
               )::int                                                  AS false_positive_count
             FROM issues i
             JOIN analysis_runs ar ON ar.id = i.analysis_run_id
-            WHERE ar.status = 'completed'
+            WHERE ar.status = 'complete'
             GROUP BY i.rule_code, i.severity, i.evaluator_type
             ORDER BY issue_count DESC
           `),
@@ -113,31 +113,50 @@ router.get(
               COUNT(*)::int AS count
             FROM issues i
             JOIN analysis_runs ar ON ar.id = i.analysis_run_id
-            WHERE ar.status = 'completed'
+            WHERE ar.status = 'complete'
             GROUP BY issue_status
           `),
 
           // ── By law firm (top 10) ──────────────────────────────────────
+          // Uses two separate subqueries to avoid multiplying invoice-level
+          // amounts (confirmed_recovery, amount_at_risk) when joining to issues.
           db.execute(sql`
             SELECT
-              lf.id                                                   AS firm_id,
-              lf.name                                                 AS firm_name,
+              lf.id                                                         AS firm_id,
+              lf.name                                                       AS firm_name,
               lf.firm_type,
-              COUNT(DISTINCT inv.id)::int                            AS invoice_count,
-              COALESCE(SUM(inv.total_amount),0)::numeric             AS total_amount,
-              COALESCE(SUM(inv.confirmed_recovery),0)::numeric       AS confirmed_recovery,
-              COALESCE(SUM(inv.amount_at_risk),0)::numeric           AS amount_at_risk,
-              COUNT(iss.id)::int                                     AS issue_count,
-              COUNT(iss.id) FILTER (
-                WHERE iss.issue_status IN ('rejected_by_legal_ops','rejected_by_internal_lawyer')
-              )::int                                                  AS confirmed_issues
+              COALESCE(inv_agg.invoice_count, 0)::int                      AS invoice_count,
+              COALESCE(inv_agg.total_amount, 0)::numeric                   AS total_amount,
+              COALESCE(inv_agg.confirmed_recovery, 0)::numeric             AS confirmed_recovery,
+              COALESCE(inv_agg.amount_at_risk, 0)::numeric                 AS amount_at_risk,
+              COALESCE(iss_agg.issue_count, 0)::int                        AS issue_count,
+              COALESCE(iss_agg.confirmed_issues, 0)::int                   AS confirmed_issues
             FROM law_firms lf
-            LEFT JOIN invoices inv ON inv.law_firm_id = lf.id
-              AND inv.invoice_status != 'pending'
-            LEFT JOIN issues iss ON iss.invoice_id = inv.id
-            GROUP BY lf.id, lf.name, lf.firm_type
-            HAVING COUNT(DISTINCT inv.id) > 0
-            ORDER BY total_amount DESC
+            LEFT JOIN (
+              SELECT
+                law_firm_id,
+                COUNT(*)::int                                   AS invoice_count,
+                SUM(total_amount::numeric)                      AS total_amount,
+                SUM(confirmed_recovery::numeric)                AS confirmed_recovery,
+                SUM(amount_at_risk::numeric)                    AS amount_at_risk
+              FROM invoices
+              WHERE invoice_status != 'pending'
+              GROUP BY law_firm_id
+            ) inv_agg ON inv_agg.law_firm_id = lf.id
+            LEFT JOIN (
+              SELECT
+                inv.law_firm_id,
+                COUNT(iss.id)::int                              AS issue_count,
+                COUNT(iss.id) FILTER (
+                  WHERE iss.issue_status IN ('rejected_by_legal_ops','rejected_by_internal_lawyer')
+                )::int                                          AS confirmed_issues
+              FROM invoices inv
+              JOIN issues iss ON iss.invoice_id = inv.id
+              WHERE inv.invoice_status != 'pending'
+              GROUP BY inv.law_firm_id
+            ) iss_agg ON iss_agg.law_firm_id = lf.id
+            WHERE inv_agg.invoice_count IS NOT NULL
+            ORDER BY inv_agg.total_amount DESC NULLS LAST
             LIMIT 10
           `),
 
