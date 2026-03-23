@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, numeric, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, numeric, jsonb, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { invoicesTable, invoiceItemsTable } from "./invoices";
@@ -46,6 +46,8 @@ export const issuesTable = pgTable("issues", {
   recoverableAmount: numeric("recoverable_amount", { precision: 14, scale: 2 }),
   recoveryGroupKey: text("recovery_group_key"),
   configSnapshotJson: jsonb("config_snapshot_json"),
+  firmAcknowledged: boolean("firm_acknowledged").notNull().default(false),
+  firmAcknowledgedAt: timestamp("firm_acknowledged_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

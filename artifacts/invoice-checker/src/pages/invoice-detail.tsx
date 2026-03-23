@@ -27,6 +27,11 @@ import {
   type AuditEventResponse,
   type ListInvoiceCommentsParams,
 } from "@workspace/api-client-react";
+
+type InvoiceIssueExtended = InvoiceIssue & {
+  firmAcknowledged?: boolean | null;
+  firmAcknowledgedAt?: string | null;
+};
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -53,7 +58,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   getGetInvoiceQueryKey,
   getListInvoiceDocumentsQueryKey,
@@ -88,6 +93,8 @@ import {
   Pencil,
   Check,
   X,
+  Handshake,
+  CheckSquare,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -224,9 +231,10 @@ function IssueDecisionBadge({ action, actorName, note }: { action: string; actor
   );
 }
 
-function IssueCard({ issue, invoiceId, userRole, onDecided }: {
-  issue: InvoiceIssue;
+function IssueCard({ issue, invoiceId, invoiceStatus, userRole, onDecided }: {
+  issue: InvoiceIssueExtended;
   invoiceId: number;
+  invoiceStatus: string;
   userRole: string | null;
   onDecided: () => void;
 }) {
@@ -237,6 +245,24 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const decideIssue = useDecideIssue();
+
+  const acknowledgeIssue = useMutation({
+    mutationFn: async (acknowledged: boolean) => {
+      const res = await fetch(`/api/invoices/${invoiceId}/issues/${issue.id}/acknowledge`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acknowledged }),
+      });
+      if (!res.ok) throw new Error("Failed to update acknowledgement");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListInvoiceIssuesQueryKey(invoiceId) });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to update firm acknowledgement." });
+    },
+  });
   const { data: inlineComments } = useListInvoiceComments(invoiceId, { issueId: issue.id, scope: "issue_inline" } as ListInvoiceCommentsParams);
   const postComment = usePostInvoiceComment();
   const [commentText, setCommentText] = useState("");
@@ -357,6 +383,28 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
           <IssueDecisionBadge action={latestDecision!.action} actorName={latestDecision!.actorName} note={latestDecision!.note} />
         )}
 
+        {/* Firm acknowledgement toggle — only for rejected issues on disputed invoices */}
+        {invoiceStatus === "disputed" &&
+          (issue.issueStatus === "rejected_by_legal_ops" || issue.issueStatus === "rejected_by_internal_lawyer") &&
+          (userRole === "legal_ops" || userRole === "super_admin") && (
+          <div className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs border ${issue.firmAcknowledged ? "bg-teal-50 border-teal-200 text-teal-800" : "bg-gray-50 border-gray-200 text-gray-600"}`}>
+            <div className="flex items-center gap-2">
+              <Handshake className={`h-3.5 w-3.5 flex-shrink-0 ${issue.firmAcknowledged ? "text-teal-600" : "text-gray-400"}`} />
+              <span className="font-medium">{issue.firmAcknowledged ? "Acknowledged by firm" : "Awaiting firm acknowledgement"}</span>
+              {issue.firmAcknowledgedAt && (
+                <span className="opacity-60">— {format(new Date(issue.firmAcknowledgedAt as string), "d MMM yyyy")}</span>
+              )}
+            </div>
+            <button
+              className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${issue.firmAcknowledged ? "bg-teal-100 hover:bg-teal-200 text-teal-700" : "bg-primary hover:bg-primary/90 text-primary-foreground"}`}
+              onClick={() => acknowledgeIssue.mutate(!issue.firmAcknowledged)}
+              disabled={acknowledgeIssue.isPending}
+            >
+              {acknowledgeIssue.isPending ? "…" : issue.firmAcknowledged ? "Unmark" : "Mark Acknowledged"}
+            </button>
+          </div>
+        )}
+
         {/* Action buttons — always visible */}
         {availableActions.length > 0 && (
           <div className="space-y-2">
@@ -456,10 +504,30 @@ function IssueCard({ issue, invoiceId, userRole, onDecided }: {
   );
 }
 
-function IssuesPanel({ invoiceId, currency, userRole }: { invoiceId: number; currency: string | null; userRole: string | null }) {
+function IssuesPanel({ invoiceId, invoiceStatus, currency, userRole }: { invoiceId: number; invoiceStatus: string; currency: string | null; userRole: string | null }) {
   const queryClient = useQueryClient();
-  const { data: issues, isLoading } = useListInvoiceIssues(invoiceId);
+  const { data: issuesRaw, isLoading } = useListInvoiceIssues(invoiceId);
+  const issues = issuesRaw as InvoiceIssueExtended[] | undefined;
   const [showAll, setShowAll] = useState(true);
+  const { toast } = useToast();
+
+  const verifyAll = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/invoices/${invoiceId}/issues/acknowledge-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed to acknowledge all");
+      return res.json() as Promise<{ acknowledgedCount: number }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: getListInvoiceIssuesQueryKey(invoiceId) });
+      toast({ title: "Verify All done", description: `${data.acknowledgedCount} issue${data.acknowledgedCount !== 1 ? "s" : ""} marked as acknowledged by firm.` });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to acknowledge all issues." });
+    },
+  });
 
   if (isLoading) {
     return (
@@ -483,12 +551,19 @@ function IssuesPanel({ invoiceId, currency, userRole }: { invoiceId: number; cur
   const warningIssues = issues.filter(i => i.severity === "warning");
   const totalAtRisk = issues.reduce((sum, i) => sum + (i.recoverableAmount ? parseFloat(i.recoverableAmount) : 0), 0);
 
+  const rejectedIssues = issues.filter(i =>
+    i.issueStatus === "rejected_by_legal_ops" || i.issueStatus === "rejected_by_internal_lawyer"
+  );
+  const unacknowledgedRejected = rejectedIssues.filter(i => !i.firmAcknowledged);
+  const canVerifyAll = invoiceStatus === "disputed" && unacknowledgedRejected.length > 0 &&
+    (userRole === "legal_ops" || userRole === "super_admin");
+
   const displayedIssues = showAll ? issues : issues.filter(i => i.severity === "error");
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 items-center justify-between">
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
           {errorIssues.length > 0 && (
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">
               <AlertCircle className="h-3.5 w-3.5" /> {errorIssues.length} error{errorIssues.length !== 1 ? "s" : ""}
@@ -499,12 +574,34 @@ function IssuesPanel({ invoiceId, currency, userRole }: { invoiceId: number; cur
               <TriangleAlert className="h-3.5 w-3.5" /> {warningIssues.length} warning{warningIssues.length !== 1 ? "s" : ""}
             </span>
           )}
+          {invoiceStatus === "disputed" && rejectedIssues.length > 0 && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200">
+              <Handshake className="h-3.5 w-3.5" />
+              {rejectedIssues.length - unacknowledgedRejected.length}/{rejectedIssues.length} acknowledged
+            </span>
+          )}
         </div>
-        {totalAtRisk > 0 && (
-          <span className="text-sm font-bold text-red-700">
-            {currency} {totalAtRisk.toLocaleString("en-GB", { minimumFractionDigits: 2 })} at risk
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {totalAtRisk > 0 && (
+            <span className="text-sm font-bold text-red-700">
+              {currency} {totalAtRisk.toLocaleString("en-GB", { minimumFractionDigits: 2 })} at risk
+            </span>
+          )}
+          {canVerifyAll && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-teal-300 text-teal-700 hover:bg-teal-50 text-xs"
+              onClick={() => verifyAll.mutate()}
+              disabled={verifyAll.isPending}
+            >
+              {verifyAll.isPending
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <CheckSquare className="h-3.5 w-3.5" />}
+              Verify All ({unacknowledgedRejected.length})
+            </Button>
+          )}
+        </div>
       </div>
 
       {warningIssues.length > 0 && (
@@ -523,6 +620,7 @@ function IssuesPanel({ invoiceId, currency, userRole }: { invoiceId: number; cur
             key={issue.id}
             issue={issue}
             invoiceId={invoiceId}
+            invoiceStatus={invoiceStatus}
             userRole={userRole}
             onDecided={() => {
               queryClient.invalidateQueries({ queryKey: getListInvoiceIssuesQueryKey(invoiceId) });
@@ -1218,7 +1316,7 @@ export default function InvoiceDetail() {
                 </div>
               </div>
               <div className="p-6">
-                <IssuesPanel invoiceId={id} currency={invoice.currency} userRole={userRole} />
+                <IssuesPanel invoiceId={id} invoiceStatus={invoice.invoiceStatus} currency={invoice.currency} userRole={userRole} />
               </div>
             </div>
           )}

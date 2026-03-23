@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   TrendingUp, TrendingDown, DollarSign, FileText, AlertTriangle,
-  CheckCircle2, ShieldAlert, BarChart2, Building2, Globe, Loader2,
+  CheckCircle2, ShieldAlert, BarChart2, Building2, Globe, Loader2, Handshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -67,9 +67,26 @@ interface ByBillingType {
   totalAmount: number;
   confirmedRecovery: number;
 }
+interface RoiSummary {
+  totalDetectedValue: number;
+  totalRejectedValue: number;
+  rejectedCount: number;
+  totalAcknowledgedValue: number;
+  acknowledgedCount: number;
+  acknowledgementRate: number;
+}
+interface RejectedVsAcknowledgedBucket {
+  month: string;
+  rejectedValue: number;
+  acknowledgedValue: number;
+  rejectedCount: number;
+  acknowledgedCount: number;
+}
 interface AnalyticsData {
   summary: AnalyticsSummary;
+  roiSummary: RoiSummary;
   recoveryByMonth: MonthBucket[];
+  rejectedVsAcknowledgedByMonth: RejectedVsAcknowledgedBucket[];
   issuesByRule: IssueByRule[];
   issuesByStatus: IssueByStatus[];
   byFirm: ByFirm[];
@@ -225,7 +242,7 @@ export default function Analytics() {
     );
   }
 
-  const { summary, recoveryByMonth, issuesByRule, issuesByStatus, byFirm, byJurisdiction, byBillingType } = data;
+  const { summary, roiSummary, recoveryByMonth, rejectedVsAcknowledgedByMonth, issuesByRule, issuesByStatus, byFirm, byJurisdiction, byBillingType } = data;
 
   // Billing type pie
   const billingPieData = byBillingType.map(b => ({
@@ -325,6 +342,56 @@ export default function Analytics() {
           accent="bg-violet-600"
         />
       </div>
+
+      {/* ── Firm acknowledgement / ROI funnel ───────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <KpiCard
+          label="Value Detected"
+          value={fmtCurrency(roiSummary.totalDetectedValue, true)}
+          sub={`Recoverable across all reviewed issues`}
+          icon={DollarSign}
+          accent="bg-slate-700"
+        />
+        <KpiCard
+          label="Rejected (Confirmed Errors)"
+          value={fmtCurrency(roiSummary.totalRejectedValue, true)}
+          sub={`${roiSummary.rejectedCount} issue${roiSummary.rejectedCount !== 1 ? "s" : ""} disputed with firms`}
+          icon={TrendingUp}
+          accent="bg-red-600"
+          trend="up"
+        />
+        <KpiCard
+          label="Acknowledged by Firm"
+          value={fmtCurrency(roiSummary.totalAcknowledgedValue, true)}
+          sub={`${fmtPct(roiSummary.acknowledgementRate)} acknowledgement rate · ${roiSummary.acknowledgedCount} issue${roiSummary.acknowledgedCount !== 1 ? "s" : ""}`}
+          icon={Handshake}
+          accent="bg-teal-600"
+          trend="up"
+        />
+      </div>
+
+      {/* ── Rejected vs Firm-Acknowledged by month ───────────────── */}
+      {rejectedVsAcknowledgedByMonth.length > 0 && (
+        <div>
+          <SectionHeader
+            title="Disputed vs Firm-Acknowledged (Monthly)"
+            subtitle="Comparison of value disputed with firms vs confirmed by firm acknowledgement"
+          />
+          <ChartCard title="Rejected vs Acknowledged Value" subtitle="Monthly trend — disputes raised vs firm acceptance">
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={rejectedVsAcknowledgedByMonth} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="month" tickFormatter={shortMonth} tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={v => fmtCurrency(v, true)} tick={{ fontSize: 11 }} width={52} />
+                <Tooltip content={<CurrencyTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="rejectedValue" name="Disputed (Rejected)" fill={BRAND} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="acknowledgedValue" name="Acknowledged by Firm" fill="#0d9488" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        </div>
+      )}
 
       {/* ── Recovery over time ───────────────────────────────────── */}
       {recoveryByMonth.length > 0 && (

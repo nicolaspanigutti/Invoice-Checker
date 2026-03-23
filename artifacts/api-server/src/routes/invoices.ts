@@ -744,6 +744,8 @@ router.get("/invoices/:id/issues", requireRole("super_admin", "legal_ops", "inte
       recoverableAmount: iss.recoverableAmount,
       recoveryGroupKey: iss.recoveryGroupKey,
       configSnapshotJson: iss.configSnapshotJson,
+      firmAcknowledged: iss.firmAcknowledged,
+      firmAcknowledgedAt: iss.firmAcknowledgedAt,
       latestDecision: latestDecision ? {
         id: latestDecision.id,
         issueId: latestDecision.issueId,
@@ -884,6 +886,89 @@ router.post("/invoices/:id/issues/:issueId/decide", requireRole("super_admin", "
     createdAt: updatedIssue.createdAt,
   });
 });
+
+// ── Acknowledge issue by firm ─────────────────────────────────────────────────
+router.patch(
+  "/invoices/:id/issues/:issueId/acknowledge",
+  requireRole("super_admin", "legal_ops"),
+  async (req: Request, res: Response) => {
+    const invoiceId = parseId(req.params.id);
+    const issueId = parseId(req.params.issueId);
+    if (isNaN(invoiceId) || isNaN(issueId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    const invoice = await db.query.invoicesTable.findFirst({ where: (t, { eq }) => eq(t.id, invoiceId) });
+    if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+    if (invoice.invoiceStatus !== "disputed") {
+      res.status(400).json({ error: "Firm acknowledgement can only be recorded on disputed invoices" });
+      return;
+    }
+
+    const issue = await db.query.issuesTable.findFirst({ where: (t, { eq, and }) => and(eq(t.id, issueId), eq(t.invoiceId, invoiceId)) });
+    if (!issue) { res.status(404).json({ error: "Issue not found" }); return; }
+
+    const { acknowledged } = req.body as { acknowledged: boolean };
+    const now = new Date();
+
+    const [updated] = await db
+      .update(issuesTable)
+      .set({
+        firmAcknowledged: acknowledged,
+        firmAcknowledgedAt: acknowledged ? now : null,
+      })
+      .where(eq(issuesTable.id, issueId))
+      .returning();
+
+    await db.insert(auditEventsTable).values({
+      entityType: "issues",
+      entityId: issueId,
+      eventType: "firm_acknowledgement",
+      actorId: (req as unknown as { user?: { id: number } }).user?.id ?? null,
+      beforeJson: { firmAcknowledged: issue.firmAcknowledged },
+      afterJson: { firmAcknowledged: acknowledged },
+    });
+
+    res.json({ id: updated.id, firmAcknowledged: updated.firmAcknowledged, firmAcknowledgedAt: updated.firmAcknowledgedAt });
+  }
+);
+
+// ── Acknowledge ALL rejected issues at once ("Verify All") ───────────────────
+router.post(
+  "/invoices/:id/issues/acknowledge-all",
+  requireRole("super_admin", "legal_ops"),
+  async (req: Request, res: Response) => {
+    const invoiceId = parseId(req.params.id);
+    if (isNaN(invoiceId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+    const invoice = await db.query.invoicesTable.findFirst({ where: (t, { eq }) => eq(t.id, invoiceId) });
+    if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+    if (invoice.invoiceStatus !== "disputed") {
+      res.status(400).json({ error: "Firm acknowledgement can only be recorded on disputed invoices" });
+      return;
+    }
+
+    // Only acknowledge issues that were "rejected" (= confirmed billing errors)
+    const now = new Date();
+    const result = await db
+      .update(issuesTable)
+      .set({ firmAcknowledged: true, firmAcknowledgedAt: now })
+      .where(
+        sql`invoice_id = ${invoiceId}
+          AND issue_status IN ('rejected_by_legal_ops','rejected_by_internal_lawyer')
+          AND firm_acknowledged = false`
+      )
+      .returning({ id: issuesTable.id });
+
+    await db.insert(auditEventsTable).values({
+      entityType: "invoices",
+      entityId: invoiceId,
+      eventType: "firm_acknowledged_all",
+      actorId: (req as unknown as { user?: { id: number } }).user?.id ?? null,
+      afterJson: { acknowledgedCount: result.length },
+    });
+
+    res.json({ acknowledgedCount: result.length });
+  }
+);
 
 router.get("/invoices/:id/comments", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);

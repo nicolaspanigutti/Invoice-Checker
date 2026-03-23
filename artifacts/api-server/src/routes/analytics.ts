@@ -10,7 +10,7 @@ router.get(
   requireRole("super_admin", "legal_ops", "internal_lawyer"),
   async (_req: Request, res: Response) => {
     try {
-      const [summary, recoveryByMonth, issuesByRule, issuesByStatus, byFirm, byJurisdiction, byBillingType] =
+      const [summary, roiSummary, recoveryByMonth, rejectedVsAcknowledgedByMonth, issuesByRule, issuesByStatus, byFirm, byJurisdiction, byBillingType] =
         await Promise.all([
           // ── Summary KPIs ──────────────────────────────────────────────
           db.execute(sql`
@@ -26,6 +26,28 @@ router.get(
             WHERE invoice_status != 'pending'
           `),
 
+          // ── ROI / recovery funnel ─────────────────────────────────────
+          db.execute(sql`
+            SELECT
+              -- Value detected: sum of recoverable_amount across ALL issues from completed runs
+              COALESCE(SUM(i.recoverable_amount),0)::numeric                        AS total_detected_value,
+              -- Rejected by our team (confirmed billing errors we dispute with the firm)
+              COALESCE(SUM(i.recoverable_amount) FILTER (
+                WHERE i.issue_status IN ('rejected_by_legal_ops','rejected_by_internal_lawyer')
+              ),0)::numeric                                                          AS total_rejected_value,
+              COUNT(*) FILTER (
+                WHERE i.issue_status IN ('rejected_by_legal_ops','rejected_by_internal_lawyer')
+              )::int                                                                 AS rejected_count,
+              -- Acknowledged by the firm (net recovery actually received/confirmed by firm)
+              COALESCE(SUM(i.recoverable_amount) FILTER (
+                WHERE i.firm_acknowledged = true
+              ),0)::numeric                                                          AS total_acknowledged_value,
+              COUNT(*) FILTER (WHERE i.firm_acknowledged = true)::int               AS acknowledged_count
+            FROM issues i
+            JOIN analysis_runs ar ON ar.id = i.analysis_run_id
+            WHERE ar.status = 'completed'
+          `),
+
           // ── Recovery & volume by month ────────────────────────────────
           db.execute(sql`
             SELECT
@@ -39,6 +61,28 @@ router.get(
               AND created_at >= NOW() - INTERVAL '12 months'
             GROUP BY DATE_TRUNC('month', created_at)
             ORDER BY DATE_TRUNC('month', created_at)
+          `),
+
+          // ── Rejected vs Firm-Acknowledged by month ────────────────────
+          db.execute(sql`
+            SELECT
+              TO_CHAR(DATE_TRUNC('month', i.created_at), 'YYYY-MM')  AS month,
+              COALESCE(SUM(i.recoverable_amount) FILTER (
+                WHERE i.issue_status IN ('rejected_by_legal_ops','rejected_by_internal_lawyer')
+              ),0)::numeric   AS rejected_value,
+              COALESCE(SUM(i.recoverable_amount) FILTER (
+                WHERE i.firm_acknowledged = true
+              ),0)::numeric   AS acknowledged_value,
+              COUNT(*) FILTER (
+                WHERE i.issue_status IN ('rejected_by_legal_ops','rejected_by_internal_lawyer')
+              )::int          AS rejected_count,
+              COUNT(*) FILTER (WHERE i.firm_acknowledged = true)::int AS acknowledged_count
+            FROM issues i
+            JOIN analysis_runs ar ON ar.id = i.analysis_run_id
+            WHERE ar.status = 'completed'
+              AND i.created_at >= NOW() - INTERVAL '12 months'
+            GROUP BY DATE_TRUNC('month', i.created_at)
+            ORDER BY DATE_TRUNC('month', i.created_at)
           `),
 
           // ── Issues by rule code ───────────────────────────────────────
@@ -124,6 +168,7 @@ router.get(
         ]);
 
       const s = summary.rows[0] as Record<string, unknown>;
+      const roi = roiSummary.rows[0] as Record<string, unknown>;
 
       const totalIssues = (issuesByStatus.rows as Record<string, unknown>[]).reduce(
         (acc, r) => acc + Number(r.count),
@@ -161,12 +206,29 @@ router.get(
           confirmRate: totalIssues > 0 ? (confirmedCount / totalIssues) * 100 : 0,
           escalationRate: totalIssues > 0 ? (escalatedCount / totalIssues) * 100 : 0,
         },
+        roiSummary: {
+          totalDetectedValue: Number(roi.total_detected_value),
+          totalRejectedValue: Number(roi.total_rejected_value),
+          rejectedCount: Number(roi.rejected_count),
+          totalAcknowledgedValue: Number(roi.total_acknowledged_value),
+          acknowledgedCount: Number(roi.acknowledged_count),
+          acknowledgementRate: Number(roi.total_rejected_value) > 0
+            ? (Number(roi.total_acknowledged_value) / Number(roi.total_rejected_value)) * 100
+            : 0,
+        },
         recoveryByMonth: (recoveryByMonth.rows as Record<string, unknown>[]).map(r => ({
           month: r.month,
           invoiceCount: Number(r.invoice_count),
           amountReviewed: Number(r.amount_reviewed),
           confirmedRecovery: Number(r.confirmed_recovery),
           amountAtRisk: Number(r.amount_at_risk),
+        })),
+        rejectedVsAcknowledgedByMonth: (rejectedVsAcknowledgedByMonth.rows as Record<string, unknown>[]).map(r => ({
+          month: r.month,
+          rejectedValue: Number(r.rejected_value),
+          acknowledgedValue: Number(r.acknowledged_value),
+          rejectedCount: Number(r.rejected_count),
+          acknowledgedCount: Number(r.acknowledged_count),
         })),
         issuesByRule: (issuesByRule.rows as Record<string, unknown>[]).map(r => ({
           ruleCode: r.rule_code,
