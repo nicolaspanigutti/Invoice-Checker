@@ -1111,9 +1111,9 @@ export default function InvoiceDetail() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <div className="border border-border rounded-3xl bg-card p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-display font-semibold">Invoice Summary</h2>
+          <div className="border border-border rounded-3xl bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-display font-semibold text-foreground">Invoice Summary</h2>
               {!isEditing ? (
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={handleEditStart}>
                   <Pencil className="h-3.5 w-3.5" /> Edit
@@ -1130,18 +1130,18 @@ export default function InvoiceDetail() {
                 </div>
               )}
             </div>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
+            <dl className="grid grid-cols-3 gap-x-4 gap-y-3">
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Law Firm</dt>
-                <dd className="mt-1 font-medium">{invoice.lawFirmName ?? "—"}</dd>
+                <dd className="mt-0.5 text-sm font-medium">{invoice.lawFirmName ?? "—"}</dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Document Type</dt>
-                <dd className="mt-1 capitalize">{invoice.documentType}</dd>
+                <dd className="mt-0.5 text-sm capitalize">{invoice.documentType}</dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Matter Name</dt>
-                <dd className="mt-1">
+                <dd className="mt-0.5 text-sm">
                   {isEditing ? (
                     <Input
                       value={editForm.matterName}
@@ -1156,7 +1156,7 @@ export default function InvoiceDetail() {
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Project Reference</dt>
-                <dd className="mt-1">
+                <dd className="mt-0.5 text-sm">
                   {isEditing ? (
                     <Input
                       value={editForm.projectReference}
@@ -1166,14 +1166,14 @@ export default function InvoiceDetail() {
                     />
                   ) : (
                     invoice.projectReference
-                      ? <span className="font-mono text-sm">{invoice.projectReference}</span>
+                      ? <span className="font-mono">{invoice.projectReference}</span>
                       : <span className="text-muted-foreground">—</span>
                   )}
                 </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Jurisdiction</dt>
-                <dd className="mt-1">
+                <dd className="mt-0.5 text-sm">
                   {isEditing ? (
                     <Input
                       value={editForm.jurisdiction}
@@ -1188,7 +1188,7 @@ export default function InvoiceDetail() {
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Billing Type</dt>
-                <dd className="mt-1">
+                <dd className="mt-0.5 text-sm">
                   {isEditing ? (
                     <Select
                       value={editForm.billingType}
@@ -1211,7 +1211,7 @@ export default function InvoiceDetail() {
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Date</dt>
-                <dd className="mt-1">
+                <dd className="mt-0.5 text-sm">
                   {isEditing ? (
                     <Input
                       type="date"
@@ -1226,7 +1226,7 @@ export default function InvoiceDetail() {
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Due Date</dt>
-                <dd className="mt-1">
+                <dd className="mt-0.5 text-sm">
                   {isEditing ? (
                     <Input
                       type="date"
@@ -1241,7 +1241,7 @@ export default function InvoiceDetail() {
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Currency</dt>
-                <dd className="mt-1">
+                <dd className="mt-0.5 text-sm">
                   {isEditing ? (
                     <Select
                       value={editForm.currency}
@@ -1263,23 +1263,23 @@ export default function InvoiceDetail() {
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Amount</dt>
-                <dd className="mt-1 text-lg font-bold">
+                <dd className="mt-0.5 text-sm font-bold">
                   {invoice.totalAmount
                     ? `${invoice.currency} ${parseFloat(invoice.totalAmount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}`
-                    : <span className="text-muted-foreground font-normal text-base">—</span>}
+                    : <span className="text-muted-foreground font-normal">—</span>}
                 </dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subtotal</dt>
-                <dd className="mt-1">{invoice.subtotalAmount ? `${invoice.currency} ${parseFloat(invoice.subtotalAmount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : "—"}</dd>
+                <dd className="mt-0.5 text-sm">{invoice.subtotalAmount ? `${invoice.currency} ${parseFloat(invoice.subtotalAmount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : "—"}</dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Tax Amount</dt>
-                <dd className="mt-1">{invoice.taxAmount ? `${invoice.currency} ${parseFloat(invoice.taxAmount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : "—"}</dd>
+                <dd className="mt-0.5 text-sm">{invoice.taxAmount ? `${invoice.currency} ${parseFloat(invoice.taxAmount).toLocaleString("en-GB", { minimumFractionDigits: 2 })}` : "—"}</dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Internal Requestor</dt>
-                <dd className="mt-1">
+                <dd className="mt-0.5 text-sm">
                   {isEditing ? (
                     <Select
                       value={editForm.internalRequestorId}
@@ -1302,7 +1302,7 @@ export default function InvoiceDetail() {
               </div>
               <div>
                 <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Created</dt>
-                <dd className="mt-1 text-sm text-muted-foreground">{format(new Date(invoice.createdAt), "d MMM yyyy, HH:mm")}</dd>
+                <dd className="mt-0.5 text-sm text-muted-foreground">{format(new Date(invoice.createdAt), "d MMM yyyy, HH:mm")}</dd>
               </div>
             </dl>
           </div>
