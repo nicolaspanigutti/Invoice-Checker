@@ -14,6 +14,7 @@ import LawFirms from "@/pages/law-firms";
 import Rates from "@/pages/rates";
 import Rules from "@/pages/rules";
 import Users from "@/pages/users";
+import Analytics from "@/pages/analytics";
 import NotFound from "@/pages/not-found";
 import { AppLayout } from "@/components/layout/AppLayout";
 
@@ -78,6 +79,7 @@ function MainApp() {
         <Route path="/law-firms"><ProtectedRoute component={LawFirms} allowedRoles={["super_admin", "legal_ops"]} user={user} /></Route>
         <Route path="/rates"><ProtectedRoute component={Rates} allowedRoles={["super_admin", "legal_ops"]} user={user} /></Route>
         <Route path="/rules"><ProtectedRoute component={Rules} user={user} /></Route>
+        <Route path="/analytics"><ProtectedRoute component={Analytics} user={user} /></Route>
         <Route path="/users"><ProtectedRoute component={Users} allowedRoles={["super_admin"]} user={user} /></Route>
         <Route><NotFound /></Route>
       </Switch>

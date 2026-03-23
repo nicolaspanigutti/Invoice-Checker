@@ -6,7 +6,7 @@ import { useLogout } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, FileText, Building2, DollarSign,
-  Shield, Users, LogOut, Menu, X
+  Shield, Users, LogOut, Menu, X, BarChart2
 } from "lucide-react";
 
 function InvoiceCheckerLogo({ className }: { className?: string }) {
@@ -39,6 +39,7 @@ const navItems = [
   { href: "/law-firms", label: "Law Firms", icon: Building2, roles: ["super_admin", "legal_ops"] },
   { href: "/rates", label: "Rates", icon: DollarSign, roles: ["super_admin", "legal_ops"] },
   { href: "/rules", label: "Rules", icon: Shield, roles: ["super_admin", "legal_ops", "internal_lawyer"] },
+  { href: "/analytics", label: "Analytics", icon: BarChart2, roles: ["super_admin", "legal_ops"] },
   { href: "/users", label: "Users", icon: Users, roles: ["super_admin"] },
 ];
 
