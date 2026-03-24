@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -164,6 +164,24 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
       queryKey: [`/api/invoices/${createdInvoiceId ?? 0}/completeness`] as const,
     },
   });
+
+  // Derive effective completeness by overriding server data with current local form state.
+  // This ensures the banner updates immediately as the user fills in fields,
+  // without needing to save to the server first.
+  const effectiveCompleteness = useMemo(() => {
+    if (!completenessData) return null;
+    const serverData = completenessData as { canRunAnalysis: boolean; blockingIssues: { code: string; message: string }[] };
+    let blockingIssues = [...serverData.blockingIssues];
+
+    if (reviewExtras.billingType) {
+      blockingIssues = blockingIssues.filter(i => i.code !== "BILLING_TYPE_MISSING");
+    }
+    if (reviewForm.matterName && reviewForm.matterName.trim() !== "") {
+      blockingIssues = blockingIssues.filter(i => i.code !== "MATTER_NAME_MISSING");
+    }
+
+    return { canRunAnalysis: blockingIssues.length === 0, blockingIssues };
+  }, [completenessData, reviewExtras.billingType, reviewForm.matterName]);
 
   const selectedFirmJurisdictions: string[] = (lawFirms?.find(f => String(f.id) === form.lawFirmId) as { jurisdictions?: string[] } | undefined)?.jurisdictions ?? [];
 
@@ -667,20 +685,20 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
               </>
             )}
 
-            {!extracting && completenessData && (
-              <div className={`flex items-start gap-3 p-3 rounded-xl border ${completenessData.canRunAnalysis ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
-                {completenessData.canRunAnalysis ? (
+            {!extracting && effectiveCompleteness && (
+              <div className={`flex items-start gap-3 p-3 rounded-xl border ${effectiveCompleteness.canRunAnalysis ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
+                {effectiveCompleteness.canRunAnalysis ? (
                   <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
                 ) : (
                   <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
                 )}
                 <div>
-                  <p className={`text-xs font-medium ${completenessData.canRunAnalysis ? "text-green-800" : "text-amber-800"}`}>
-                    {completenessData.canRunAnalysis ? "Invoice is complete — ready for analysis" : "Some required fields are still missing"}
+                  <p className={`text-xs font-medium ${effectiveCompleteness.canRunAnalysis ? "text-green-800" : "text-amber-800"}`}>
+                    {effectiveCompleteness.canRunAnalysis ? "Invoice is complete — ready for analysis" : "Some required fields are still missing"}
                   </p>
-                  {!completenessData.canRunAnalysis && completenessData.blockingIssues.length > 0 && (
+                  {!effectiveCompleteness.canRunAnalysis && effectiveCompleteness.blockingIssues.length > 0 && (
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {completenessData.blockingIssues.map(i => i.message).join("; ")}
+                      {effectiveCompleteness.blockingIssues.map(i => i.message).join("; ")}
                     </p>
                   )}
                 </div>
