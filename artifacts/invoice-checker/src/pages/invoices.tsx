@@ -886,7 +886,11 @@ export default function Invoices() {
                   </TableCell>
                   <TableCell className="text-right">
                     {inv.issueCount > 0 ? (
-                      <Badge variant="destructive" className="text-xs">{inv.issueCount}</Badge>
+                      inv.invoiceStatus === "accepted" ? (
+                        <Badge className="text-xs bg-green-600 hover:bg-green-700 text-white">{inv.issueCount}</Badge>
+                      ) : (
+                        <Badge variant="destructive" className="text-xs">{inv.issueCount}</Badge>
+                      )
                     ) : (
                       <span className="text-muted-foreground text-sm">0</span>
                     )}
