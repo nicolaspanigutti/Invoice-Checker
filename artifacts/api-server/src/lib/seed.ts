@@ -17,7 +17,7 @@ export async function seedIfEmpty(): Promise<void> {
       INSERT INTO users (id, display_name, email, password_hash, role, is_active, created_at, updated_at)
       OVERRIDING SYSTEM VALUE VALUES
       (1, 'Nicolas Panigutti', 'admin@company.com',
-       '$2b$12$SVNh9m1Aoar2uFkqek52eu4yf1rIpiz.6xDl0xXkotv2ib/x3KAti', 'super_admin', true,
+       '$2b$12$hdzdEBOHkl.7CB.Ev6Ay.eLeIeU.UP8ysmM3f3cAsZs8hWK.XGNHW', 'super_admin', true,
        NOW(), NOW()),
       (2, 'Daniel Whitfield', 'daniel.whitfield@arcturusgroup.com',
        '$2b$12$K9WTAoyCDPuk/Ad4oJwx/ugWlVFsQGMq50MzIoorvwOVCtMudRABG', 'legal_ops', true,
