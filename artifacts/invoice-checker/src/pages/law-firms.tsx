@@ -725,7 +725,7 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => void }) {
+function FirmDetailPanel({ firmId, onClose, startEditing: startEditingProp }: { firmId: number; onClose: () => void; startEditing?: boolean }) {
   const { data: firm, isLoading } = useGetLawFirm(firmId, { query: { queryKey: ["law-firms", firmId] } });
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -756,7 +756,7 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
     onError: (err: Error) => toast({ variant: "destructive", title: "Error", description: err.message }),
   });
 
-  const handleStartEdit = () => {
+  const handleStartEdit = useCallback(() => {
     if (!firm) return;
     setForm({
       name: firm.name, firmType: firm.firmType,
@@ -766,7 +766,11 @@ function FirmDetailPanel({ firmId, onClose }: { firmId: number; onClose: () => v
       practiceAreas: firm.practiceAreas.join(", "),
     });
     setEditing(true);
-  };
+  }, [firm]);
+
+  React.useEffect(() => {
+    if (startEditingProp && firm && !editing) handleStartEdit();
+  }, [startEditingProp, firm, editing, handleStartEdit]);
 
   const handleSave = () => {
     updateMutation.mutate({ id: firmId, data: parseForm(form) }, {
@@ -1082,6 +1086,30 @@ export default function LawFirms() {
   const [showInactive, setShowInactive] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [startEditingId, setStartEditingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const { data: me } = useGetMe();
+  const isSuperAdmin = (me as { role?: string } | undefined)?.role === "super_admin";
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/law-firms/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? "Failed to delete law firm");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListLawFirmsQueryKey() });
+      toast({ title: "Law firm deleted." });
+      setDeletingId(null);
+      if (selectedId === deletingId) setSelectedId(null);
+    },
+    onError: (err: Error) => toast({ variant: "destructive", title: "Error", description: err.message }),
+  });
 
   const { data: firms = [], isLoading } = useListLawFirms(
     { includeInactive: showInactive },
@@ -1135,29 +1163,84 @@ export default function LawFirms() {
       ) : (
         <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
           {filtered.map(firm => (
-            <div key={firm.id} onClick={() => setSelectedId(firm.id)} className="flex items-center gap-4 p-4 hover:bg-muted/30 cursor-pointer transition-colors group">
-              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", firm.firmType === "panel" ? "bg-blue-100 text-blue-600" : "bg-orange-100 text-orange-600")}>
-                <Building2 className="w-5 h-5" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-foreground truncate">{firm.name}</p>
-                  {!firm.isActive && <Badge variant="muted">Inactive</Badge>}
+            <div key={firm.id} className="relative">
+              <div
+                onClick={() => { setStartEditingId(null); setSelectedId(firm.id); }}
+                className="flex items-center gap-4 p-4 hover:bg-muted/30 cursor-pointer transition-colors group"
+              >
+                <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", firm.firmType === "panel" ? "bg-blue-100 text-blue-600" : "bg-orange-100 text-orange-600")}>
+                  <Building2 className="w-5 h-5" />
                 </div>
-                <div className="flex items-center gap-3 mt-0.5">
-                  <Badge variant={firm.firmType === "panel" ? "panel" : "non-panel"}>{firm.firmType === "panel" ? "Panel" : "Non-Panel"}</Badge>
-                  {firm.jurisdictions.slice(0, 2).map(j => <span key={j} className="text-xs text-muted-foreground">{j}</span>)}
-                  {firm.jurisdictions.length > 2 && <span className="text-xs text-muted-foreground">+{firm.jurisdictions.length - 2} more</span>}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-foreground truncate">{firm.name}</p>
+                    {!firm.isActive && <Badge variant="muted">Inactive</Badge>}
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5">
+                    <Badge variant={firm.firmType === "panel" ? "panel" : "non-panel"}>{firm.firmType === "panel" ? "Panel" : "Non-Panel"}</Badge>
+                    {firm.jurisdictions.slice(0, 2).map(j => <span key={j} className="text-xs text-muted-foreground">{j}</span>)}
+                    {firm.jurisdictions.length > 2 && <span className="text-xs text-muted-foreground">+{firm.jurisdictions.length - 2} more</span>}
+                  </div>
                 </div>
+                {isSuperAdmin ? (
+                  <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => { setStartEditingId(firm.id); setSelectedId(firm.id); }}
+                      title="Edit firm"
+                      className="p-2 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setDeletingId(firm.id)}
+                      title="Delete firm"
+                      className="p-2 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
+                )}
               </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
+
+              {deletingId === firm.id && (
+                <div className="border-t border-red-100 bg-red-50 px-4 py-3 flex items-center justify-between gap-4" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center gap-2 text-sm text-red-700">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    <span>Delete <strong>{firm.name}</strong>? This cannot be undone.</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => setDeletingId(null)}
+                      className="px-3 py-1.5 rounded-lg text-sm text-foreground border border-border hover:bg-muted transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => deleteMutation.mutate(firm.id)}
+                      disabled={deleteMutation.isPending}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {deleteMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
       {showCreate && <CreateFirmModal onClose={() => setShowCreate(false)} />}
-      {selectedId !== null && <FirmDetailPanel firmId={selectedId} onClose={() => setSelectedId(null)} />}
+      {selectedId !== null && (
+        <FirmDetailPanel
+          firmId={selectedId}
+          onClose={() => { setSelectedId(null); setStartEditingId(null); }}
+          startEditing={startEditingId === selectedId}
+        />
+      )}
     </div>
   );
 }
