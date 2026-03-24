@@ -87,10 +87,11 @@ const LINES = [
     hours: 4.0, rate: 430.00, amount: 1720.00,
     desc: "Review of HR data flows and employee monitoring arrangements; preparation of data flow mapping schedule covering recruitment, payroll, absence management and performance review systems.",
   },
-  // [4] INCONSISTENT_RATE — S. Lim at £490 (all other S. Lim lines at £530)
+  // [4] INCONSISTENT_RATE — S. Lim at £560 on this line (cap £530); all other S. Lim lines at £530
+  // This ALSO triggers RATE_EXCESS for this specific line (£560 > cap £530)
   {
     date: "05 Mar 2026", tk: "S. Lim",         role: "Senior Associate",
-    hours: 3.0, rate: 490.00, amount: 1470.00,
+    hours: 3.0, rate: 560.00, amount: 1680.00,
     desc: "Research on ICO enforcement guidance on employee monitoring and workplace data retention; review of recent ICO enforcement decisions and monetary penalty notices relevant to HR data processing.",
   },
   // clean
@@ -427,7 +428,7 @@ stream.on("finish", () => {
   console.log(`  [1] RATE_EXCESS                   — Line 1:  M. Quinn (Partner) @ £880/h vs max £700/h`);
   console.log(`  [2] DUPLICATE_LINE                — Lines 7–8: C. Abernethy, 07 Mar, identical entries`);
   console.log(`  [3] ARITHMETIC_ERROR              — Line 13: R. Patel 4.0h × £270 = £1,080 stated as £1,150`);
-  console.log(`  [4] INCONSISTENT_RATE_FOR_SAME_TK — Line 4:  S. Lim at £490/h; all others at £530/h`);
+  console.log(`  [4] INCONSISTENT_RATE_FOR_SAME_TK — Line 4:  S. Lim at £560/h (exceeds £530 cap); all others at £530/h → also fires RATE_EXCESS`);
   console.log(`  [5] DAILY_HOURS_EXCEEDED          — Lines 15–17: S. Lim 10.0h on 13 Mar (max 8h)`);
   console.log(`  [6] SENIORITY_OVERKILL (AI)       — Line 10: Partner M. Quinn printing/filing/indexing docs`);
   console.log(`  [7] INTERNAL_COORDINATION (AI)    — Lines 11–13: 3 timekeepers bill internal team meeting`);

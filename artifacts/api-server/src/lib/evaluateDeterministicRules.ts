@@ -658,30 +658,38 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
         const panelRate = panelRates.find(pr =>
           rolesMatch(pr.r.roleCode, data.roleNorm) && pr.r.jurisdiction === invoice.jurisdiction && pr.r.currency === invoice.currency
         );
-        const maxApproved = panelRate ? n(panelRate.r.maxRate) : null;
+        const maxApprovedFromPanel = panelRate ? n(panelRate.r.maxRate) : null;
+        // Use firm_terms as fallback if no panel rate entry exists
+        const effectiveCap = maxApprovedFromPanel ?? getFirmTermsCap(data.roleNorm);
         const highestCharged = data.maxRate;
 
+        // KEY BUSINESS RULE: Only raise this issue if the highest rate charged exceeds the
+        // agreed cap. If both rates are at or below the cap, the lower rate is simply
+        // advantageous to the client — flagging it could reveal to the firm that they
+        // could charge more. This is not "money at risk" from the client's perspective.
+        // Exception: if no cap is known we still flag it as we cannot assess the risk.
+        if (effectiveCap !== null && highestCharged <= effectiveCap) continue;
+
         // Upside-exposure: if the firm corrects lower-rate lines up to the highest rate charged,
-        // how much additional cost could they claim?  This is the relevant risk when all rates
-        // are within the approved cap — not an excess, but a potential future dispute.
+        // how much additional cost could they claim?
         const lowerRateLines = items.filter(i => i.timekeeperLabel === timekeeper && !i.isExpenseLine && n(i.rateCharged) < highestCharged);
         const upsideExposure = lowerRateLines.reduce((sum, i) => sum + (highestCharged - n(i.rateCharged)) * n(i.hours), 0);
 
-        // If the highest rate already exceeds the approved cap, that is handled by RATE_EXCESS.
-        // Here we only flag the inconsistency itself; severity depends on whether any rate
-        // exceeds the approved cap (error) or all are within cap (warning).
-        const anyRateAboveCap = maxApproved !== null && highestCharged > maxApproved;
+        // If highest rate exceeds cap, it's an error; if no cap is known, warning.
+        const anyRateAboveCap = effectiveCap !== null && highestCharged > effectiveCap;
         const severity = anyRateAboveCap ? "error" : "warning";
 
         const ratesDisplay = Array.from(data.rates)
           .map(r => `${invoice.currency} ${n(r).toFixed(2)}`)
           .join(" and ");
 
-        const capNote = maxApproved
-          ? ` The maximum approved rate for this role is ${invoice.currency} ${maxApproved.toFixed(2)}/h — all rates charged are within this cap.`
-          : "";
+        // At this point we know highestCharged > effectiveCap (or effectiveCap is unknown).
+        // The explanationText reflects that the higher of the two rates breaches the cap.
+        const capNote = effectiveCap !== null
+          ? ` The maximum approved rate for this role is ${invoice.currency} ${effectiveCap.toFixed(2)}/h — the higher rate charged (${invoice.currency} ${highestCharged.toFixed(2)}/h) exceeds this cap.`
+          : " No approved rate cap was found for this role and jurisdiction.";
         const exposureNote = upsideExposure > 0
-          ? ` If the firm seeks to apply the higher rate (${invoice.currency} ${highestCharged.toFixed(2)}/h) to all lines, the additional exposure would be ${invoice.currency} ${upsideExposure.toFixed(2)}.`
+          ? ` If the firm applies the higher rate (${invoice.currency} ${highestCharged.toFixed(2)}/h) to all lines currently billed at the lower rate, the additional exposure would be ${invoice.currency} ${upsideExposure.toFixed(2)}.`
           : "";
 
         issues.push({
@@ -700,7 +708,7 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
             rates_observed: Array.from(data.rates).map(r => n(r)),
             highest_rate_charged: highestCharged,
             lowest_rate_charged: data.minRate,
-            max_approved_rate: maxApproved,
+            max_approved_rate: effectiveCap,
             affected_line_nos: data.lineNos,
             lower_rate_line_nos: lowerRateLines.map(i => i.lineNo),
             upside_exposure: upsideExposure,
