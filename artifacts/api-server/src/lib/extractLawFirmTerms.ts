@@ -14,6 +14,7 @@ export interface ExtractedFirmTerms {
   contract_start_date: string | null;
   contract_end_date: string | null;
   best_friend_firms_json: string[] | null;
+  per_role_rates_json: Record<string, number> | null;
 }
 
 const SYSTEM_PROMPT = `You are a specialist in corporate legal operations, expert at reading law firm engagement letters and terms & conditions documents. Extract structured commercial terms with precision.
@@ -34,7 +35,8 @@ const EXTRACTION_PROMPT = `Extract all commercial terms from the following law f
   "third_party_services_require_approval": true/false/null — do external/third-party disbursements need prior client approval?,
   "contract_start_date": "YYYY-MM-DD or null",
   "contract_end_date": "YYYY-MM-DD or null",
-  "best_friend_firms_json": ["Firm A", "Firm B"] list of named best-friend or preferred network firms, or null
+  "best_friend_firms_json": ["Firm A", "Firm B"] list of named best-friend or preferred network firms, or null,
+  "per_role_rates_json": {"Partner": 700, "Senior Associate": 530, "Associate": 430, "Paralegal": 270} — maximum approved hourly rates per role, keyed by the canonical role name. Use the EXACT role name keys: "Senior Partner", "Partner", "Counsel", "Senior Associate", "Associate", "Legal Trainee", "Paralegal". Only include roles that have an explicit rate stated in the document. Use null if no rates are specified.
 }
 
 Document text:
@@ -63,6 +65,7 @@ export async function extractLawFirmTermsFromText(text: string): Promise<Extract
       getting_up_to_speed_billable: null, payment_terms_days: null, travel_policy: null,
       expense_policy_json: null, third_party_services_require_approval: null,
       contract_start_date: null, contract_end_date: null, best_friend_firms_json: null,
+      per_role_rates_json: null,
     };
   }
 }

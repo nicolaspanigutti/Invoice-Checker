@@ -93,6 +93,37 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
     isRuleActive,
   } = ctx;
 
+  // Build a fallback rate map from firm_terms.per_role_rates_json.
+  // This is used when no panel_rates entries exist for the firm, e.g. when the
+  // rate schedule is defined in the firm's T&C rather than the global rate sheet.
+  // Keys are canonical role labels ("Partner", "Senior Associate", "Associate", "Paralegal", etc.)
+  const firmTermsRateCap: Map<string, number> = new Map();
+  const perRoleRaw = firmTerms.find(t => t.termKey === "per_role_rates_json")?.termValueJson;
+  if (perRoleRaw && typeof perRoleRaw === "object" && !Array.isArray(perRoleRaw)) {
+    for (const [role, cap] of Object.entries(perRoleRaw as Record<string, unknown>)) {
+      if (typeof cap === "number") firmTermsRateCap.set(role.trim().toLowerCase(), cap);
+    }
+  }
+
+  // Given a normalized role label, find its cap rate from firm_terms (case-insensitive).
+  function getFirmTermsCap(normalizedLabel: string | null): number | null {
+    if (!normalizedLabel) return null;
+    return firmTermsRateCap.get(normalizedLabel.trim().toLowerCase()) ?? null;
+  }
+
+  // Whether a role has a rate defined in either panel_rates or firm_terms
+  function hasAnyRateCoverage(normalizedLabel: string | null): boolean {
+    if (!normalizedLabel) return false;
+    const hasPanelRate = panelRates.some(pr =>
+      pr.r.lawFirmName === firm?.name
+      && rolesMatch(pr.r.roleCode, normalizedLabel)
+      && pr.r.jurisdiction === invoice.jurisdiction
+      && pr.r.currency === invoice.currency
+    );
+    if (hasPanelRate) return true;
+    return firmTermsRateCap.has(normalizedLabel.trim().toLowerCase());
+  }
+
   const hasLineDetail = items.some(i => i.workDate !== null || i.hours !== null || i.rateCharged !== null);
   const hasAllDates = items.every(i => i.workDate !== null);
   const hasAllHours = items.every(i => i.hours !== null);
@@ -704,7 +735,9 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
           })
         : allMatchingRates;
 
-      if ((allMatchingRates.length === 0 || validMatchingRates.length === 0) && isRuleActive("RATE_CARD_EXPIRED_OR_MISSING")) {
+      // Only flag as missing if not covered by either panel_rates OR firm_terms.per_role_rates_json
+      const coveredByFirmTerms = getFirmTermsCap(item.roleNormalized) !== null;
+      if ((allMatchingRates.length === 0 || validMatchingRates.length === 0) && !coveredByFirmTerms && isRuleActive("RATE_CARD_EXPIRED_OR_MISSING")) {
         seenMissingCombinations.add(combKey);
         const affectedLines = items.filter(i => i.roleNormalized === item.roleNormalized).map(i => i.lineNo);
         const latestValidTo = allMatchingRates.length > 0
@@ -808,6 +841,7 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
       rateCharged: number;
       lines: { lineNo: number; hours: number; excessAmount: number; itemId: number }[];
       firstItemId: number;
+      rateSource: "panel_rates" | "firm_terms";
     };
     const rateExcessGroups = new Map<string, RateExcessGroup>();
 
@@ -821,9 +855,14 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
         && (!invoice.invoiceDate || !pr.r.validFrom || pr.r.validFrom <= invoice.invoiceDate)
         && (!pr.r.validTo || !invoice.invoiceDate || pr.r.validTo >= invoice.invoiceDate)
       );
-      if (applicableRates.length === 0) continue;
 
-      const maxRate = Math.max(...applicableRates.map(pr => n(pr.r.maxRate)));
+      // Fallback: if no panel_rates entry, try firm_terms.per_role_rates_json
+      const firmTermsCap = applicableRates.length === 0 ? getFirmTermsCap(item.roleNormalized) : null;
+      if (applicableRates.length === 0 && firmTermsCap === null) continue;
+
+      const maxRate = applicableRates.length > 0
+        ? Math.max(...applicableRates.map(pr => n(pr.r.maxRate)))
+        : firmTermsCap!;
       const rateCharged = n(item.rateCharged);
       if (rateCharged <= maxRate) continue;
 
@@ -836,6 +875,7 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
           rateCharged,
           lines: [],
           firstItemId: item.id,
+          rateSource: applicableRates.length > 0 ? "panel_rates" : "firm_terms",
         });
       }
       const group = rateExcessGroups.get(groupKey)!;
@@ -866,7 +906,7 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
           jurisdiction: invoice.jurisdiction,
           affected_lines: group.lines.map(l => ({ line_no: l.lineNo, hours: l.hours, excess_amount: l.excessAmount })),
           excess_total: totalExcess,
-          source_document: "Active Panel Rates",
+          source_document: group.rateSource === "firm_terms" ? "T&C / Engagement Letter" : "Active Panel Rates",
         },
         suggestedAction: "Accept | Reject | Delegate to Internal Lawyer",
         recoverableAmount: totalExcess.toFixed(2),
