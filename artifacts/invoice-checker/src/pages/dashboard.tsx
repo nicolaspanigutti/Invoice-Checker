@@ -94,7 +94,7 @@ export default function Dashboard() {
               <Clock className="w-5 h-5 text-blue-500" />
             </div>
             <p className="text-4xl font-display font-bold text-blue-700 mt-3">{inReview}</p>
-            <p className="text-xs text-blue-600 mt-1 group-hover:text-blue-800 transition-colors">Under legal review →</p>
+            <p className="text-xs text-blue-600 mt-1 group-hover:text-blue-800 transition-colors">Under Legal Ops review →</p>
           </div>
         </Link>
 
@@ -106,19 +106,19 @@ export default function Dashboard() {
               <AlertTriangle className="w-5 h-5 text-orange-500" />
             </div>
             <p className="text-4xl font-display font-bold text-orange-600 mt-3">{escalated}</p>
-            <p className="text-xs text-orange-500 mt-1 group-hover:text-orange-700 transition-colors">Awaiting Legal review →</p>
+            <p className="text-xs text-orange-500 mt-1 group-hover:text-orange-700 transition-colors">Under Internal Lawyer review →</p>
           </div>
         </Link>
 
-        {/* Approved */}
+        {/* Accepted */}
         <Link href="/invoices?status=accepted" className="block group">
           <div className="h-full bg-green-50 border border-green-200 rounded-2xl p-5 shadow-sm transition-shadow group-hover:shadow-md group-hover:border-green-400">
             <div className="flex items-start justify-between">
-              <p className="text-sm font-medium text-green-700">Approved</p>
+              <p className="text-sm font-medium text-green-700">Accepted</p>
               <CheckCircle2 className="w-5 h-5 text-green-600" />
             </div>
             <p className="text-4xl font-display font-bold text-green-700 mt-3">{approved}</p>
-            <p className="text-xs text-green-600 mt-1 group-hover:text-green-800 transition-colors">Successfully processed →</p>
+            <p className="text-xs text-green-600 mt-1 group-hover:text-green-800 transition-colors">No issues detected →</p>
           </div>
         </Link>
 
