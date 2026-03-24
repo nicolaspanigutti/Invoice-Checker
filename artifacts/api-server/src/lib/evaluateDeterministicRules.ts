@@ -656,7 +656,10 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
     for (const [timekeeper, data] of timekeeperRates.entries()) {
       if (data.rates.size >= 2) {
         const panelRate = panelRates.find(pr =>
-          rolesMatch(pr.r.roleCode, data.roleNorm) && pr.r.jurisdiction === invoice.jurisdiction && pr.r.currency === invoice.currency
+          pr.r.lawFirmName === firm?.name
+          && rolesMatch(pr.r.roleCode, data.roleNorm)
+          && pr.r.jurisdiction === invoice.jurisdiction
+          && pr.r.currency === invoice.currency
         );
         const maxApprovedFromPanel = panelRate ? n(panelRate.r.maxRate) : null;
         // Use firm_terms as fallback if no panel rate entry exists
