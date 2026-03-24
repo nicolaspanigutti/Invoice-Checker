@@ -207,7 +207,11 @@ export default function Analytics() {
     );
   }
 
-  const { summary, roiSummary, rejectedVsAcknowledgedByMonth, issuesByRule, byFirm } = data;
+  const { summary, roiSummary, rejectedVsAcknowledgedByMonth, issuesByRule, byFirm: byFirmRaw } = data;
+
+  // Sort by confirmed recovery (absolute amount disputed) descending — most impactful firms first
+  const byFirm = [...byFirmRaw].sort((a, b) => b.confirmedRecovery - a.confirmedRecovery);
+
   const maxDisputeRate = byFirm.length > 0
     ? Math.max(...byFirm.map(f => f.totalAmount > 0 ? (f.confirmedRecovery / f.totalAmount) * 100 : 0))
     : 1;
@@ -317,7 +321,7 @@ export default function Analytics() {
         <div>
           <SectionHeader
             title="Ranking by Law Firm"
-            subtitle="Ordered by dispute rate — firms where confirmed billing errors represent the highest share of total fees billed"
+            subtitle="Ordered by amount disputed — firms where the most money has been formally challenged, regardless of invoice volume"
           />
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
             <table className="w-full text-sm">
