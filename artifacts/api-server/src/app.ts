@@ -3,6 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import path from "path";
 import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -34,10 +35,6 @@ app.use(
     },
   }),
 );
-
-if (isProduction && !process.env.ALLOWED_ORIGINS) {
-  throw new Error("ALLOWED_ORIGINS environment variable must be set in production");
-}
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
@@ -92,5 +89,13 @@ app.use(
 );
 
 app.use("/api", router);
+
+if (isProduction) {
+  const staticDir = path.resolve("artifacts/invoice-checker/dist/public");
+  app.use(express.static(staticDir));
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(staticDir, "index.html"));
+  });
+}
 
 export default app;
