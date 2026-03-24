@@ -1403,6 +1403,27 @@ router.post("/invoices/:id/report", requireRole("super_admin", "legal_ops", "int
   });
 });
 
+function buildFallbackEmailBody(opts: {
+  contactName: string | null;
+  invoiceNumber: string | null;
+  matterName: string | null;
+  rejectedCount: number;
+  rejectedIssues: Array<{ explanationText: string | null; recoverableAmount: string | null }>;
+  currency: string;
+}): string {
+  const { contactName, invoiceNumber, matterName, rejectedCount, rejectedIssues, currency } = opts;
+  const greeting = `Dear ${contactName ?? "Billing Team"},`;
+  const intro = `\n\nThank you for submitting ${invoiceNumber ? `invoice ${invoiceNumber}` : "your invoice"}${matterName ? ` in relation to the matter "${matterName}"` : ""}. Following our internal review, we have identified ${rejectedCount} item${rejectedCount !== 1 ? "s" : ""} that require${rejectedCount === 1 ? "s" : ""} clarification or adjustment:`;
+  const items = rejectedIssues
+    .map((issue, idx) => {
+      const amt = issue.recoverableAmount ? ` (${currency} ${parseFloat(issue.recoverableAmount).toLocaleString("fr-FR", { minimumFractionDigits: 2 })})` : "";
+      return `\n  ${idx + 1}. ${issue.explanationText ?? "Billing discrepancy identified"}${amt}`;
+    })
+    .join("");
+  const closing = `\n\nWe kindly request that you review the above items and issue a credit note or revised invoice reflecting the necessary adjustments at your earliest convenience. Please do not hesitate to contact us should you require any further information.\n\nKind regards,\n[Your Name]\n[Your Title]\nLegal Department`;
+  return greeting + intro + items + closing;
+}
+
 router.post("/invoices/:id/email-draft", requireRole("super_admin", "legal_ops", "internal_lawyer"), async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
@@ -1453,22 +1474,28 @@ router.post("/invoices/:id/email-draft", requireRole("super_admin", "legal_ops",
     })),
   };
 
+  const fallbackBody = buildFallbackEmailBody({ contactName, invoiceNumber: invoice.invoiceNumber, matterName: invoice.matterName ?? null, rejectedCount: rejectedIssues.length, rejectedIssues, currency: invoice.currency ?? "EUR" });
+
   let body = "";
   try {
     const aiResponse = await openai.chat.completions.create({
       model: "gpt-5.2",
-      max_completion_tokens: 600,
+      max_completion_tokens: 900,
       messages: [
         {
           role: "system",
-          content: "You are a senior in-house legal counsel. Write a formal, professional email body to a law firm disputing invoice items. Rules: (1) acknowledge the invoice courteously, (2) explain each disputed item in plain English without rule codes or internal metric names, (3) request a credit note or revised invoice, (4) close professionally, (5) no aggressive language, (6) no subject line or To/From headers, (7) output only the email body text.",
+          content: "You are a senior in-house legal counsel. Write a formal, professional email body to a law firm disputing invoice items. Rules: (1) acknowledge the invoice courteously, (2) explain each disputed item clearly in plain English without rule codes or internal metric names, (3) for each item state the nature of the concern and the amount in dispute, (4) request a credit note or revised invoice, (5) close professionally, (6) no aggressive language, (7) no subject line or To/From headers, (8) output ONLY the full email body text, nothing else.",
         },
         { role: "user", content: JSON.stringify(emailPayload) },
       ],
     });
     body = aiResponse.choices[0]?.message?.content?.trim() ?? "";
   } catch {
-    body = `Dear ${contactName ?? "Billing Team"},\n\nThank you for submitting invoice ${invoice.invoiceNumber}. Following our review, we have identified ${rejectedIssues.length} item(s) that require clarification or adjustment.\n\nPlease review the highlighted items and issue a credit note or revised invoice at your earliest convenience.\n\nKind regards`;
+    /* AI unavailable — use deterministic fallback */
+  }
+
+  if (!body) {
+    body = fallbackBody;
   }
 
   const subject = `Re: Invoice ${invoice.invoiceNumber}${invoice.matterName ? ` — ${invoice.matterName}` : ""} — Billing Query`;
