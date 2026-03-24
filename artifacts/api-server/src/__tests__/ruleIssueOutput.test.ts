@@ -37,7 +37,6 @@ function baseCtx(overrides: Partial<EvalContext> = {}): EvalContext {
       invoiceDate: "2025-01-31",
       jurisdiction: "England & Wales",
       matterName: "Test Matter",
-      applicableLaw: null,
       lawFirmId: 42,
     },
     items: [],

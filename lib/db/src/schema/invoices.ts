@@ -21,7 +21,6 @@ export const invoicesTable = pgTable("invoices", {
   matterName: text("matter_name"),
   projectReference: text("project_reference"),
   jurisdiction: text("jurisdiction"),
-  applicableLaw: text("applicable_law"),
   internalRequestorId: integer("internal_requestor_id").references(() => usersTable.id),
   assignedLegalOpsId: integer("assigned_legal_ops_id").references(() => usersTable.id),
   assignedInternalLawyerId: integer("assigned_internal_lawyer_id").references(() => usersTable.id),

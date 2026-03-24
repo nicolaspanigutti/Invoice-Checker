@@ -62,7 +62,6 @@ export interface EvalContext {
     invoiceDate: string | null;
     jurisdiction: string | null;
     matterName: string | null;
-    applicableLaw: string | null;
     lawFirmId: number | null;
   };
   items: EvalItem[];
@@ -163,10 +162,9 @@ export function evaluateDeterministicRules(ctx: EvalContext): IssueInsert[] {
       evaluatorType: "deterministic",
       issueStatus: "open",
       routeToRole: "legal_ops",
-      explanationText: `The jurisdiction or applicable law for this invoice could not be determined from the invoice or supporting documents. This information is required to correctly apply the rate schedule (${firm?.name ?? "this firm"} has rates varying by jurisdiction). Rules that may be affected: RATE_EXCESS, RATE_CARD_EXPIRED_OR_MISSING.`,
+      explanationText: `The jurisdiction for this invoice could not be determined from the invoice or supporting documents. This information is required to correctly apply the rate schedule (${firm?.name ?? "this firm"} has rates varying by jurisdiction). Rules that may be affected: RATE_EXCESS, RATE_CARD_EXPIRED_OR_MISSING.`,
       evidenceJson: {
         jurisdiction_extracted: invoice.jurisdiction,
-        applicable_law_extracted: invoice.applicableLaw,
         affected_rules: ["RATE_EXCESS", "RATE_CARD_EXPIRED_OR_MISSING"],
       },
       suggestedAction: "Complete jurisdiction field manually and re-run",

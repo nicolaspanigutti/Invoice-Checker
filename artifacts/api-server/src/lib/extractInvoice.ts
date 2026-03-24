@@ -28,7 +28,6 @@ export interface ExtractedInvoiceData {
   matterName: string | null;
   projectReference: string | null;
   jurisdiction: string | null;
-  applicableLaw: string | null;
   billingPeriodStart: string | null;
   billingPeriodEnd: string | null;
   lineItems: ExtractedLineItem[];
@@ -59,7 +58,6 @@ const EXTRACTION_PROMPT = `Extract all the following fields from this law firm i
   "matterName": "legal matter name or description (string or null)",
   "projectReference": "project or matter reference number (string or null)",
   "jurisdiction": "legal jurisdiction e.g. England & Wales (string or null)",
-  "applicableLaw": "governing law if stated (string or null)",
   "billingPeriodStart": "start of billing period in YYYY-MM-DD (string or null)",
   "billingPeriodEnd": "end of billing period in YYYY-MM-DD (string or null)",
   "lineItems": [
@@ -106,7 +104,7 @@ function parseExtractionResponse(content: string): { extracted: ExtractedInvoice
     const cleaned = content.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
     parsed = JSON.parse(cleaned);
   } catch {
-    parsed = { lawFirmName: null, invoiceDate: null, dueDate: null, totalAmount: null, subtotalAmount: null, taxAmount: null, currency: null, matterName: null, projectReference: null, jurisdiction: null, applicableLaw: null, billingPeriodStart: null, billingPeriodEnd: null, lineItems: [] };
+    parsed = { lawFirmName: null, invoiceDate: null, dueDate: null, totalAmount: null, subtotalAmount: null, taxAmount: null, currency: null, matterName: null, projectReference: null, jurisdiction: null, billingPeriodStart: null, billingPeriodEnd: null, lineItems: [] };
   }
 
   const confidence: Record<string, number> = (parsed.confidence as Record<string, number>) ?? {};
@@ -123,7 +121,6 @@ function parseExtractionResponse(content: string): { extracted: ExtractedInvoice
     matterName: parsed.matterName ?? null,
     projectReference: parsed.projectReference ?? null,
     jurisdiction: parsed.jurisdiction ?? null,
-    applicableLaw: parsed.applicableLaw ?? null,
     billingPeriodStart: parsed.billingPeriodStart ?? null,
     billingPeriodEnd: parsed.billingPeriodEnd ?? null,
     lineItems: Array.isArray(parsed.lineItems) ? parsed.lineItems.map((item: ExtractedLineItem) => ({

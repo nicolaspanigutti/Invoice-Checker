@@ -176,7 +176,6 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
       invoiceDate: invoice.invoiceDate,
       jurisdiction: invoice.jurisdiction,
       matterName: invoice.matterName,
-      applicableLaw: invoice.applicableLaw,
       lawFirmId: invoice.lawFirmId,
     },
     items: items.map(item => ({

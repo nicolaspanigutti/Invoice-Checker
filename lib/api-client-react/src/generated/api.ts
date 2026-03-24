@@ -2354,12 +2354,19 @@ export const useUpdateInvoice = <
   return useMutation(getUpdateInvoiceMutationOptions(options));
 };
 
-export const deleteInvoice = (
+/**
+ * @summary Delete an invoice and all associated data
+ */
+export const getDeleteInvoiceUrl = (id: number) => {
+  return `/api/invoices/${id}`;
+};
+
+export const deleteInvoice = async (
   id: number,
-  options?: SecondParameter<typeof customFetch>,
-) => {
-  return customFetch<void>(`/api/invoices/${id}`, {
-    ...(options as RequestInit),
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteInvoiceUrl(id), {
+    ...options,
     method: "DELETE",
   });
 };
@@ -2395,6 +2402,7 @@ export const getDeleteInvoiceMutationOptions = <
     { id: number }
   > = (props) => {
     const { id } = props ?? {};
+
     return deleteInvoice(id, requestOptions);
   };
 
@@ -2404,8 +2412,12 @@ export const getDeleteInvoiceMutationOptions = <
 export type DeleteInvoiceMutationResult = NonNullable<
   Awaited<ReturnType<typeof deleteInvoice>>
 >;
+
 export type DeleteInvoiceMutationError = ErrorType<ErrorResponse>;
 
+/**
+ * @summary Delete an invoice and all associated data
+ */
 export const useDeleteInvoice = <
   TError = ErrorType<ErrorResponse>,
   TContext = unknown,

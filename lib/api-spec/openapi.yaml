@@ -722,6 +722,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteInvoice
+      tags: [invoices]
+      summary: Delete an invoice and all associated data
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted successfully
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /invoices/{id}/documents:
     get:
@@ -1314,9 +1333,6 @@ components:
             jurisdiction:
               type: string
               nullable: true
-            applicableLaw:
-              type: string
-              nullable: true
             subtotalAmount:
               type: string
               nullable: true
@@ -1626,9 +1642,6 @@ components:
           type: string
           nullable: true
         jurisdiction:
-          type: string
-          nullable: true
-        applicableLaw:
           type: string
           nullable: true
         billingPeriodStart:

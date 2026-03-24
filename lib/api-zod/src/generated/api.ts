@@ -621,7 +621,6 @@ export const GetInvoiceResponse = zod
         .enum(["time_and_materials", "fixed_scope", "closed_scope"])
         .nullish(),
       jurisdiction: zod.string().nullish(),
-      applicableLaw: zod.string().nullish(),
       subtotalAmount: zod.string().nullish(),
       taxAmount: zod.string().nullish(),
       amountAtRisk: zod.string().nullish(),
@@ -714,7 +713,6 @@ export const UpdateInvoiceResponse = zod
         .enum(["time_and_materials", "fixed_scope", "closed_scope"])
         .nullish(),
       jurisdiction: zod.string().nullish(),
-      applicableLaw: zod.string().nullish(),
       subtotalAmount: zod.string().nullish(),
       taxAmount: zod.string().nullish(),
       amountAtRisk: zod.string().nullish(),
@@ -738,6 +736,13 @@ export const UpdateInvoiceResponse = zod
       }),
     }),
   );
+
+/**
+ * @summary Delete an invoice and all associated data
+ */
+export const DeleteInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
 
 /**
  * @summary List documents for an invoice
@@ -846,7 +851,6 @@ export const ExtractInvoiceDataResponse = zod.object({
     matterName: zod.string().nullish(),
     projectReference: zod.string().nullish(),
     jurisdiction: zod.string().nullish(),
-    applicableLaw: zod.string().nullish(),
     billingPeriodStart: zod.string().nullish(),
     billingPeriodEnd: zod.string().nullish(),
     lineItems: zod

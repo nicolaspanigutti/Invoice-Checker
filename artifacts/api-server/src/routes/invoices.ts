@@ -71,7 +71,6 @@ async function buildInvoiceSummary(invoice: typeof invoicesTable.$inferSelect, i
     ...summary,
     billingType: invoice.billingType,
     jurisdiction: invoice.jurisdiction,
-    applicableLaw: invoice.applicableLaw,
     subtotalAmount: invoice.subtotalAmount,
     taxAmount: invoice.taxAmount,
     amountAtRisk: invoice.amountAtRisk,
@@ -213,7 +212,7 @@ router.patch("/invoices/:id", requireRole("super_admin", "legal_ops"), async (re
     return;
   }
 
-  const allowed = ["documentType", "billingType", "matterName", "projectReference", "jurisdiction", "applicableLaw", "currency", "invoiceDate", "dueDate", "totalAmount", "subtotalAmount", "taxAmount", "billingPeriodStart", "billingPeriodEnd", "internalRequestorId", "assignedLegalOpsId", "assignedInternalLawyerId", "invoiceStatus"];
+  const allowed = ["documentType", "billingType", "matterName", "projectReference", "jurisdiction", "currency", "invoiceDate", "dueDate", "totalAmount", "subtotalAmount", "taxAmount", "billingPeriodStart", "billingPeriodEnd", "internalRequestorId", "assignedLegalOpsId", "assignedInternalLawyerId", "invoiceStatus"];
   const updates: Partial<typeof invoicesTable.$inferInsert> = {};
   for (const key of allowed) {
     if (key in req.body) {
@@ -463,7 +462,6 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
   if (extracted.matterName && !invoice.matterName) updates.matterName = extracted.matterName;
   if (extracted.projectReference && !invoice.projectReference) updates.projectReference = extracted.projectReference;
   if (extracted.jurisdiction && !invoice.jurisdiction) updates.jurisdiction = extracted.jurisdiction;
-  if (extracted.applicableLaw && !invoice.applicableLaw) updates.applicableLaw = extracted.applicableLaw;
 
   const prevStatus = invoice.invoiceStatus;
   let statusDidChange = false;

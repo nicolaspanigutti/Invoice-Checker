@@ -285,7 +285,6 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                     matterName: result.extracted.matterName ?? undefined,
                     projectReference: result.extracted.projectReference ?? undefined,
                     jurisdiction: result.extracted.jurisdiction ?? undefined,
-                    applicableLaw: result.extracted.applicableLaw ?? undefined,
                     billingPeriodStart: result.extracted.billingPeriodStart ?? undefined,
                     billingPeriodEnd: result.extracted.billingPeriodEnd ?? undefined,
                   });
@@ -327,7 +326,6 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
     if (reviewForm.matterName !== undefined) patchData.matterName = reviewForm.matterName ?? null;
     if (reviewForm.projectReference !== undefined) patchData.projectReference = reviewForm.projectReference ?? null;
     if (reviewForm.jurisdiction !== undefined) patchData.jurisdiction = reviewForm.jurisdiction ?? null;
-    if (reviewForm.applicableLaw !== undefined) patchData.applicableLaw = reviewForm.applicableLaw ?? null;
     if (reviewForm.billingPeriodStart !== undefined) patchData.billingPeriodStart = reviewForm.billingPeriodStart ?? null;
     if (reviewForm.billingPeriodEnd !== undefined) patchData.billingPeriodEnd = reviewForm.billingPeriodEnd ?? null;
     patchData.currency = reviewExtras.currency || "GBP";
@@ -604,40 +602,6 @@ function AddInvoiceModal({ open, onClose }: { open: boolean; onClose: () => void
                       value={reviewForm.jurisdiction ?? ""}
                       onChange={e => setReviewForm(f => ({ ...f, jurisdiction: e.target.value }))}
                     />
-                  </div>
-                  <div className="col-span-2 space-y-1.5">
-                    <Label>
-                      Applicable Law
-                      {extractionResult && <ConfidencePill score={extractionResult.confidence?.applicableLaw} />}
-                    </Label>
-                    {selectedFirmJurisdictions.length > 0 ? (
-                      (() => {
-                        const currentVal = reviewForm.applicableLaw ?? "";
-                        const options = selectedFirmJurisdictions.includes(currentVal) || !currentVal
-                          ? selectedFirmJurisdictions
-                          : [currentVal, ...selectedFirmJurisdictions];
-                        return (
-                          <Select
-                            value={currentVal || "__none__"}
-                            onValueChange={v => setReviewForm(f => ({ ...f, applicableLaw: v === "__none__" ? "" : v }))}
-                          >
-                            <SelectTrigger><SelectValue placeholder="Select applicable law" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">— Select —</SelectItem>
-                              {options.map(j => (
-                                <SelectItem key={j} value={j}>{j}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        );
-                      })()
-                    ) : (
-                      <Input
-                        value={reviewForm.applicableLaw ?? ""}
-                        onChange={e => setReviewForm(f => ({ ...f, applicableLaw: e.target.value }))}
-                        placeholder="e.g. English Law"
-                      />
-                    )}
                   </div>
                   <div className="space-y-1.5">
                     <Label>

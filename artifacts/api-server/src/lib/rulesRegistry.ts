@@ -277,7 +277,7 @@ export const RULES_REGISTRY: RuleDefinition[] = [
     severity: "warning",
     scope: "invoice",
     routeToRole: "legal_ops",
-    description: "The jurisdiction or applicable law for this invoice could not be determined, preventing accurate application of the jurisdiction-specific rate schedule.",
+    description: "The jurisdiction for this invoice could not be determined, preventing accurate application of the jurisdiction-specific rate schedule.",
     hasConfig: false,
   },
 ];

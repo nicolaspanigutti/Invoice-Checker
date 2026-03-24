@@ -86,7 +86,6 @@ export interface CompletenessResult {
 export type InvoiceDetail = InvoiceSummary & {
   billingType?: InvoiceDetailBillingType;
   jurisdiction?: string | null;
-  applicableLaw?: string | null;
   subtotalAmount?: string | null;
   taxAmount?: string | null;
   amountAtRisk?: string | null;
@@ -272,7 +271,6 @@ export interface ExtractedInvoiceData {
   matterName?: string | null;
   projectReference?: string | null;
   jurisdiction?: string | null;
-  applicableLaw?: string | null;
   billingPeriodStart?: string | null;
   billingPeriodEnd?: string | null;
   lineItems?: ExtractedLineItem[];
