@@ -405,6 +405,9 @@ export function parseGreyRulesResponse(
   if (Array.isArray(parallelBilling) && isRuleActive("PARALLEL_BILLING")) {
     for (const pb of parallelBilling) {
       if (!pb.fires || !pb.date) continue;
+      // Skip if all timekeepers are the same person — that is a duplicate entry, not parallel billing
+      const uniqueTimekeepers = new Set((pb.timekeeper_list ?? []).map(t => t.trim().toLowerCase()));
+      if (uniqueTimekeepers.size < 2) continue;
       greyIssues.push({
         invoiceId,
         analysisRunId: runId,
@@ -740,7 +743,7 @@ For each grey rule below, determine if it should fire based on the evidence. Ret
 Rules:
 - EL_CONFLICT_WITH_PANEL_BASELINE: Only fires if EL is available AND firm is a panel firm AND EL contains terms that clearly contradict panel rates/T&C.
 - HOURS_DISPROPORTIONATE: Only fires when hours for a task are genuinely unusual for the role (e.g. junior billing >80h/month on one task).
-- PARALLEL_BILLING: Only fires when multiple timekeepers bill similar/overlapping work on the same date with similar descriptions.
+- PARALLEL_BILLING: Only fires when two or more DIFFERENT timekeepers (distinct individuals) bill similar/overlapping work on the same date. Never fire this for the same timekeeper appearing twice on the same date — that is a data-entry duplicate, not parallel billing.
 - SCOPE_CREEP: Only fires if EL is available and a line clearly describes work outside the engagement scope. Be conservative.
 - SENIORITY_OVERKILL: Only fires when a senior timekeeper (Partner, Senior Partner) bills for clearly administrative or routine tasks.
 - ESTIMATE_EXCESS: Only fires if a budget estimate amount is available and cumulative billing clearly exceeds it.
