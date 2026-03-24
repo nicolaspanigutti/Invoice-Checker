@@ -49,7 +49,15 @@ function MainApp() {
   const { data: user, isLoading, error } = useGetMe({ 
     query: { 
       queryKey: getGetMeQueryKey(),
-      retry: false,
+      retry: (failureCount, err) => {
+        // Never retry on 401 — the user is definitely not authenticated.
+        // Retry up to 3 times for network/server errors so a brief restart
+        // does not immediately kick the user back to the login page.
+        const status = (err as { status?: number })?.status;
+        if (status === 401) return false;
+        return failureCount < 3;
+      },
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
       staleTime: Infinity 
     } 
   });
@@ -65,22 +73,36 @@ function MainApp() {
     );
   }
 
-  if (error || !user) {
+  const is401 = (error as { status?: number } | null)?.status === 401;
+  if (is401 || (!isLoading && !error && !user)) {
     return <Redirect to="/login" replace />;
   }
 
+  // Still retrying after a transient error — keep showing the loading screen
+  if (error && !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-6">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-muted-foreground font-medium animate-pulse">Reconnecting...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const authedUser = user!;
   return (
-    <AppLayout user={user}>
+    <AppLayout user={authedUser}>
       <Switch>
-        <Route path="/"><ProtectedRoute component={Dashboard} user={user} /></Route>
-        <Route path="/invoices"><ProtectedRoute component={Invoices} user={user} /></Route>
-        <Route path="/invoices/:id/report"><ProtectedRoute component={InvoiceReport} user={user} /></Route>
-        <Route path="/invoices/:id"><ProtectedRoute component={InvoiceDetail} user={user} /></Route>
-        <Route path="/law-firms"><ProtectedRoute component={LawFirms} allowedRoles={["super_admin", "legal_ops"]} user={user} /></Route>
-        <Route path="/rates"><ProtectedRoute component={Rates} allowedRoles={["super_admin", "legal_ops"]} user={user} /></Route>
-        <Route path="/rules"><ProtectedRoute component={Rules} user={user} /></Route>
-        <Route path="/analytics"><ProtectedRoute component={Analytics} user={user} /></Route>
-        <Route path="/users"><ProtectedRoute component={Users} allowedRoles={["super_admin"]} user={user} /></Route>
+        <Route path="/"><ProtectedRoute component={Dashboard} user={authedUser} /></Route>
+        <Route path="/invoices"><ProtectedRoute component={Invoices} user={authedUser} /></Route>
+        <Route path="/invoices/:id/report"><ProtectedRoute component={InvoiceReport} user={authedUser} /></Route>
+        <Route path="/invoices/:id"><ProtectedRoute component={InvoiceDetail} user={authedUser} /></Route>
+        <Route path="/law-firms"><ProtectedRoute component={LawFirms} allowedRoles={["super_admin", "legal_ops"]} user={authedUser} /></Route>
+        <Route path="/rates"><ProtectedRoute component={Rates} allowedRoles={["super_admin", "legal_ops"]} user={authedUser} /></Route>
+        <Route path="/rules"><ProtectedRoute component={Rules} user={authedUser} /></Route>
+        <Route path="/analytics"><ProtectedRoute component={Analytics} user={authedUser} /></Route>
+        <Route path="/users"><ProtectedRoute component={Users} allowedRoles={["super_admin"]} user={authedUser} /></Route>
         <Route><NotFound /></Route>
       </Switch>
     </AppLayout>
