@@ -39,6 +39,7 @@ const TERM_LABELS: Record<string, string> = {
   contract_start_date: "Contract Start Date",
   contract_end_date: "Contract End Date",
   best_friend_firms_json: "Best Friend Firms",
+  per_role_rates_json: "Agreed Rate Caps by Role",
 };
 
 const TERM_ORDER: string[] = [
@@ -125,6 +126,21 @@ function formatExpensePolicy(policy: ExpensePolicy): React.ReactNode {
   );
 }
 
+function formatPerRoleRates(rates: Record<string, number>): React.ReactNode {
+  const entries = Object.entries(rates);
+  if (!entries.length) return "—";
+  return (
+    <div className="space-y-0.5 text-right">
+      {entries.map(([role, rate]) => (
+        <div key={role} className="text-xs">
+          <span className="text-muted-foreground">{role}:</span>{" "}
+          <span className="font-semibold">{rate.toLocaleString()}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function formatTermValue(termKey: string, value: unknown): React.ReactNode {
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -138,6 +154,9 @@ function formatTermValue(termKey: string, value: unknown): React.ReactNode {
   }
   if (termKey === "best_friend_firms_json" && Array.isArray(value)) {
     return (value as string[]).join(", ");
+  }
+  if (termKey === "per_role_rates_json" && typeof value === "object" && !Array.isArray(value)) {
+    return formatPerRoleRates(value as Record<string, number>);
   }
   if (Array.isArray(value)) return (value as unknown[]).map(v => typeof v === "string" ? v : JSON.stringify(v)).join(", ");
   return JSON.stringify(value);
