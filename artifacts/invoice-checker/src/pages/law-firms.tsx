@@ -203,6 +203,48 @@ const JURISDICTIONS = [
   "Australia",
 ];
 
+// Map AI-extracted strings to the nearest valid option from a list.
+// Tries exact match → case-insensitive match → substring containment → keyword overlap.
+function matchExtractedToOptions(extracted: string[], options: string[]): string {
+  const matched: string[] = [];
+  const optionsLower = options.map(o => o.toLowerCase());
+
+  for (const raw of extracted) {
+    const rawLower = raw.toLowerCase().trim();
+
+    // 1. Exact match (case-insensitive)
+    const exactIdx = optionsLower.indexOf(rawLower);
+    if (exactIdx !== -1) { if (!matched.includes(options[exactIdx])) matched.push(options[exactIdx]); continue; }
+
+    // 2. Option is a substring of the extracted value, or vice versa
+    let found = false;
+    for (let i = 0; i < options.length; i++) {
+      if (rawLower.includes(optionsLower[i]) || optionsLower[i].includes(rawLower)) {
+        if (!matched.includes(options[i])) matched.push(options[i]);
+        found = true;
+        break;
+      }
+    }
+    if (found) continue;
+
+    // 3. Significant keyword overlap (≥ 1 meaningful word in common)
+    const stopWords = new Set(["and", "the", "of", "in", "&", "a", "an", "for", "or", "to", "at"]);
+    const rawWords = rawLower.split(/[\s&,]+/).filter(w => w.length > 2 && !stopWords.has(w));
+    let bestScore = 0;
+    let bestIdx = -1;
+    for (let i = 0; i < options.length; i++) {
+      const optWords = optionsLower[i].split(/[\s&,]+/).filter(w => w.length > 2 && !stopWords.has(w));
+      const score = rawWords.filter(w => optWords.some(ow => ow.startsWith(w) || w.startsWith(ow))).length;
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    }
+    if (bestScore >= 1 && bestIdx !== -1) {
+      if (!matched.includes(options[bestIdx])) matched.push(options[bestIdx]);
+    }
+  }
+
+  return matched.join(", ");
+}
+
 function MultiSelectDropdown({ options, value, onChange, placeholder }: {
   options: string[];
   value: string;
@@ -513,8 +555,8 @@ function CreateFirmModal({ onClose }: { onClose: () => void }) {
         contactEmail: info.contactEmail ?? "",
         contactPhone: info.contactPhone ?? "",
         relationshipPartner: info.relationshipPartner ?? "",
-        jurisdictions: (info.jurisdictions ?? []).join(", "),
-        practiceAreas: (info.practiceAreas ?? []).join(", "),
+        jurisdictions: matchExtractedToOptions(info.jurisdictions ?? [], JURISDICTIONS),
+        practiceAreas: matchExtractedToOptions(info.practiceAreas ?? [], PRACTICE_AREAS),
         notes: info.notes ?? "",
       });
       setStep("review");
