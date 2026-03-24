@@ -18,9 +18,16 @@ localPort = 18333
 run = "pnpm --filter @workspace/invoice-checker run dev"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/invoice-checker", "run", "build" ]
 publicDir = "artifacts/invoice-checker/dist/public"
 serve = "static"
+
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/invoice-checker", "run", "build"]
+
+[services.production.build.env]
+PORT = "18333"
+BASE_PATH = "/"
+NODE_ENV = "production"
 
 [[services.production.rewrites]]
 from = "/*"
