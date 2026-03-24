@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   TrendingUp, FileText, AlertTriangle,
-  ShieldAlert, BarChart2, Building2, Globe, Loader2, Handshake,
+  ShieldAlert, BarChart2, Building2, Loader2, Handshake, Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -54,12 +54,6 @@ interface ByFirm {
   amountAtRisk: number;
   issueCount: number;
   confirmedIssues: number;
-}
-interface ByJurisdiction {
-  jurisdiction: string;
-  invoiceCount: number;
-  totalAmount: number;
-  confirmedRecovery: number;
 }
 interface ByBillingType {
   billingType: string;
@@ -213,7 +207,10 @@ export default function Analytics() {
     );
   }
 
-  const { summary, roiSummary, rejectedVsAcknowledgedByMonth, issuesByRule, byFirm, byJurisdiction } = data;
+  const { summary, roiSummary, rejectedVsAcknowledgedByMonth, issuesByRule, byFirm } = data;
+  const maxDisputeRate = byFirm.length > 0
+    ? Math.max(...byFirm.map(f => f.totalAmount > 0 ? (f.confirmedRecovery / f.totalAmount) * 100 : 0))
+    : 1;
 
   // Top 10 rules by issue count
   const topRules = issuesByRule.slice(0, 10);
@@ -320,26 +317,59 @@ export default function Analytics() {
         <div>
           <SectionHeader
             title="Ranking by Law Firm"
-            subtitle="Which firms have the most billing errors and how much money is at stake"
+            subtitle="Ordered by dispute rate — firms where confirmed billing errors represent the highest share of total fees billed"
           />
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/40">
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-muted-foreground w-10">#</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground">Firm</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Invoices</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Amount Reviewed</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">
+                    <span className="flex items-center justify-end gap-1">
+                      Total Billed
+                      <span title="Total invoice amount submitted by this firm that has been reviewed in the system">
+                        <Info className="w-3 h-3 text-muted-foreground/60 cursor-help" />
+                      </span>
+                    </span>
+                  </th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Issues Found</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Errors Confirmed</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Amount Disputed</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">Dispute Rate</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-muted-foreground">
+                    <span className="flex items-center justify-end gap-1">
+                      Disputed with Firm
+                      <span title="Amount formally challenged with the firm — sum of recoverable value in issues that reviewers marked as confirmed errors">
+                        <Info className="w-3 h-3 text-muted-foreground/60 cursor-help" />
+                      </span>
+                    </span>
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground" style={{ minWidth: 140 }}>
+                    <span className="flex items-center gap-1">
+                      Dispute Rate
+                      <span title="Disputed amount as a percentage of total fees billed — the higher this is, the more the firm overbills relative to what they charge">
+                        <Info className="w-3 h-3 text-muted-foreground/60 cursor-help" />
+                      </span>
+                    </span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {byFirm.map((f, i) => {
                   const recoveryPct = f.totalAmount > 0 ? (f.confirmedRecovery / f.totalAmount) * 100 : 0;
+                  const barWidth = maxDisputeRate > 0 ? (recoveryPct / maxDisputeRate) * 100 : 0;
+                  const rankColors = ["bg-red-600", "bg-red-400", "bg-amber-500"];
+                  const rankColor = rankColors[i] ?? "bg-muted-foreground/30";
                   return (
                     <tr key={f.firmId} className={cn("border-b border-border last:border-0 hover:bg-muted/30 transition-colors", i === 0 && "bg-red-50/30")}>
+                      <td className="px-3 py-3 text-center">
+                        <span className={cn(
+                          "inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold text-white",
+                          rankColor
+                        )}>
+                          {i + 1}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Building2 className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -360,13 +390,24 @@ export default function Analytics() {
                       <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-red-700">
                         {fmtCurrency(f.confirmedRecovery)}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <span className={cn(
-                          "text-xs font-semibold px-2 py-0.5 rounded-full",
-                          recoveryPct > 5 ? "bg-red-100 text-red-700" : recoveryPct > 1 ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"
-                        )}>
-                          {fmtPct(recoveryPct)}
-                        </span>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className={cn(
+                                "h-full rounded-full transition-all",
+                                recoveryPct > 5 ? "bg-red-500" : recoveryPct > 1 ? "bg-amber-400" : "bg-slate-300"
+                              )}
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </div>
+                          <span className={cn(
+                            "text-xs font-semibold w-10 text-right",
+                            recoveryPct > 5 ? "text-red-700" : recoveryPct > 1 ? "text-amber-700" : "text-muted-foreground"
+                          )}>
+                            {fmtPct(recoveryPct)}
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -419,42 +460,6 @@ export default function Analytics() {
         </div>
       )}
 
-      {/* ── 6. By jurisdiction ────────────────────────────────────── */}
-      {byJurisdiction.length > 1 && (
-        <div>
-          <SectionHeader
-            title="By Jurisdiction"
-            subtitle="Invoice volume and amount reviewed per applicable law — highlights where most billing exposure sits"
-          />
-          <ChartCard>
-            <div className="space-y-3">
-              {byJurisdiction.slice(0, 8).map((j, i) => {
-                const pct = summary.totalAmountReviewed > 0
-                  ? (j.totalAmount / summary.totalAmountReviewed) * 100
-                  : 0;
-                return (
-                  <div key={i}>
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="flex items-center gap-1.5 text-foreground font-medium">
-                        <Globe className="w-3 h-3 text-muted-foreground" />
-                        {j.jurisdiction}
-                        <span className="text-muted-foreground font-normal">· {j.invoiceCount} invoice{j.invoiceCount !== 1 ? "s" : ""}</span>
-                      </span>
-                      <span className="font-mono text-xs text-foreground">{fmtCurrency(j.totalAmount)}</span>
-                    </div>
-                    <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${Math.min(pct, 100)}%`, background: PALETTE[i % PALETTE.length] }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </ChartCard>
-        </div>
-      )}
 
       {/* Empty state */}
       {summary.totalInvoices === 0 && (
