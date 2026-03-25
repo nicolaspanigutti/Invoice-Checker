@@ -1,11 +1,91 @@
-import { db, usersTable } from "@workspace/db";
+import { analysisRunsTable, db, usersTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 export async function seedIfEmpty(): Promise<void> {
   const existing = await db.select({ id: usersTable.id }).from(usersTable).limit(1);
+
   if (existing.length > 0) {
-    logger.info("Database already seeded — skipping.");
+    /* Users already exist — check if analysis runs are also present.
+       If not, this is a DB that was seeded before section 8 (analysis runs)
+       was added; backfill only those sections now. */
+    const existingRuns = await db
+      .select({ id: analysisRunsTable.id })
+      .from(analysisRunsTable)
+      .limit(1);
+
+    if (existingRuns.length > 0) {
+      logger.info("Database already seeded — skipping.");
+      return;
+    }
+
+    logger.info("Backfill: inserting analysis runs and issues into existing DB...");
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO analysis_runs (id, invoice_id, version_no, trigger_reason, status, started_by_id, started_at, finished_at)
+        OVERRIDING SYSTEM VALUE VALUES
+        (1,  6,  1, 'manual', 'complete', 2, NOW(), NOW()),
+        (2,  7,  1, 'manual', 'complete', 2, NOW(), NOW()),
+        (3,  8,  1, 'manual', 'complete', 2, NOW(), NOW()),
+        (4,  9,  1, 'manual', 'complete', 2, NOW(), NOW()),
+        (5,  10, 1, 'manual', 'complete', 2, NOW(), NOW()),
+        (6,  11, 1, 'manual', 'complete', 2, NOW(), NOW()),
+        (7,  12, 1, 'manual', 'complete', 2, NOW(), NOW()),
+        (8,  13, 1, 'manual', 'complete', 2, NOW(), NOW()),
+        (9,  14, 1, 'manual', 'complete', 2, NOW(), NOW()),
+        (10, 15, 1, 'manual', 'complete', 2, NOW(), NOW()),
+        (11, 16, 1, 'manual', 'complete', 2, NOW(), NOW()),
+        (12, 17, 1, 'manual', 'complete', 2, NOW(), NOW()),
+        (13, 19, 1, 'manual', 'complete', 1, NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
+      `);
+      await tx.execute(sql`SELECT setval('analysis_runs_id_seq', (SELECT MAX(id) FROM analysis_runs))`);
+
+      await tx.execute(sql`
+        INSERT INTO issues
+          (id, invoice_id, analysis_run_id, invoice_item_id,
+           rule_code, rule_type, severity, evaluator_type,
+           issue_status, route_to_role, explanation_text,
+           suggested_action, recoverable_amount, recovery_group_key,
+           created_at, updated_at, firm_acknowledged)
+        OVERRIDING SYSTEM VALUE VALUES
+        (1,  6, 1, 1,  'RATE_EXCESS',            'heuristic', 'error',   'heuristic', 'open',                    'legal_ops',       'Senior Associate J. Thornton billed at £620/h against the agreed panel rate of £550/h. Excess: £70/h × 8 hours = £560.',                                                                                                                                                                             NULL, 560.00,  NULL, NOW(), NOW(), false),
+        (2,  6, 1, 2,  'HOURS_DISPROPORTIONATE', 'heuristic', 'warning', 'heuristic', 'open',                    'legal_ops',       'Trainee S. Webb billed exactly 8.0 hours on 3 Feb 2026. Uniform round-number entries on consecutive days are inconsistent with genuine time recording — please verify against timesheets.',                                                                                                          NULL, 560.00,  NULL, NOW(), NOW(), false),
+        (3,  6, 1, 3,  'HOURS_DISPROPORTIONATE', 'heuristic', 'warning', 'heuristic', 'open',                    'legal_ops',       'Trainee S. Webb billed exactly 8.0 hours on 4 Feb 2026. Uniform round-number entries on consecutive days are inconsistent with genuine time recording — please verify against timesheets.',                                                                                                          NULL, 560.00,  NULL, NOW(), NOW(), false),
+        (4,  7, 2, 9,  'UNAUTHORIZED_EXPENSE_TYPE', 'ai',     'warning', 'ai',        'rejected_by_legal_ops',   'legal_ops',       'Courier charges include a 15% handling markup (€180). Only the actual disbursement cost is recoverable under the engagement terms — firm handling surcharges are not permitted.',                                                                                                                  NULL, 180.00,  NULL, NOW(), NOW(), false),
+        (5,  7, 2, 10, 'INTERNAL_COORDINATION',  'ai',        'error',   'ai',        'rejected_by_legal_ops',   'legal_ops',       '''Internal team coordination — Restructuring Matter'' billed at €220. Internal firm coordination meetings are expressly non-billable under the engagement terms.',                                                                                                                                NULL, 220.00,  NULL, NOW(), NOW(), false),
+        (6,  8, 3, 11, 'RATE_EXCESS',            'heuristic', 'error',   'heuristic', 'escalated_to_internal_lawyer', 'internal_lawyer', 'Partner Dr. K. Weber billed at €980/h. The agreed panel rate for Partner grade is €750/h. Excess: €230/h × 12 hours = €2,760. Issue escalated for senior review given the magnitude of the discrepancy.',                                                                                  NULL, 2760.00, NULL, NOW(), NOW(), false),
+        (7,  8, 3, 12, 'HOURS_DISPROPORTIONATE', 'heuristic', 'warning', 'heuristic', 'open',                    'legal_ops',       'Senior Associate A. Schmidt billed exactly 6.0 hours on 14 Feb 2026 — the same date and identical duration as Associate T. Müller. Simultaneous round-number entries across timekeepers warrant verification.',                                                                                    NULL, 0.00,    NULL, NOW(), NOW(), false),
+        (8,  8, 3, 13, 'HOURS_DISPROPORTIONATE', 'heuristic', 'warning', 'heuristic', 'open',                    'legal_ops',       'Associate T. Müller billed exactly 6.0 hours on 14 Feb 2026 — the same date and identical duration as Senior Associate A. Schmidt. Simultaneous round-number entries across timekeepers warrant verification.',                                                                                     NULL, 0.00,    NULL, NOW(), NOW(), false),
+        (9,  9, 4, 16, 'DAILY_HOURS_EXCEEDED',   'heuristic', 'error',   'heuristic', 'escalated_to_internal_lawyer', 'internal_lawyer', 'Senior Associate C. Evans billed 14.0 hours on 18 Feb 2026, exceeding the 10-hour daily cap in the engagement terms. The excess 4.0 hours (4 × £580 = £2,320) is not recoverable without prior client authorisation.',                                                                   NULL, 2320.00, NULL, NOW(), NOW(), false),
+        (10, 9, 4, 19, 'PARALLEL_BILLING',       'ai',        'warning', 'ai',        'open',                    'legal_ops',       'Telephone call of approximately 15 minutes billed at the 1-hour minimum unit (£580). The agreed minimum billing unit is 6 minutes. Estimated overbilling on this entry: £435 (45 min × £580/h).',                                                                                                  NULL, 435.00,  NULL, NOW(), NOW(), false),
+        (11, 9, 4, 20, 'PARALLEL_BILLING',       'ai',        'warning', 'ai',        'open',                    'legal_ops',       'Telephone call of approximately 12 minutes billed at the 1-hour minimum unit (£580). The agreed minimum billing unit is 6 minutes. Estimated overbilling on this entry: £435 (45 min × £580/h).',                                                                                                  NULL, 435.00,  NULL, NOW(), NOW(), false),
+        (12, 10, 5, 21, 'HOURS_DISPROPORTIONATE','heuristic', 'warning', 'heuristic', 'accepted_by_legal_ops',   'legal_ops',       'Associate K. Tanaka billed exactly 4.0 hours on 5 Feb 2026. System flagged as potential round-number entry. Timesheet review confirmed hours are accurate — trademark search scope matches recorded time.',                                                                                        NULL, 0.00,    NULL, NOW(), NOW(), false),
+        (13, 10, 5, 22, 'HOURS_DISPROPORTIONATE','heuristic', 'warning', 'heuristic', 'accepted_by_legal_ops',   'legal_ops',       'Associate K. Tanaka billed exactly 4.0 hours on 6 Feb 2026. System flagged as potential round-number entry. Timesheet review confirmed hours are accurate — trademark search scope matches recorded time.',                                                                                        NULL, 0.00,    NULL, NOW(), NOW(), false),
+        (14, 12, 7, 28, 'UNAUTHORIZED_EXPENSE_TYPE','ai',     'warning', 'ai',        'accepted_by_legal_ops',   'legal_ops',       'Employment Tribunal filing fee includes a 5% administration charge (£9). The engagement letter permits a handling charge of up to 5%, so this falls within contractual tolerance.',                                                                                                                NULL, 0.00,    NULL, NOW(), NOW(), false),
+        (15, 13, 8, 33, 'INTERNAL_COORDINATION',  'ai',       'error',   'ai',        'rejected_by_legal_ops',   'legal_ops',       '''Document management software licence'' of £1,200 billed as a disbursement. Software subscriptions are a firm overhead cost and cannot be passed to the client under the engagement terms.',                                                                                                     NULL, 1200.00, NULL, NOW(), NOW(), false),
+        (16, 13, 8, 29, 'RATE_EXCESS',            'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Senior Partner Sir R. Caldwell billed at £1,100/h. The agreed Senior Partner rate is £850/h. Excess: £250/h × 30 hours billed this period = £7,500 to be recovered.',                                                                                                                           NULL, 7500.00, NULL, NOW(), NOW(), false),
+        (17, 13, 8, NULL,'PARALLEL_BILLING',      'ai',       'warning', 'ai',        'rejected_by_legal_ops',   'legal_ops',       'Partner, Senior Associate, and Trainee simultaneously billed for overlapping completion tasks during the same board session on 15 Jan 2026. Estimated parallel billing excess after deducting the lead fee earner: £4,000.',                                                                       NULL, 4000.00, NULL, NOW(), NOW(), false),
+        (18, 14, 9, 34, 'DAILY_HOURS_EXCEEDED',   'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Partner Prof. H. Braun billed 13.5 hours on 18 Jan 2026, exceeding the 10-hour daily cap. Excess: 3.5 hours × €780/h = €2,730. €2,200 disputed as irrecoverable excess.',                                                                                                                       NULL, 2200.00, NULL, NOW(), NOW(), false),
+        (19, 14, 9, 37, 'MEETING_OVERSTAFFING',   'ai',       'warning', 'ai',        'rejected_by_legal_ops',   'legal_ops',       'Associate C. Fischer attended the full-day antitrust strategy session on 18 Jan 2026. The engagement terms cap attendance at 3 fee earners per client meeting without prior approval. C. Fischer is one of two attendees above the agreed quota. Rejected: €2,063.',                               NULL, 2063.00, NULL, NOW(), NOW(), false),
+        (20, 14, 9, 38, 'MEETING_OVERSTAFFING',   'ai',       'warning', 'ai',        'rejected_by_legal_ops',   'legal_ops',       'Trainee R. Klein attended the full-day antitrust strategy session on 18 Jan 2026. The engagement terms cap attendance at 3 fee earners per client meeting without prior approval. R. Klein is one of two attendees above the agreed quota. Rejected: €2,062.',                                    NULL, 2062.00, NULL, NOW(), NOW(), false),
+        (21, 15, 10, 42, 'UNAUTHORIZED_EXPENSE_TYPE','ai',    'error',   'ai',        'rejected_by_legal_ops',   'legal_ops',       'Independent surveyor report passed through with a 25% handling surcharge (€800). The engagement letter caps disbursement markups at 5%. The excess 20% surcharge (€800) is rejected.',                                                                                                            NULL, 800.00,  NULL, NOW(), NOW(), false),
+        (22, 15, 10, 43, 'INTERNAL_COORDINATION', 'ai',       'error',   'ai',        'rejected_by_legal_ops',   'legal_ops',       '''Internal coordination meeting — Hargreaves Real Estate team'' charged at €450. Internal firm meetings are non-billable; this item is rejected in full.',                                                                                                                                        NULL, 450.00,  NULL, NOW(), NOW(), false),
+        (23, 16, 11, 47, 'EXPENSE_CAP_EXCEEDED',  'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Business class flights charged at €4,800. The travel policy requires economy class for journeys under 5 hours, with a per-trip cap of €2,000. Excess above cap: €2,800.',                                                                                                                        NULL, 2800.00, NULL, NOW(), NOW(), false),
+        (24, 16, 11, 45, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Junior Solicitor E. García billed at €380/h on 1 Feb 2026 (8.0 hours). The agreed rate for this grade is €280/h. Excess: €100/h × 8 hours = €800.',                                                                                                                                             NULL, 800.00,  NULL, NOW(), NOW(), false),
+        (25, 16, 11, 46, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Junior Solicitor E. García billed at €380/h on 2 Feb 2026 (6.0 hours). The agreed rate for this grade is €280/h. Excess: €100/h × 6 hours = €600.',                                                                                                                                             NULL, 600.00,  NULL, NOW(), NOW(), false),
+        (26, 17, 12, 49, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed at £280/h on 8 Feb 2026 (8.0 hours). The agreed panel cap for paralegals is £180/h. Excess: £100/h × 8 hours = £800.',                                                                                                                                              NULL, 800.00,  NULL, NOW(), NOW(), false),
+        (27, 17, 12, 50, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed at £280/h on 9 Feb 2026 (8.0 hours). The agreed panel cap for paralegals is £180/h. Excess: £100/h × 8 hours = £800.',                                                                                                                                              NULL, 800.00,  NULL, NOW(), NOW(), false),
+        (28, 17, 12, 51, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed at £280/h on 10 Feb 2026 (8.0 hours). The agreed panel cap for paralegals is £180/h. Excess: £100/h × 8 hours = £800.',                                                                                                                                             NULL, 800.00,  NULL, NOW(), NOW(), false),
+        (29, 17, 12, 49, 'HOURS_DISPROPORTIONATE','heuristic','warning', 'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed exactly 8.0 hours on 8 Feb 2026. Combined with identical entries on 9 and 10 Feb, this three-day pattern of uniform daily billing is inconsistent with genuine time recording.',                                                                                      NULL, 1167.00, NULL, NOW(), NOW(), false),
+        (30, 17, 12, 50, 'HOURS_DISPROPORTIONATE','heuristic','warning', 'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed exactly 8.0 hours on 9 Feb 2026. Combined with identical entries on 8 and 10 Feb, this three-day pattern of uniform daily billing is inconsistent with genuine time recording.',                                                                                      NULL, 1167.00, NULL, NOW(), NOW(), false),
+        (31, 17, 12, 51, 'HOURS_DISPROPORTIONATE','heuristic','warning', 'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed exactly 8.0 hours on 10 Feb 2026. Combined with identical entries on 8 and 9 Feb, this three-day pattern of uniform daily billing is inconsistent with genuine time recording.',                                                                                     NULL, 1166.00, NULL, NOW(), NOW(), false),
+        (32, 19, 13, 62, 'SENIORITY_OVERKILL',    'gray',     'warning', 'heuristic', 'accepted_by_legal_ops',   'internal_lawyer', 'Line 10: M. Quinn (Partner, GBP 700/h) billed 1h for reviewing the AURORA international application and signing off on country designations. This task appears routine and could typically be handled by a Senior Associate at a lower rate. Flagged as seniority overkill.', 'Accept | Reject | Delegate to Internal Lawyer', 0.00, NULL, NOW(), NOW(), false)
+        ON CONFLICT (id) DO NOTHING
+      `);
+      await tx.execute(sql`SELECT setval('issues_id_seq', (SELECT MAX(id) FROM issues))`);
+    });
+    logger.info("Backfill complete.");
     return;
   }
 
@@ -281,7 +361,83 @@ export async function seedIfEmpty(): Promise<void> {
               '/objects/uploads/77811b73-7ecb-437c-bf86-3a95ed0a6ffa', 'done')
     `);
 
-    /* ── 8. Reset invoice_number_seq (next free invoice number) ───────── */
+    /* ── 8. ANALYSIS RUNS ────────────────────────────────────────────── */
+    await tx.execute(sql`
+      INSERT INTO analysis_runs (id, invoice_id, version_no, trigger_reason, status, started_by_id, started_at, finished_at)
+      OVERRIDING SYSTEM VALUE VALUES
+      (1,  6,  1, 'manual', 'complete', 2, NOW(), NOW()),
+      (2,  7,  1, 'manual', 'complete', 2, NOW(), NOW()),
+      (3,  8,  1, 'manual', 'complete', 2, NOW(), NOW()),
+      (4,  9,  1, 'manual', 'complete', 2, NOW(), NOW()),
+      (5,  10, 1, 'manual', 'complete', 2, NOW(), NOW()),
+      (6,  11, 1, 'manual', 'complete', 2, NOW(), NOW()),
+      (7,  12, 1, 'manual', 'complete', 2, NOW(), NOW()),
+      (8,  13, 1, 'manual', 'complete', 2, NOW(), NOW()),
+      (9,  14, 1, 'manual', 'complete', 2, NOW(), NOW()),
+      (10, 15, 1, 'manual', 'complete', 2, NOW(), NOW()),
+      (11, 16, 1, 'manual', 'complete', 2, NOW(), NOW()),
+      (12, 17, 1, 'manual', 'complete', 2, NOW(), NOW()),
+      (13, 19, 1, 'manual', 'complete', 1, NOW(), NOW())
+    `);
+    await tx.execute(sql`SELECT setval('analysis_runs_id_seq', (SELECT MAX(id) FROM analysis_runs))`);
+
+    /* ── 9. ISSUES ────────────────────────────────────────────────────── */
+    await tx.execute(sql`
+      INSERT INTO issues
+        (id, invoice_id, analysis_run_id, invoice_item_id,
+         rule_code, rule_type, severity, evaluator_type,
+         issue_status, route_to_role, explanation_text,
+         suggested_action, recoverable_amount, recovery_group_key,
+         created_at, updated_at, firm_acknowledged)
+      OVERRIDING SYSTEM VALUE VALUES
+      -- Invoice 6 — Acquisition Due Diligence (in_review)
+      (1,  6, 1, 1,  'RATE_EXCESS',            'heuristic', 'error',   'heuristic', 'open',                    'legal_ops',       'Senior Associate J. Thornton billed at £620/h against the agreed panel rate of £550/h. Excess: £70/h × 8 hours = £560.',                                                                                                                                                                             NULL, 560.00,  NULL, NOW(), NOW(), false),
+      (2,  6, 1, 2,  'HOURS_DISPROPORTIONATE', 'heuristic', 'warning', 'heuristic', 'open',                    'legal_ops',       'Trainee S. Webb billed exactly 8.0 hours on 3 Feb 2026. Uniform round-number entries on consecutive days are inconsistent with genuine time recording — please verify against timesheets.',                                                                                                          NULL, 560.00,  NULL, NOW(), NOW(), false),
+      (3,  6, 1, 3,  'HOURS_DISPROPORTIONATE', 'heuristic', 'warning', 'heuristic', 'open',                    'legal_ops',       'Trainee S. Webb billed exactly 8.0 hours on 4 Feb 2026. Uniform round-number entries on consecutive days are inconsistent with genuine time recording — please verify against timesheets.',                                                                                                          NULL, 560.00,  NULL, NOW(), NOW(), false),
+      -- Invoice 7 — Employment Restructuring Advisory (disputed / fully_rejected)
+      (4,  7, 2, 9,  'UNAUTHORIZED_EXPENSE_TYPE', 'ai',      'warning', 'ai',        'rejected_by_legal_ops',   'legal_ops',       'Courier charges include a 15% handling markup (€180). Only the actual disbursement cost is recoverable under the engagement terms — firm handling surcharges are not permitted.',                                                                                                                  NULL, 180.00,  NULL, NOW(), NOW(), false),
+      (5,  7, 2, 10, 'INTERNAL_COORDINATION',  'ai',        'error',   'ai',         'rejected_by_legal_ops',   'legal_ops',       '''Internal team coordination — Restructuring Matter'' billed at €220. Internal firm coordination meetings are expressly non-billable under the engagement terms.',                                                                                                                                NULL, 220.00,  NULL, NOW(), NOW(), false),
+      -- Invoice 8 — Data Protection Compliance Programme (escalated)
+      (6,  8, 3, 11, 'RATE_EXCESS',            'heuristic', 'error',   'heuristic', 'escalated_to_internal_lawyer', 'internal_lawyer', 'Partner Dr. K. Weber billed at €980/h. The agreed panel rate for Partner grade is €750/h. Excess: €230/h × 12 hours = €2,760. Issue escalated for senior review given the magnitude of the discrepancy.',                                                                                  NULL, 2760.00, NULL, NOW(), NOW(), false),
+      (7,  8, 3, 12, 'HOURS_DISPROPORTIONATE', 'heuristic', 'warning', 'heuristic', 'open',                    'legal_ops',       'Senior Associate A. Schmidt billed exactly 6.0 hours on 14 Feb 2026 — the same date and identical duration as Associate T. Müller. Simultaneous round-number entries across timekeepers warrant verification.',                                                                                    NULL, 0.00,    NULL, NOW(), NOW(), false),
+      (8,  8, 3, 13, 'HOURS_DISPROPORTIONATE', 'heuristic', 'warning', 'heuristic', 'open',                    'legal_ops',       'Associate T. Müller billed exactly 6.0 hours on 14 Feb 2026 — the same date and identical duration as Senior Associate A. Schmidt. Simultaneous round-number entries across timekeepers warrant verification.',                                                                                     NULL, 0.00,    NULL, NOW(), NOW(), false),
+      -- Invoice 9 — Competition Law Investigation (escalated)
+      (9,  9, 4, 16, 'DAILY_HOURS_EXCEEDED',   'heuristic', 'error',   'heuristic', 'escalated_to_internal_lawyer', 'internal_lawyer', 'Senior Associate C. Evans billed 14.0 hours on 18 Feb 2026, exceeding the 10-hour daily cap in the engagement terms. The excess 4.0 hours (4 × £580 = £2,320) is not recoverable without prior client authorisation.',                                                                   NULL, 2320.00, NULL, NOW(), NOW(), false),
+      (10, 9, 4, 19, 'PARALLEL_BILLING',       'ai',        'warning', 'ai',        'open',                    'legal_ops',       'Telephone call of approximately 15 minutes billed at the 1-hour minimum unit (£580). The agreed minimum billing unit is 6 minutes. Estimated overbilling on this entry: £435 (45 min × £580/h).',                                                                                                  NULL, 435.00,  NULL, NOW(), NOW(), false),
+      (11, 9, 4, 20, 'PARALLEL_BILLING',       'ai',        'warning', 'ai',        'open',                    'legal_ops',       'Telephone call of approximately 12 minutes billed at the 1-hour minimum unit (£580). The agreed minimum billing unit is 6 minutes. Estimated overbilling on this entry: £435 (45 min × £580/h).',                                                                                                  NULL, 435.00,  NULL, NOW(), NOW(), false),
+      -- Invoice 10 — Trademark Portfolio Review (accepted — issues resolved)
+      (12, 10, 5, 21, 'HOURS_DISPROPORTIONATE','heuristic', 'warning', 'heuristic', 'accepted_by_legal_ops',   'legal_ops',       'Associate K. Tanaka billed exactly 4.0 hours on 5 Feb 2026. System flagged as potential round-number entry. Timesheet review confirmed hours are accurate — trademark search scope matches recorded time.',                                                                                        NULL, 0.00,    NULL, NOW(), NOW(), false),
+      (13, 10, 5, 22, 'HOURS_DISPROPORTIONATE','heuristic', 'warning', 'heuristic', 'accepted_by_legal_ops',   'legal_ops',       'Associate K. Tanaka billed exactly 4.0 hours on 6 Feb 2026. System flagged as potential round-number entry. Timesheet review confirmed hours are accurate — trademark search scope matches recorded time.',                                                                                        NULL, 0.00,    NULL, NOW(), NOW(), false),
+      -- Invoice 12 — Employment Settlement Negotiation (accepted)
+      (14, 12, 7, 28, 'UNAUTHORIZED_EXPENSE_TYPE','ai',     'warning', 'ai',        'accepted_by_legal_ops',   'legal_ops',       'Employment Tribunal filing fee includes a 5% administration charge (£9). The engagement letter permits a handling charge of up to 5%, so this falls within contractual tolerance.',                                                                                                                NULL, 0.00,    NULL, NOW(), NOW(), false),
+      -- Invoice 13 — Cross-Border M&A Phase 2 (disputed)
+      (15, 13, 8, 33, 'INTERNAL_COORDINATION',  'ai',       'error',   'ai',        'rejected_by_legal_ops',   'legal_ops',       '''Document management software licence'' of £1,200 billed as a disbursement. Software subscriptions are a firm overhead cost and cannot be passed to the client under the engagement terms.',                                                                                                     NULL, 1200.00, NULL, NOW(), NOW(), false),
+      (16, 13, 8, 29, 'RATE_EXCESS',            'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Senior Partner Sir R. Caldwell billed at £1,100/h. The agreed Senior Partner rate is £850/h. Excess: £250/h × 30 hours billed this period = £7,500 to be recovered.',                                                                                                                           NULL, 7500.00, NULL, NOW(), NOW(), false),
+      (17, 13, 8, NULL,'PARALLEL_BILLING',      'ai',       'warning', 'ai',        'rejected_by_legal_ops',   'legal_ops',       'Partner, Senior Associate, and Trainee simultaneously billed for overlapping completion tasks during the same board session on 15 Jan 2026. Estimated parallel billing excess after deducting the lead fee earner: £4,000.',                                                                       NULL, 4000.00, NULL, NOW(), NOW(), false),
+      -- Invoice 14 — EU Antitrust Investigation Support (disputed)
+      (18, 14, 9, 34, 'DAILY_HOURS_EXCEEDED',   'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Partner Prof. H. Braun billed 13.5 hours on 18 Jan 2026, exceeding the 10-hour daily cap. Excess: 3.5 hours × €780/h = €2,730. €2,200 disputed as irrecoverable excess.',                                                                                                                       NULL, 2200.00, NULL, NOW(), NOW(), false),
+      (19, 14, 9, 37, 'MEETING_OVERSTAFFING',   'ai',       'warning', 'ai',        'rejected_by_legal_ops',   'legal_ops',       'Associate C. Fischer attended the full-day antitrust strategy session on 18 Jan 2026. The engagement terms cap attendance at 3 fee earners per client meeting without prior approval. C. Fischer is one of two attendees above the agreed quota. Rejected: €2,063.',                               NULL, 2063.00, NULL, NOW(), NOW(), false),
+      (20, 14, 9, 38, 'MEETING_OVERSTAFFING',   'ai',       'warning', 'ai',        'rejected_by_legal_ops',   'legal_ops',       'Trainee R. Klein attended the full-day antitrust strategy session on 18 Jan 2026. The engagement terms cap attendance at 3 fee earners per client meeting without prior approval. R. Klein is one of two attendees above the agreed quota. Rejected: €2,062.',                                    NULL, 2062.00, NULL, NOW(), NOW(), false),
+      -- Invoice 15 — Commercial Real Estate Acquisition (disputed)
+      (21, 15, 10, 42, 'UNAUTHORIZED_EXPENSE_TYPE','ai',    'error',   'ai',        'rejected_by_legal_ops',   'legal_ops',       'Independent surveyor report passed through with a 25% handling surcharge (€800). The engagement letter caps disbursement markups at 5%. The excess 20% surcharge (€800) is rejected.',                                                                                                            NULL, 800.00,  NULL, NOW(), NOW(), false),
+      (22, 15, 10, 43, 'INTERNAL_COORDINATION', 'ai',       'error',   'ai',        'rejected_by_legal_ops',   'legal_ops',       '''Internal coordination meeting — Hargreaves Real Estate team'' charged at €450. Internal firm meetings are non-billable; this item is rejected in full.',                                                                                                                                        NULL, 450.00,  NULL, NOW(), NOW(), false),
+      -- Invoice 16 — IP Licensing Negotiation (disputed)
+      (23, 16, 11, 47, 'EXPENSE_CAP_EXCEEDED',  'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Business class flights charged at €4,800. The travel policy requires economy class for journeys under 5 hours, with a per-trip cap of €2,000. Excess above cap: €2,800.',                                                                                                                        NULL, 2800.00, NULL, NOW(), NOW(), false),
+      (24, 16, 11, 45, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Junior Solicitor E. García billed at €380/h on 1 Feb 2026 (8.0 hours). The agreed rate for this grade is €280/h. Excess: €100/h × 8 hours = €800.',                                                                                                                                             NULL, 800.00,  NULL, NOW(), NOW(), false),
+      (25, 16, 11, 46, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Junior Solicitor E. García billed at €380/h on 2 Feb 2026 (6.0 hours). The agreed rate for this grade is €280/h. Excess: €100/h × 6 hours = €600.',                                                                                                                                             NULL, 600.00,  NULL, NOW(), NOW(), false),
+      -- Invoice 17 — Construction Dispute Quantum Phase (disputed)
+      (26, 17, 12, 49, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed at £280/h on 8 Feb 2026 (8.0 hours). The agreed panel cap for paralegals is £180/h. Excess: £100/h × 8 hours = £800.',                                                                                                                                              NULL, 800.00,  NULL, NOW(), NOW(), false),
+      (27, 17, 12, 50, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed at £280/h on 9 Feb 2026 (8.0 hours). The agreed panel cap for paralegals is £180/h. Excess: £100/h × 8 hours = £800.',                                                                                                                                              NULL, 800.00,  NULL, NOW(), NOW(), false),
+      (28, 17, 12, 51, 'RATE_EXCESS',           'heuristic','error',   'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed at £280/h on 10 Feb 2026 (8.0 hours). The agreed panel cap for paralegals is £180/h. Excess: £100/h × 8 hours = £800.',                                                                                                                                             NULL, 800.00,  NULL, NOW(), NOW(), false),
+      (29, 17, 12, 49, 'HOURS_DISPROPORTIONATE','heuristic','warning', 'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed exactly 8.0 hours on 8 Feb 2026. Combined with identical entries on 9 and 10 Feb, this three-day pattern of uniform daily billing is inconsistent with genuine time recording.',                                                                                      NULL, 1167.00, NULL, NOW(), NOW(), false),
+      (30, 17, 12, 50, 'HOURS_DISPROPORTIONATE','heuristic','warning', 'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed exactly 8.0 hours on 9 Feb 2026. Combined with identical entries on 8 and 10 Feb, this three-day pattern of uniform daily billing is inconsistent with genuine time recording.',                                                                                      NULL, 1167.00, NULL, NOW(), NOW(), false),
+      (31, 17, 12, 51, 'HOURS_DISPROPORTIONATE','heuristic','warning', 'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed exactly 8.0 hours on 10 Feb 2026. Combined with identical entries on 8 and 9 Feb, this three-day pattern of uniform daily billing is inconsistent with genuine time recording.',                                                                                     NULL, 1166.00, NULL, NOW(), NOW(), false),
+      -- Invoice 19 — IP Portfolio Management (accepted_with_comments)
+      (32, 19, 13, 62, 'SENIORITY_OVERKILL',    'gray',     'warning', 'heuristic', 'accepted_by_legal_ops',   'internal_lawyer', 'Line 10: M. Quinn (Partner, GBP 700/h) billed 1h for reviewing the AURORA international application and signing off on country designations. This task appears routine and could typically be handled by a Senior Associate at a lower rate. Flagged as seniority overkill.', 'Accept | Reject | Delegate to Internal Lawyer', 0.00, NULL, NOW(), NOW(), false)
+    `);
+    await tx.execute(sql`SELECT setval('issues_id_seq', (SELECT MAX(id) FROM issues))`);
+
+    /* ── 10. Reset sequences ─────────────────────────────────────────── */
     await tx.execute(sql`SELECT setval('invoice_number_seq', 22)`);
   });
 
