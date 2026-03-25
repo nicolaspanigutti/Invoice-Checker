@@ -17,8 +17,8 @@ export async function seedIfEmpty(): Promise<void> {
     if (existingRuns.length > 0) {
       /* Check whether Beaumont invoices were included in this seed version.
          If not, this is a DB seeded before Beaumont data was added; backfill now. */
-      const beaumontCheck = await db.execute(sql`SELECT id FROM invoices WHERE id = 30 LIMIT 1`);
-      if (beaumontCheck.rows && beaumontCheck.rows.length > 0) {
+      const beaumontCheck = await db.execute(sql`SELECT COUNT(*)::int AS cnt FROM invoices WHERE id IN (30, 31)`);
+      if (beaumontCheck.rows && (beaumontCheck.rows[0] as { cnt: number }).cnt === 2) {
         logger.info("Database already seeded — skipping.");
         return;
       }
@@ -53,7 +53,7 @@ export async function seedIfEmpty(): Promise<void> {
         `);
         await tx.execute(sql`SELECT setval('panel_baseline_documents_id_seq', (SELECT MAX(id) FROM panel_baseline_documents))`);
 
-        /* Invoices 30 and 31 — law_firm_id=9 */
+        /* Invoices 30 and 31 — law_firm_id=11 (Beaumont Leclerc) */
         await tx.execute(sql`
           INSERT INTO invoices (id, law_firm_id, document_type, invoice_number, invoice_date, due_date,
             currency, subtotal_amount, tax_amount, total_amount, billing_type, matter_name,
