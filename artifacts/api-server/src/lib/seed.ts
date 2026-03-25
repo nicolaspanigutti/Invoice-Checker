@@ -15,7 +15,120 @@ export async function seedIfEmpty(): Promise<void> {
       .limit(1);
 
     if (existingRuns.length > 0) {
-      logger.info("Database already seeded — skipping.");
+      /* Check whether Beaumont invoices were included in this seed version.
+         If not, this is a DB seeded before Beaumont data was added; backfill now. */
+      const beaumontCheck = await db.execute(sql`SELECT id FROM invoices WHERE id = 30 LIMIT 1`);
+      if (beaumontCheck.rows && beaumontCheck.rows.length > 0) {
+        logger.info("Database already seeded — skipping.");
+        return;
+      }
+
+      logger.info("Backfill: inserting Beaumont Leclerc invoices, items, documents, runs and issues...");
+      await db.transaction(async (tx) => {
+        /* Invoices 30 and 31 — law_firm_id=9 (Beaumont already in DB from earlier seed) */
+        await tx.execute(sql`
+          INSERT INTO invoices (id, law_firm_id, document_type, invoice_number, invoice_date, due_date,
+            currency, subtotal_amount, tax_amount, total_amount, billing_type, matter_name,
+            project_reference, jurisdiction, invoice_status, review_outcome, amount_at_risk,
+            created_at, updated_at)
+          OVERRIDING SYSTEM VALUE VALUES
+          (30, 9,'invoice','INV-000026','2026-02-28',NULL,'EUR',27200.00,4896.00,32096.00,'time_and_materials',
+           'Mise en conformité RGPD — Phase II','LEG/2026/RGPD-02','France','disputed','fully_rejected',0.00,NOW(),NOW()),
+          (31, 9,'invoice','INV-000027','2026-03-07',NULL,'EUR',27200.00,4896.00,32096.00,'time_and_materials',
+           'Mise en conformité RGPD — Phase III','LEG/2026/RGPD-03','France','disputed','fully_rejected',0.00,NOW(),NOW())
+          ON CONFLICT (id) DO NOTHING
+        `);
+        await tx.execute(sql`SELECT setval('invoices_id_seq', (SELECT MAX(id) FROM invoices))`);
+
+        /* Invoice items — explicit IDs 65-92 so issues can reference them */
+        await tx.execute(sql`
+          INSERT INTO invoice_items (id, invoice_id, line_no, timekeeper_label, role_raw, role_normalized,
+            work_date, hours, rate_charged, amount, description, is_expense_line, expense_type)
+          OVERRIDING SYSTEM VALUE VALUES
+          (65,30,1,'É. Beaumont','Associée Gérante','partner','2026-02-18',3.00,850.00,2550.00,'RGPD — réunion stratégique avec le DPO du client',false,NULL),
+          (66,30,2,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-19',10.00,480.00,4800.00,'Cartographie des traitements — analyse des lacunes RGPD',false,NULL),
+          (67,30,3,'C. Garnier','Collaborateur Senior','senior_associate','2026-02-19',3.00,680.00,2040.00,'Recherche sur les bases légales — art. 6 RGPD (legitimate interests assessment)',false,NULL),
+          (68,30,4,'F. Moreau','Collaborateur','associate','2026-02-20',5.00,390.00,1950.00,'Préparation du modèle d''analyse des risques',false,NULL),
+          (69,30,5,'C. Garnier','Collaborateur Senior','senior_associate','2026-02-20',3.00,630.00,1890.00,'Rédaction des clauses types CCT — accord responsable-sous-traitant',false,NULL),
+          (70,30,6,'A. Marchand','Collaborateur Junior','associate','2026-02-21',7.00,370.00,2590.00,'Documentation procédure DSA — réponse aux demandes de droits (Phase 1)',false,NULL),
+          (71,30,7,'A. Marchand','Collaborateur Junior','associate','2026-02-21',7.00,370.00,2590.00,'Documentation procédure DSA — réponse aux demandes de droits (Phase 1)',false,NULL),
+          (72,30,8,'É. Beaumont','Associée Gérante','partner','2026-02-22',1.00,850.00,850.00,'Revue de l''analyse des lacunes et note d''information au DPO',false,NULL),
+          (73,30,9,'É. Beaumont','Associée Gérante','partner','2026-02-22',0.50,850.00,425.00,'Impression et classement des documents de cartographie (50 pages)',false,NULL),
+          (74,30,10,'É. Beaumont','Associée Gérante','partner','2026-02-24',2.00,850.00,1700.00,'Coordination interne — réunion équipe projet RGPD',false,NULL),
+          (75,30,11,'F. Moreau','Collaborateur','associate','2026-02-24',2.00,390.00,850.00,'Population du modèle d''analyse des risques — registre des traitements',false,NULL),
+          (76,30,12,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-25',4.00,480.00,1920.00,'Rédaction de la politique de surveillance et monitoring des salariés',false,NULL),
+          (77,30,13,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-25',3.50,480.00,1680.00,'Revue juridique des mentions RGPD dans les actes RH',false,NULL),
+          (78,30,14,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-26',2.50,480.00,1200.00,'Revue du tableau de conservation et politique de suppression',false,NULL),
+          (79,31,1,'É. Beaumont','Associée Gérante','partner','2026-02-18',3.00,850.00,2550.00,'RGPD — réunion stratégique avec le DPO du client',false,NULL),
+          (80,31,2,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-19',10.00,480.00,4800.00,'Cartographie des traitements — analyse des lacunes RGPD',false,NULL),
+          (81,31,3,'C. Garnier','Collaborateur Senior','senior_associate','2026-02-19',3.00,680.00,2040.00,'Recherche sur les bases légales — art. 6 RGPD (legitimate interests assessment)',false,NULL),
+          (82,31,4,'F. Moreau','Collaborateur','associate','2026-02-20',5.00,390.00,1950.00,'Préparation du modèle d''analyse des risques',false,NULL),
+          (83,31,5,'C. Garnier','Collaborateur Senior','senior_associate','2026-02-20',3.00,630.00,1890.00,'Rédaction des clauses types CCT — accord responsable-sous-traitant',false,NULL),
+          (84,31,6,'A. Marchand','Collaborateur Junior','associate','2026-02-21',7.00,370.00,2590.00,'Documentation procédure DSA — réponse aux demandes de droits (Phase 1)',false,NULL),
+          (85,31,7,'A. Marchand','Collaborateur Junior','associate','2026-02-21',7.00,370.00,2590.00,'Documentation procédure DSA — réponse aux demandes de droits (Phase 1)',false,NULL),
+          (86,31,8,'É. Beaumont','Associée Gérante','partner','2026-02-22',1.00,850.00,850.00,'Revue de l''analyse des lacunes et note d''information au DPO',false,NULL),
+          (87,31,9,'É. Beaumont','Associée Gérante','partner','2026-02-22',0.50,850.00,425.00,'Impression et classement des documents de cartographie (50 pages)',false,NULL),
+          (88,31,10,'É. Beaumont','Associée Gérante','partner','2026-02-24',2.00,850.00,1700.00,'Coordination interne — réunion équipe projet RGPD',false,NULL),
+          (89,31,11,'F. Moreau','Collaborateur','associate','2026-02-24',2.00,390.00,850.00,'Population du modèle d''analyse des risques — registre des traitements',false,NULL),
+          (90,31,12,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-25',4.00,480.00,1920.00,'Rédaction de la politique de surveillance et monitoring des salariés',false,NULL),
+          (91,31,13,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-25',3.50,480.00,1680.00,'Revue juridique des mentions RGPD dans les actes RH',false,NULL),
+          (92,31,14,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-26',2.50,480.00,1200.00,'Revue du tableau de conservation et politique de suppression',false,NULL)
+          ON CONFLICT (id) DO NOTHING
+        `);
+        await tx.execute(sql`SELECT setval('invoice_items_id_seq', (SELECT MAX(id) FROM invoice_items))`);
+
+        /* Invoice documents — Beaumont PDFs in shared object storage */
+        await tx.execute(sql`
+          INSERT INTO invoice_documents (invoice_id, document_kind, file_name, mime_type, storage_path, extraction_status)
+          VALUES
+            (30,'invoice_file','Beaumont_INV-000026.pdf','application/pdf',
+             '/objects/uploads/23fee94d-9da8-4a5f-a4c2-3728c87228ff','done'),
+            (31,'invoice_file','Beaumont_INV-000027.pdf','application/pdf',
+             '/objects/uploads/43639e35-721a-4fe6-b96d-87b4b28a5b2d','done')
+          ON CONFLICT DO NOTHING
+        `);
+
+        /* Analysis runs 14 and 15 */
+        await tx.execute(sql`
+          INSERT INTO analysis_runs (id, invoice_id, version_no, trigger_reason, status, started_by_id, started_at, finished_at)
+          OVERRIDING SYSTEM VALUE VALUES
+          (14, 30, 1, 'manual', 'complete', 1, NOW(), NOW()),
+          (15, 31, 1, 'manual', 'complete', 1, NOW(), NOW())
+          ON CONFLICT (id) DO NOTHING
+        `);
+        await tx.execute(sql`SELECT setval('analysis_runs_id_seq', (SELECT MAX(id) FROM analysis_runs))`);
+
+        /* 14 issues — 7 per invoice */
+        await tx.execute(sql`
+          INSERT INTO issues
+            (id, invoice_id, analysis_run_id, invoice_item_id,
+             rule_code, rule_type, severity, evaluator_type,
+             issue_status, route_to_role, explanation_text,
+             suggested_action, recoverable_amount, recovery_group_key,
+             created_at, updated_at, firm_acknowledged)
+          OVERRIDING SYSTEM VALUE VALUES
+          -- Invoice 30 issues
+          (33,30,14,71,'DUPLICATE_LINE',                       'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Line 7 is an exact duplicate of line 6: A. Marchand billed 7.0 hours for ''Documentation procédure DSA — réponse aux demandes de droits (Phase 1)'' on 21 Feb 2026 at €370/h (€2,590) twice. The duplicate line is rejected in full.',                                                                                           NULL,2590.00,NULL,NOW(),NOW(),false),
+          (34,30,14,75,'ARITHMETIC_ERROR',                     'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Line 11: F. Moreau billed €850.00 for 2.0 hours at €390/h. The correct amount is 2 × €390 = €780.00. The arithmetic discrepancy results in an overcharge of €70.00.',                                                                                                                                                          NULL,70.00,  NULL,NOW(),NOW(),false),
+          (35,30,14,66,'DAILY_HOURS_EXCEEDED',                 'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Senior Associate L. Dupont billed 10.0 hours on 19 Feb 2026, exceeding the 8-hour daily cap in the engagement terms. The excess 2.0 hours (2 × €480 = €960) are not recoverable without prior client authorisation.',                                                                                                           NULL,960.00, NULL,NOW(),NOW(),false),
+          (36,30,14,67,'INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER','heuristic','warning','heuristic','rejected_by_legal_ops','legal_ops',      'C. Garnier (Senior Associate) appears at two different hourly rates on this invoice: €680/h on line 3 and €630/h on line 5. The panel engagement letter specifies a single rate per grade. Applying the lower confirmed rate of €630/h to line 3 yields an exposure of €50/h × 2h = €100.',                                    NULL,100.00, NULL,NOW(),NOW(),false),
+          (37,30,14,67,'RATE_EXCESS',                          'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'C. Garnier (Senior Associate) billed at €680/h on line 3. The agreed panel rate for Senior Associate grade under the Beaumont engagement letter is €630/h. Excess: €50/h × 3.0 hours = €150.',                                                                                                                                NULL,150.00, NULL,NOW(),NOW(),false),
+          (38,30,14,73,'SENIORITY_OVERKILL',                   'gray',     'warning','heuristic','rejected_by_legal_ops','legal_ops',      'Line 9: Maître É. Beaumont (Managing Partner, €850/h) billed 0.5 hours for printing and filing 50 pages of data-mapping documents. This is a routine administrative task that should be delegated to support staff at a significantly lower cost.',                                                                              'Accept | Reject | Delegate to Internal Lawyer',0.00,NULL,NOW(),NOW(),false),
+          (39,30,14,74,'INTERNAL_COORDINATION',                'ai',       'error',  'ai',       'rejected_by_legal_ops','legal_ops',      'Line 10: Maître É. Beaumont (Managing Partner, €850/h) billed 2.0 hours for an internal GDPR project team coordination meeting (€1,700). Internal firm coordination meetings are expressly non-billable under the engagement terms. This item is rejected in full.',                                                             NULL,1700.00,NULL,NOW(),NOW(),false),
+          -- Invoice 31 issues (same rule pattern, item_ids offset by +14)
+          (40,31,15,85,'DUPLICATE_LINE',                       'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Line 7 is an exact duplicate of line 6: A. Marchand billed 7.0 hours for ''Documentation procédure DSA — réponse aux demandes de droits (Phase 1)'' on 21 Feb 2026 at €370/h (€2,590) twice. The duplicate line is rejected in full.',                                                                                           NULL,2590.00,NULL,NOW(),NOW(),false),
+          (41,31,15,89,'ARITHMETIC_ERROR',                     'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Line 11: F. Moreau billed €850.00 for 2.0 hours at €390/h. The correct amount is 2 × €390 = €780.00. The arithmetic discrepancy results in an overcharge of €70.00.',                                                                                                                                                          NULL,70.00,  NULL,NOW(),NOW(),false),
+          (42,31,15,80,'DAILY_HOURS_EXCEEDED',                 'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Senior Associate L. Dupont billed 10.0 hours on 19 Feb 2026, exceeding the 8-hour daily cap in the engagement terms. The excess 2.0 hours (2 × €480 = €960) are not recoverable without prior client authorisation.',                                                                                                           NULL,960.00, NULL,NOW(),NOW(),false),
+          (43,31,15,81,'INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER','heuristic','warning','heuristic','rejected_by_legal_ops','legal_ops',      'C. Garnier (Senior Associate) appears at two different hourly rates on this invoice: €680/h on line 3 and €630/h on line 5. The panel engagement letter specifies a single rate per grade. Applying the lower confirmed rate of €630/h to line 3 yields an exposure of €50/h × 2h = €100.',                                    NULL,100.00, NULL,NOW(),NOW(),false),
+          (44,31,15,81,'RATE_EXCESS',                          'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'C. Garnier (Senior Associate) billed at €680/h on line 3. The agreed panel rate for Senior Associate grade under the Beaumont engagement letter is €630/h. Excess: €50/h × 3.0 hours = €150.',                                                                                                                                NULL,150.00, NULL,NOW(),NOW(),false),
+          (45,31,15,87,'SENIORITY_OVERKILL',                   'gray',     'warning','heuristic','rejected_by_legal_ops','legal_ops',      'Line 9: Maître É. Beaumont (Managing Partner, €850/h) billed 0.5 hours for printing and filing 50 pages of data-mapping documents. This is a routine administrative task that should be delegated to support staff at a significantly lower cost.',                                                                              'Accept | Reject | Delegate to Internal Lawyer',0.00,NULL,NOW(),NOW(),false),
+          (46,31,15,88,'INTERNAL_COORDINATION',                'ai',       'error',  'ai',       'rejected_by_legal_ops','legal_ops',      'Line 10: Maître É. Beaumont (Managing Partner, €850/h) billed 2.0 hours for an internal GDPR project team coordination meeting (€1,700). Internal firm coordination meetings are expressly non-billable under the engagement terms. This item is rejected in full.',                                                             NULL,1700.00,NULL,NOW(),NOW(),false)
+          ON CONFLICT (id) DO NOTHING
+        `);
+        await tx.execute(sql`SELECT setval('issues_id_seq', (SELECT MAX(id) FROM issues))`);
+        await tx.execute(sql`SELECT setval('invoice_number_seq', GREATEST(28, (SELECT last_value FROM invoice_number_seq)))`);
+      });
+      logger.info("Beaumont backfill complete.");
       return;
     }
 
@@ -266,7 +379,11 @@ export async function seedIfEmpty(): Promise<void> {
       (16, 4,'invoice','INV-2026-016','2026-02-01',NULL,'EUR',35900.00,6462.00,42362.00,'time_and_materials','IP Licensing Negotiation','MAT-2026-016','Spain','disputed',NULL,0.00,NOW(),NOW()),
       (17, 3,'invoice','INV-2026-017','2026-02-08',NULL,'GBP',57300.00,10314.00,67614.00,'time_and_materials','Construction Dispute — Quantum Phase','MAT-2026-017','England & Wales','disputed',NULL,0.00,NOW(),NOW()),
       (19, 7,'invoice','INV-000015','2026-03-31',NULL,'GBP',13625.00,2725.00,16350.00,'time_and_materials',
-       'IP Portfolio Management — AURORA Brand & Trademark Renewals','Legal/2026/IP-112','England & Wales','accepted','accepted_with_comments',0.00,NOW(),NOW())
+       'IP Portfolio Management — AURORA Brand & Trademark Renewals','Legal/2026/IP-112','England & Wales','accepted','accepted_with_comments',0.00,NOW(),NOW()),
+      (30, 9,'invoice','INV-000026','2026-02-28',NULL,'EUR',27200.00,4896.00,32096.00,'time_and_materials',
+       'Mise en conformité RGPD — Phase II','LEG/2026/RGPD-02','France','disputed','fully_rejected',0.00,NOW(),NOW()),
+      (31, 9,'invoice','INV-000027','2026-03-07',NULL,'EUR',27200.00,4896.00,32096.00,'time_and_materials',
+       'Mise en conformité RGPD — Phase III','LEG/2026/RGPD-03','France','disputed','fully_rejected',0.00,NOW(),NOW())
     `);
     await tx.execute(sql`SELECT setval('invoices_id_seq', (SELECT MAX(id) FROM invoices))`);
 
@@ -354,11 +471,54 @@ export async function seedIfEmpty(): Promise<void> {
       (19,12,'R. Patel','Paralegal','Paralegal','2026-03-19',1.50,270.00,405.00,'Updating client IP database; filing correspondence and WIPO acknowledgement letters; preparation of Q2 renewal reminder schedule.',false,NULL)
     `);
 
-    /* ── 7. INVOICE DOCUMENT (Quinn PDF — lives in shared object storage) */
+    /* ── 6b. BEAUMONT INVOICE ITEMS (explicit IDs 65-92 for issue FK references) */
+    await tx.execute(sql`
+      INSERT INTO invoice_items (id, invoice_id, line_no, timekeeper_label, role_raw, role_normalized,
+        work_date, hours, rate_charged, amount, description, is_expense_line, expense_type)
+      OVERRIDING SYSTEM VALUE VALUES
+      -- Invoice 30 items (IDs 65-78)
+      (65,30,1,'É. Beaumont','Associée Gérante','partner','2026-02-18',3.00,850.00,2550.00,'RGPD — réunion stratégique avec le DPO du client',false,NULL),
+      (66,30,2,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-19',10.00,480.00,4800.00,'Cartographie des traitements — analyse des lacunes RGPD',false,NULL),
+      (67,30,3,'C. Garnier','Collaborateur Senior','senior_associate','2026-02-19',3.00,680.00,2040.00,'Recherche sur les bases légales — art. 6 RGPD (legitimate interests assessment)',false,NULL),
+      (68,30,4,'F. Moreau','Collaborateur','associate','2026-02-20',5.00,390.00,1950.00,'Préparation du modèle d''analyse des risques',false,NULL),
+      (69,30,5,'C. Garnier','Collaborateur Senior','senior_associate','2026-02-20',3.00,630.00,1890.00,'Rédaction des clauses types CCT — accord responsable-sous-traitant',false,NULL),
+      (70,30,6,'A. Marchand','Collaborateur Junior','associate','2026-02-21',7.00,370.00,2590.00,'Documentation procédure DSA — réponse aux demandes de droits (Phase 1)',false,NULL),
+      (71,30,7,'A. Marchand','Collaborateur Junior','associate','2026-02-21',7.00,370.00,2590.00,'Documentation procédure DSA — réponse aux demandes de droits (Phase 1)',false,NULL),
+      (72,30,8,'É. Beaumont','Associée Gérante','partner','2026-02-22',1.00,850.00,850.00,'Revue de l''analyse des lacunes et note d''information au DPO',false,NULL),
+      (73,30,9,'É. Beaumont','Associée Gérante','partner','2026-02-22',0.50,850.00,425.00,'Impression et classement des documents de cartographie (50 pages)',false,NULL),
+      (74,30,10,'É. Beaumont','Associée Gérante','partner','2026-02-24',2.00,850.00,1700.00,'Coordination interne — réunion équipe projet RGPD',false,NULL),
+      (75,30,11,'F. Moreau','Collaborateur','associate','2026-02-24',2.00,390.00,850.00,'Population du modèle d''analyse des risques — registre des traitements',false,NULL),
+      (76,30,12,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-25',4.00,480.00,1920.00,'Rédaction de la politique de surveillance et monitoring des salariés',false,NULL),
+      (77,30,13,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-25',3.50,480.00,1680.00,'Revue juridique des mentions RGPD dans les actes RH',false,NULL),
+      (78,30,14,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-26',2.50,480.00,1200.00,'Revue du tableau de conservation et politique de suppression',false,NULL),
+      -- Invoice 31 items (IDs 79-92)
+      (79,31,1,'É. Beaumont','Associée Gérante','partner','2026-02-18',3.00,850.00,2550.00,'RGPD — réunion stratégique avec le DPO du client',false,NULL),
+      (80,31,2,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-19',10.00,480.00,4800.00,'Cartographie des traitements — analyse des lacunes RGPD',false,NULL),
+      (81,31,3,'C. Garnier','Collaborateur Senior','senior_associate','2026-02-19',3.00,680.00,2040.00,'Recherche sur les bases légales — art. 6 RGPD (legitimate interests assessment)',false,NULL),
+      (82,31,4,'F. Moreau','Collaborateur','associate','2026-02-20',5.00,390.00,1950.00,'Préparation du modèle d''analyse des risques',false,NULL),
+      (83,31,5,'C. Garnier','Collaborateur Senior','senior_associate','2026-02-20',3.00,630.00,1890.00,'Rédaction des clauses types CCT — accord responsable-sous-traitant',false,NULL),
+      (84,31,6,'A. Marchand','Collaborateur Junior','associate','2026-02-21',7.00,370.00,2590.00,'Documentation procédure DSA — réponse aux demandes de droits (Phase 1)',false,NULL),
+      (85,31,7,'A. Marchand','Collaborateur Junior','associate','2026-02-21',7.00,370.00,2590.00,'Documentation procédure DSA — réponse aux demandes de droits (Phase 1)',false,NULL),
+      (86,31,8,'É. Beaumont','Associée Gérante','partner','2026-02-22',1.00,850.00,850.00,'Revue de l''analyse des lacunes et note d''information au DPO',false,NULL),
+      (87,31,9,'É. Beaumont','Associée Gérante','partner','2026-02-22',0.50,850.00,425.00,'Impression et classement des documents de cartographie (50 pages)',false,NULL),
+      (88,31,10,'É. Beaumont','Associée Gérante','partner','2026-02-24',2.00,850.00,1700.00,'Coordination interne — réunion équipe projet RGPD',false,NULL),
+      (89,31,11,'F. Moreau','Collaborateur','associate','2026-02-24',2.00,390.00,850.00,'Population du modèle d''analyse des risques — registre des traitements',false,NULL),
+      (90,31,12,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-25',4.00,480.00,1920.00,'Rédaction de la politique de surveillance et monitoring des salariés',false,NULL),
+      (91,31,13,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-25',3.50,480.00,1680.00,'Revue juridique des mentions RGPD dans les actes RH',false,NULL),
+      (92,31,14,'L. Dupont','Collaborateur Senior','senior_associate','2026-02-26',2.50,480.00,1200.00,'Revue du tableau de conservation et politique de suppression',false,NULL)
+    `);
+    await tx.execute(sql`SELECT setval('invoice_items_id_seq', (SELECT MAX(id) FROM invoice_items))`);
+
+    /* ── 7. INVOICE DOCUMENTS (Quinn + Beaumont PDFs in shared object storage) */
     await tx.execute(sql`
       INSERT INTO invoice_documents (invoice_id, document_kind, file_name, mime_type, storage_path, extraction_status)
-      VALUES (19, 'invoice_file', 'Invoice Quinn.pdf', 'application/pdf',
-              '/objects/uploads/77811b73-7ecb-437c-bf86-3a95ed0a6ffa', 'done')
+      VALUES
+        (19, 'invoice_file', 'Invoice Quinn.pdf', 'application/pdf',
+         '/objects/uploads/77811b73-7ecb-437c-bf86-3a95ed0a6ffa', 'done'),
+        (30, 'invoice_file', 'Beaumont_INV-000026.pdf', 'application/pdf',
+         '/objects/uploads/23fee94d-9da8-4a5f-a4c2-3728c87228ff', 'done'),
+        (31, 'invoice_file', 'Beaumont_INV-000027.pdf', 'application/pdf',
+         '/objects/uploads/43639e35-721a-4fe6-b96d-87b4b28a5b2d', 'done')
     `);
 
     /* ── 8. ANALYSIS RUNS ────────────────────────────────────────────── */
@@ -377,7 +537,9 @@ export async function seedIfEmpty(): Promise<void> {
       (10, 15, 1, 'manual', 'complete', 2, NOW(), NOW()),
       (11, 16, 1, 'manual', 'complete', 2, NOW(), NOW()),
       (12, 17, 1, 'manual', 'complete', 2, NOW(), NOW()),
-      (13, 19, 1, 'manual', 'complete', 1, NOW(), NOW())
+      (13, 19, 1, 'manual', 'complete', 1, NOW(), NOW()),
+      (14, 30, 1, 'manual', 'complete', 1, NOW(), NOW()),
+      (15, 31, 1, 'manual', 'complete', 1, NOW(), NOW())
     `);
     await tx.execute(sql`SELECT setval('analysis_runs_id_seq', (SELECT MAX(id) FROM analysis_runs))`);
 
@@ -433,12 +595,28 @@ export async function seedIfEmpty(): Promise<void> {
       (30, 17, 12, 50, 'HOURS_DISPROPORTIONATE','heuristic','warning', 'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed exactly 8.0 hours on 9 Feb 2026. Combined with identical entries on 8 and 10 Feb, this three-day pattern of uniform daily billing is inconsistent with genuine time recording.',                                                                                      NULL, 1167.00, NULL, NOW(), NOW(), false),
       (31, 17, 12, 51, 'HOURS_DISPROPORTIONATE','heuristic','warning', 'heuristic', 'rejected_by_legal_ops',   'legal_ops',       'Paralegal M. Adeyemi billed exactly 8.0 hours on 10 Feb 2026. Combined with identical entries on 8 and 9 Feb, this three-day pattern of uniform daily billing is inconsistent with genuine time recording.',                                                                                     NULL, 1166.00, NULL, NOW(), NOW(), false),
       -- Invoice 19 — IP Portfolio Management (accepted_with_comments)
-      (32, 19, 13, 62, 'SENIORITY_OVERKILL',    'gray',     'warning', 'heuristic', 'accepted_by_legal_ops',   'internal_lawyer', 'Line 10: M. Quinn (Partner, GBP 700/h) billed 1h for reviewing the AURORA international application and signing off on country designations. This task appears routine and could typically be handled by a Senior Associate at a lower rate. Flagged as seniority overkill.', 'Accept | Reject | Delegate to Internal Lawyer', 0.00, NULL, NOW(), NOW(), false)
+      (32, 19, 13, 62, 'SENIORITY_OVERKILL',    'gray',     'warning', 'heuristic', 'accepted_by_legal_ops',   'internal_lawyer', 'Line 10: M. Quinn (Partner, GBP 700/h) billed 1h for reviewing the AURORA international application and signing off on country designations. This task appears routine and could typically be handled by a Senior Associate at a lower rate. Flagged as seniority overkill.', 'Accept | Reject | Delegate to Internal Lawyer', 0.00, NULL, NOW(), NOW(), false),
+      -- Invoice 30 — Beaumont RGPD Phase II (disputed / fully_rejected)
+      (33,30,14,71,'DUPLICATE_LINE',                       'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Line 7 is an exact duplicate of line 6: A. Marchand billed 7.0 hours for ''Documentation procédure DSA — réponse aux demandes de droits (Phase 1)'' on 21 Feb 2026 at €370/h (€2,590) twice. The duplicate line is rejected in full.',                                                                                           NULL,2590.00,NULL,NOW(),NOW(),false),
+      (34,30,14,75,'ARITHMETIC_ERROR',                     'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Line 11: F. Moreau billed €850.00 for 2.0 hours at €390/h. The correct amount is 2 × €390 = €780.00. The arithmetic discrepancy results in an overcharge of €70.00.',                                                                                                                                                          NULL,70.00,  NULL,NOW(),NOW(),false),
+      (35,30,14,66,'DAILY_HOURS_EXCEEDED',                 'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Senior Associate L. Dupont billed 10.0 hours on 19 Feb 2026, exceeding the 8-hour daily cap in the engagement terms. The excess 2.0 hours (2 × €480 = €960) are not recoverable without prior client authorisation.',                                                                                                           NULL,960.00, NULL,NOW(),NOW(),false),
+      (36,30,14,67,'INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER','heuristic','warning','heuristic','rejected_by_legal_ops','legal_ops',      'C. Garnier (Senior Associate) appears at two different hourly rates on this invoice: €680/h on line 3 and €630/h on line 5. The panel engagement letter specifies a single rate per grade. Applying the lower confirmed rate of €630/h to line 3 yields an exposure of €50/h × 2h = €100.',                                    NULL,100.00, NULL,NOW(),NOW(),false),
+      (37,30,14,67,'RATE_EXCESS',                          'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'C. Garnier (Senior Associate) billed at €680/h on line 3. The agreed panel rate for Senior Associate grade under the Beaumont engagement letter is €630/h. Excess: €50/h × 3.0 hours = €150.',                                                                                                                                NULL,150.00, NULL,NOW(),NOW(),false),
+      (38,30,14,73,'SENIORITY_OVERKILL',                   'gray',     'warning','heuristic','rejected_by_legal_ops','legal_ops',      'Line 9: Maître É. Beaumont (Managing Partner, €850/h) billed 0.5 hours for printing and filing 50 pages of data-mapping documents. This is a routine administrative task that should be delegated to support staff at a significantly lower cost.',                                                                              'Accept | Reject | Delegate to Internal Lawyer',0.00,NULL,NOW(),NOW(),false),
+      (39,30,14,74,'INTERNAL_COORDINATION',                'ai',       'error',  'ai',       'rejected_by_legal_ops','legal_ops',      'Line 10: Maître É. Beaumont (Managing Partner, €850/h) billed 2.0 hours for an internal GDPR project team coordination meeting (€1,700). Internal firm coordination meetings are expressly non-billable under the engagement terms. This item is rejected in full.',                                                             NULL,1700.00,NULL,NOW(),NOW(),false),
+      -- Invoice 31 — Beaumont RGPD Phase III (disputed / fully_rejected)
+      (40,31,15,85,'DUPLICATE_LINE',                       'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Line 7 is an exact duplicate of line 6: A. Marchand billed 7.0 hours for ''Documentation procédure DSA — réponse aux demandes de droits (Phase 1)'' on 21 Feb 2026 at €370/h (€2,590) twice. The duplicate line is rejected in full.',                                                                                           NULL,2590.00,NULL,NOW(),NOW(),false),
+      (41,31,15,89,'ARITHMETIC_ERROR',                     'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Line 11: F. Moreau billed €850.00 for 2.0 hours at €390/h. The correct amount is 2 × €390 = €780.00. The arithmetic discrepancy results in an overcharge of €70.00.',                                                                                                                                                          NULL,70.00,  NULL,NOW(),NOW(),false),
+      (42,31,15,80,'DAILY_HOURS_EXCEEDED',                 'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'Senior Associate L. Dupont billed 10.0 hours on 19 Feb 2026, exceeding the 8-hour daily cap in the engagement terms. The excess 2.0 hours (2 × €480 = €960) are not recoverable without prior client authorisation.',                                                                                                           NULL,960.00, NULL,NOW(),NOW(),false),
+      (43,31,15,81,'INCONSISTENT_RATE_FOR_SAME_TIMEKEEPER','heuristic','warning','heuristic','rejected_by_legal_ops','legal_ops',      'C. Garnier (Senior Associate) appears at two different hourly rates on this invoice: €680/h on line 3 and €630/h on line 5. The panel engagement letter specifies a single rate per grade. Applying the lower confirmed rate of €630/h to line 3 yields an exposure of €50/h × 2h = €100.',                                    NULL,100.00, NULL,NOW(),NOW(),false),
+      (44,31,15,81,'RATE_EXCESS',                          'heuristic','error',  'heuristic','rejected_by_legal_ops','legal_ops',      'C. Garnier (Senior Associate) billed at €680/h on line 3. The agreed panel rate for Senior Associate grade under the Beaumont engagement letter is €630/h. Excess: €50/h × 3.0 hours = €150.',                                                                                                                                NULL,150.00, NULL,NOW(),NOW(),false),
+      (45,31,15,87,'SENIORITY_OVERKILL',                   'gray',     'warning','heuristic','rejected_by_legal_ops','legal_ops',      'Line 9: Maître É. Beaumont (Managing Partner, €850/h) billed 0.5 hours for printing and filing 50 pages of data-mapping documents. This is a routine administrative task that should be delegated to support staff at a significantly lower cost.',                                                                              'Accept | Reject | Delegate to Internal Lawyer',0.00,NULL,NOW(),NOW(),false),
+      (46,31,15,88,'INTERNAL_COORDINATION',                'ai',       'error',  'ai',       'rejected_by_legal_ops','legal_ops',      'Line 10: Maître É. Beaumont (Managing Partner, €850/h) billed 2.0 hours for an internal GDPR project team coordination meeting (€1,700). Internal firm coordination meetings are expressly non-billable under the engagement terms. This item is rejected in full.',                                                             NULL,1700.00,NULL,NOW(),NOW(),false)
     `);
     await tx.execute(sql`SELECT setval('issues_id_seq', (SELECT MAX(id) FROM issues))`);
 
     /* ── 10. Reset sequences ─────────────────────────────────────────── */
-    await tx.execute(sql`SELECT setval('invoice_number_seq', 22)`);
+    await tx.execute(sql`SELECT setval('invoice_number_seq', 28)`);
   });
 
   logger.info("Seed complete.");
