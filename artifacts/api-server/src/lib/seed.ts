@@ -23,9 +23,37 @@ export async function seedIfEmpty(): Promise<void> {
         return;
       }
 
-      logger.info("Backfill: inserting Beaumont Leclerc invoices, items, documents, runs and issues...");
+      logger.info("Backfill: inserting Beaumont Leclerc firm, invoices, items, documents, runs and issues...");
       await db.transaction(async (tx) => {
-        /* Invoices 30 and 31 — law_firm_id=9 (Beaumont already in DB from earlier seed) */
+        /* Beaumont Leclerc & Associés S.A.S. — id=9 in the seed (the seed sequence skips 6,8,10).
+           Use ON CONFLICT (id) DO NOTHING so this is safe even if the firm was already seeded. */
+        await tx.execute(sql`
+          INSERT INTO law_firms (id, name, relationship_type, jurisdictions, practice_areas,
+            primary_contact_name, primary_contact_email, primary_contact_phone,
+            relationship_partner, engagement_notes, is_active, created_at, updated_at)
+          OVERRIDING SYSTEM VALUE VALUES
+          (9, 'Beaumont Leclerc & Associés S.A.S.', 'panel',
+           '["France", "England & Wales", "Germany", "Netherlands", "Spain"]',
+           '["Mergers & Acquisitions", "Regulatory & Compliance", "Employment & Labor", "Litigation & Dispute Resolution", "Real Estate"]',
+           'Maître Élodie Beaumont', NULL, NULL, 'Sophia Belmont',
+           'Panel engagement letter governed by French law for the period 15 January 2026 to 31 December 2027; primary firm contact is Maître Élodie Beaumont (Managing Partner). The document also lists pre-approved best-friend firms for cross-border matters in Germany, the Netherlands, and Spain.',
+           true, NOW(), NOW())
+          ON CONFLICT (id) DO NOTHING
+        `);
+        await tx.execute(sql`SELECT setval('law_firms_id_seq', (SELECT MAX(id) FROM law_firms))`);
+
+        /* Panel baseline document for Beaumont (id=8) — needed if firm was also absent */
+        await tx.execute(sql`
+          INSERT INTO panel_baseline_documents (id, document_kind, version_label, file_name, storage_path,
+            raw_text, extracted_json, verification_status, uploaded_by_id, verified_by_id, created_at, activated_at)
+          OVERRIDING SYSTEM VALUE VALUES
+          (8, 'terms_conditions', 'T&C — Beaumont Leclerc & Associés S.A.S.', 'T&C - Beaumont.pdf', NULL,
+           NULL, NULL, 'draft', 1, 6, NOW(), NULL)
+          ON CONFLICT (id) DO NOTHING
+        `);
+        await tx.execute(sql`SELECT setval('panel_baseline_documents_id_seq', (SELECT MAX(id) FROM panel_baseline_documents))`);
+
+        /* Invoices 30 and 31 — law_firm_id=9 */
         await tx.execute(sql`
           INSERT INTO invoices (id, law_firm_id, document_type, invoice_number, invoice_date, due_date,
             currency, subtotal_amount, tax_amount, total_amount, billing_type, matter_name,
@@ -261,7 +289,7 @@ export async function seedIfEmpty(): Promise<void> {
       (9, 'Beaumont Leclerc & Associés S.A.S.', 'panel',
        '["France", "England & Wales", "Germany", "Netherlands", "Spain"]',
        '["Mergers & Acquisitions", "Regulatory & Compliance", "Employment & Labor", "Litigation & Dispute Resolution", "Real Estate"]',
-       'Maître Élodie Beaumont', NULL, NULL, 'Catherine Lawton',
+       'Maître Élodie Beaumont', NULL, NULL, 'Sophia Belmont',
        'Panel engagement letter governed by French law for the period 15 January 2026 to 31 December 2027; primary firm contact is Maître Élodie Beaumont (Managing Partner). The document also lists pre-approved best-friend firms for cross-border matters in Germany, the Netherlands, and Spain.',
        true, NOW(), NOW())
     `);
