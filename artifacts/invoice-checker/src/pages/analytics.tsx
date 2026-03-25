@@ -61,6 +61,12 @@ interface ByBillingType {
   totalAmount: number;
   confirmedRecovery: number;
 }
+interface ByJurisdiction {
+  jurisdiction: string;
+  invoiceCount: number;
+  totalAmount: number;
+  confirmedRecovery: number;
+}
 interface RoiSummary {
   totalDetectedValue: number;
   totalRejectedValue: number;
