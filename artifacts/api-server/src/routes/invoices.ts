@@ -8,7 +8,8 @@ import { ObjectStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer, imageBufferToBase64 } from "../lib/extractText";
 import { runAnalysis } from "../lib/runAnalysis";
 import { evaluateInvoiceState } from "../lib/stateTransition";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { getUserOpenaiKey } from "./auth";
+import OpenAI from "openai";
 import PDFDocument from "pdfkit";
 
 const router: IRouter = Router();
@@ -405,18 +406,24 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
     }
   };
 
+  const userApiKey = await getUserOpenaiKey(actorId);
+  if (!userApiKey) {
+    res.status(422).json({ error: "OpenAI API key not configured. Please add your key in Settings before extracting invoices." });
+    return;
+  }
+
   const extractDoc = async (doc: typeof invoiceDoc, buf: Buffer): Promise<Awaited<ReturnType<typeof extractInvoiceFromText>> | null> => {
     const mime = doc.mimeType ?? "application/octet-stream";
     const isImg = mime.startsWith("image/");
     try {
       if (isImg) {
         const b64 = imageBufferToBase64(buf, mime);
-        return await extractInvoiceFromImage(b64, mime, doc.id);
+        return await extractInvoiceFromImage(b64, mime, doc.id, userApiKey);
       } else {
         const rawText = await extractTextFromBuffer(buf, mime);
         if (rawText.trim().length < 10) return null;
         await db.update(invoiceDocumentsTable).set({ rawText }).where(eq(invoiceDocumentsTable.id, doc.id));
-        return await extractInvoiceFromText(rawText, doc.id);
+        return await extractInvoiceFromText(rawText, doc.id, userApiKey);
       }
     } catch {
       await db.update(invoiceDocumentsTable).set({ extractionStatus: "failed" }).where(eq(invoiceDocumentsTable.id, doc.id));
@@ -532,6 +539,12 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
     return;
   }
 
+  const analyseApiKey = await getUserOpenaiKey(actorId);
+  if (!analyseApiKey) {
+    res.status(422).json({ error: "OpenAI API key not configured. Please add your key in Settings before running analysis." });
+    return;
+  }
+
   await db.insert(auditEventsTable).values({
     entityType: "invoice",
     entityId: id,
@@ -542,7 +555,7 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
   });
 
   try {
-    const result = await runAnalysis(id, actorId);
+    const result = await runAnalysis(id, actorId, undefined, analyseApiKey);
     if (result.status === "gate_failed") {
       await db.insert(auditEventsTable).values({
         entityType: "invoice",
@@ -605,6 +618,12 @@ router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), asyn
     return;
   }
 
+  const rerunApiKey = await getUserOpenaiKey(actorId);
+  if (!rerunApiKey) {
+    res.status(422).json({ error: "OpenAI API key not configured. Please add your key in Settings before running analysis." });
+    return;
+  }
+
   const oldStatus = existingInvoice.invoiceStatus;
   await db.update(invoicesTable).set({ invoiceStatus: "extracting_data" }).where(eq(invoicesTable.id, id));
   await db.insert(auditEventsTable).values({
@@ -627,7 +646,7 @@ router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), asyn
   });
 
   try {
-    const result = await runAnalysis(id, actorId, reason);
+    const result = await runAnalysis(id, actorId, reason, rerunApiKey);
     if (result.status === "gate_failed") {
       await db.update(invoicesTable)
         .set({ invoiceStatus: oldStatus })
@@ -1365,10 +1384,13 @@ router.post("/invoices/:id/report", requireRole("super_admin", "legal_ops", "int
     rejectedItems: rejectedForAI,
   };
 
+  const reportApiKey = await getUserOpenaiKey(req.session.userId!);
   let executiveSummary = "";
   try {
-    const aiResponse = await openai.chat.completions.create({
-      model: "gpt-5.2",
+    if (!reportApiKey) throw new Error("no key");
+    const reportClient = new OpenAI({ apiKey: reportApiKey });
+    const aiResponse = await reportClient.chat.completions.create({
+      model: "gpt-4o",
       max_completion_tokens: 300,
       messages: [
         { role: "system", content: "You are a senior legal operations analyst. Write a concise 3-5 sentence executive summary for a law firm invoice review report. Use professional, plain English — no jargon, no internal metric names, no system codes. Output only the summary paragraph." },
@@ -1476,10 +1498,13 @@ router.post("/invoices/:id/email-draft", requireRole("super_admin", "legal_ops",
 
   const fallbackBody = buildFallbackEmailBody({ contactName, invoiceNumber: invoice.invoiceNumber, matterName: invoice.matterName ?? null, rejectedCount: rejectedIssues.length, rejectedIssues, currency: invoice.currency ?? "EUR" });
 
+  const emailApiKey = await getUserOpenaiKey(req.session.userId!);
   let body = "";
   try {
-    const aiResponse = await openai.chat.completions.create({
-      model: "gpt-5.2",
+    if (!emailApiKey) throw new Error("no key");
+    const emailClient = new OpenAI({ apiKey: emailApiKey });
+    const aiResponse = await emailClient.chat.completions.create({
+      model: "gpt-4o",
       max_completion_tokens: 900,
       messages: [
         {
@@ -1569,10 +1594,13 @@ router.get("/invoices/:id/report/pdf", requireRole("super_admin", "legal_ops", "
     issueSummary: { total: allIssues.length, rejected: rejectedIssues.length, accepted: acceptedIssues.length, escalated: escalatedIssues.length, open: openIssues.length },
     rejectedItems: rejectedForAI,
   };
+  const pdfApiKey = await getUserOpenaiKey(req.session.userId!);
   let executiveSummary = "";
   try {
-    const aiResp = await openai.chat.completions.create({
-      model: "gpt-5.2",
+    if (!pdfApiKey) throw new Error("no key");
+    const pdfClient = new OpenAI({ apiKey: pdfApiKey });
+    const aiResp = await pdfClient.chat.completions.create({
+      model: "gpt-4o",
       max_completion_tokens: 300,
       messages: [
         { role: "system", content: "You are a senior legal operations analyst. Write a concise 3-5 sentence executive summary for a law firm invoice review report. Use professional, plain English — no jargon, no internal metric names, no system codes. Output only the summary paragraph." },

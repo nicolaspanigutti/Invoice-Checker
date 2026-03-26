@@ -1,4 +1,4 @@
-import { openai } from "@workspace/integrations-openai-ai-server";
+import OpenAI from "openai";
 import { createHash } from "crypto";
 import { db, invoiceDocumentsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
@@ -98,6 +98,10 @@ export function computeTextHash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 64);
 }
 
+function makeClient(apiKey: string): OpenAI {
+  return new OpenAI({ apiKey });
+}
+
 function parseExtractionResponse(content: string): { extracted: ExtractedInvoiceData; confidence: Record<string, number> } {
   let parsed: { confidence?: Record<string, number>; lineItems?: ExtractedLineItem[] } & Omit<ExtractedInvoiceData, "lineItems">;
   try {
@@ -139,7 +143,7 @@ function parseExtractionResponse(content: string): { extracted: ExtractedInvoice
   return { extracted, confidence };
 }
 
-export async function extractInvoiceFromText(rawText: string, documentId?: number): Promise<ExtractionOutput> {
+export async function extractInvoiceFromText(rawText: string, documentId?: number, apiKey?: string): Promise<ExtractionOutput> {
   const textHash = computeTextHash(rawText);
 
   if (documentId !== undefined) {
@@ -171,9 +175,11 @@ export async function extractInvoiceFromText(rawText: string, documentId?: numbe
     }
   }
 
+  if (!apiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
+
   const truncatedText = rawText.slice(0, 12000);
 
-  const response = await openai.chat.completions.create({
+  const response = await makeClient(apiKey).chat.completions.create({
     model: "gpt-4o-mini",
     max_completion_tokens: 8192,
     messages: [
@@ -199,7 +205,7 @@ export async function extractInvoiceFromText(rawText: string, documentId?: numbe
   return { extracted, confidence, textHash, promptVersion: EXTRACTION_PROMPT_VERSION, fromCache: false };
 }
 
-export async function extractInvoiceFromImage(base64DataUrl: string, mimeType: string, documentId?: number): Promise<ExtractionOutput> {
+export async function extractInvoiceFromImage(base64DataUrl: string, mimeType: string, documentId?: number, apiKey?: string): Promise<ExtractionOutput> {
   const imageHash = computeTextHash(base64DataUrl);
 
   if (documentId !== undefined) {
@@ -231,7 +237,9 @@ export async function extractInvoiceFromImage(base64DataUrl: string, mimeType: s
     }
   }
 
-  const response = await openai.chat.completions.create({
+  if (!apiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
+
+  const response = await makeClient(apiKey).chat.completions.create({
     model: "gpt-4o-mini",
     max_completion_tokens: 8192,
     messages: [

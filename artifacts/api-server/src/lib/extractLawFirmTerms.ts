@@ -1,4 +1,4 @@
-import { openai } from "@workspace/integrations-openai-ai-server";
+import OpenAI from "openai";
 
 export interface ExtractedFirmTerms {
   billing_type_default: string | null;
@@ -42,11 +42,13 @@ const EXTRACTION_PROMPT = `Extract all commercial terms from the following law f
 Document text:
 `;
 
-export async function extractLawFirmTermsFromText(text: string): Promise<ExtractedFirmTerms> {
+export async function extractLawFirmTermsFromText(text: string, apiKey?: string): Promise<ExtractedFirmTerms> {
+  if (!apiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
   const truncated = text.slice(0, 40000);
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-5.2",
+  const client = new OpenAI({ apiKey });
+  const completion = await client.chat.completions.create({
+    model: "gpt-4o",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: EXTRACTION_PROMPT + truncated },

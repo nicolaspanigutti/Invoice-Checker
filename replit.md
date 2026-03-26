@@ -6,16 +6,23 @@
 
 ### Key Roles
 
-- **super_admin** — full access to all nav (Dashboard, Invoices, Law Firms, Rates, Rules, Users)
-- **legal_ops** — Dashboard, Invoices, Law Firms, Rates, Rules (no Users)
-- **internal_lawyer** — Dashboard, Invoices, Rules only
+- **super_admin** — full access to all nav (Dashboard, Invoices, Law Firms, Rates, Rules, Users, Settings)
+- **legal_ops** — Dashboard, Invoices, Law Firms, Rates, Rules, Settings (no Users)
+- **internal_lawyer** — Dashboard, Invoices, Rules, Settings only
 
 ### Auth
 
-Email/password authentication with server-side session cookies (`express-session` + `connect-pg-simple`). Session table: `user_sessions`. Seed credentials:
-- `admin@company.com` — password: `company2026` (super_admin)
-- `daniel.whitfield@arcturusgroup.com` — password: `company2026` (legal_ops)
-- `sophie.cartwright@arcturusgroup.com` — password: `company2026` (internal_lawyer)
+Email/password authentication with server-side session cookies (`express-session` + `connect-pg-simple`). Session table: `user_sessions`.
+
+Fresh install: seed creates a single `super_admin` from `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`ADMIN_NAME` env vars (only when users table is empty).
+
+### Open-Source BYOT (Bring Your Own Token)
+
+Users add their own OpenAI API key via the Settings page. Keys are AES-256-GCM encrypted using `OPENAI_ENCRYPTION_KEY` (64 hex chars = 32 bytes). Every AI feature (invoice extraction, rule analysis, report summaries, email drafts, law firm/rate extraction) uses the requesting user's key. Returns HTTP 422 if no key is configured. Keys can be saved or removed any time from Settings.
+
+Required env vars:
+- `OPENAI_ENCRYPTION_KEY` — 32-byte AES key (64 hex chars); generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` — initial admin for fresh installs
 
 ---
 
@@ -61,7 +68,7 @@ Tables created via `pnpm --filter @workspace/db run push` + seed:
 
 | Table | Purpose |
 |-------|---------|
-| `users` | App users (id, email, password_hash, role, is_active) |
+| `users` | App users (id, email, password_hash, role, is_active, encrypted_openai_key) |
 | `user_sessions` | connect-pg-simple session store (sid, sess, expire) |
 | `law_firms` | Law firm registry (panel / non_panel) |
 | `firm_terms` | Key-value terms per firm (billing type, discount, payment terms, etc.) |
@@ -127,6 +134,7 @@ Codegen: `pnpm --filter @workspace/api-spec run codegen` — regenerates `lib/ap
 | `/rates` | Rates | super_admin, legal_ops |
 | `/rules` | Rules | all |
 | `/users` | Users | super_admin only |
+| `/settings` | Settings (API key management, account info) | all |
 
 ---
 

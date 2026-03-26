@@ -1,4 +1,4 @@
-import { openai } from "@workspace/integrations-openai-ai-server";
+import OpenAI from "openai";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -45,9 +45,11 @@ Rules:
 Document text:
 ${text.slice(0, 40000)}`;
 
-export async function extractRatesFromText(text: string): Promise<ExtractedRateRow[]> {
-  const completion = await openai.chat.completions.create({
-    model: "gpt-5.2",
+export async function extractRatesFromText(text: string, apiKey?: string): Promise<ExtractedRateRow[]> {
+  if (!apiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
+  const client = new OpenAI({ apiKey });
+  const completion = await client.chat.completions.create({
+    model: "gpt-4o",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: USER_PROMPT(text) },

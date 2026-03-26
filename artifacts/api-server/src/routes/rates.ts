@@ -5,6 +5,7 @@ import { requireRole } from "../middleware/auth";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer } from "../lib/extractText";
 import { extractRatesFromText, extractTextFromExcel, extractTextFromCsv } from "../lib/extractRates";
+import { getUserOpenaiKey } from "./auth";
 
 const objectStorage = new ObjectStorageService();
 
@@ -250,7 +251,13 @@ router.post("/panel-baseline-documents/extract-rates", requireRole("super_admin"
     return;
   }
 
-  const rates = await extractRatesFromText(rawText);
+  const ratesApiKey = await getUserOpenaiKey(req.session.userId!);
+  if (!ratesApiKey) {
+    res.status(422).json({ error: "OpenAI API key not configured. Please add your key in Settings." });
+    return;
+  }
+
+  const rates = await extractRatesFromText(rawText, ratesApiKey);
   res.json({ extracted: rates.length, rates });
 });
 

@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import bcrypt from "bcryptjs";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { encryptApiKey, decryptApiKey } from "../lib/crypto";
 
 const router: IRouter = Router();
 
@@ -49,6 +50,7 @@ router.post("/auth/login", async (req: Request, res: Response) => {
     displayName: user.displayName,
     role: user.role,
     isActive: user.isActive,
+    hasOpenaiKey: !!user.encryptedOpenaiKey,
   });
 });
 
@@ -88,7 +90,70 @@ router.get("/auth/me", async (req: Request, res: Response) => {
     displayName: user.displayName,
     role: user.role,
     isActive: user.isActive,
+    hasOpenaiKey: !!user.encryptedOpenaiKey,
   });
 });
+
+router.put("/auth/me/openai-key", async (req: Request, res: Response) => {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  const { key } = req.body as { key?: string };
+
+  if (!key || typeof key !== "string" || !key.trim()) {
+    res.status(400).json({ error: "key is required" });
+    return;
+  }
+
+  if (!key.startsWith("sk-")) {
+    res.status(400).json({ error: "Invalid OpenAI API key format — must start with sk-" });
+    return;
+  }
+
+  let encrypted: string;
+  try {
+    encrypted = encryptApiKey(key.trim());
+  } catch (err) {
+    req.log.error({ err }, "Failed to encrypt API key");
+    res.status(500).json({ error: "Encryption service unavailable" });
+    return;
+  }
+
+  await db.update(usersTable)
+    .set({ encryptedOpenaiKey: encrypted })
+    .where(eq(usersTable.id, req.session.userId));
+
+  res.json({ hasOpenaiKey: true });
+});
+
+router.delete("/auth/me/openai-key", async (req: Request, res: Response) => {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  await db.update(usersTable)
+    .set({ encryptedOpenaiKey: null })
+    .where(eq(usersTable.id, req.session.userId));
+
+  res.json({ hasOpenaiKey: false });
+});
+
+export function getUserOpenaiKey(userId: number): Promise<string | null> {
+  return db.select({ encryptedOpenaiKey: usersTable.encryptedOpenaiKey })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1)
+    .then(([user]) => {
+      if (!user?.encryptedOpenaiKey) return null;
+      try {
+        return decryptApiKey(user.encryptedOpenaiKey);
+      } catch {
+        return null;
+      }
+    });
+}
 
 export default router;

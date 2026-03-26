@@ -305,6 +305,7 @@ export interface AuthUser {
   displayName: string;
   role: AuthUserRole;
   isActive: boolean;
+  hasOpenaiKey: boolean;
 }
 
 export interface MessageResponse {

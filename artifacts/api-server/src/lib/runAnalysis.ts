@@ -14,7 +14,7 @@ import {
 } from "@workspace/db";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { createHash } from "crypto";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import OpenAI from "openai";
 import { normaliseRole, isUnauthorizedRole } from "./roleNormaliser";
 import { checkCompleteness } from "./completenessGate";
 import { evaluateDeterministicRules, type EvalContext } from "./evaluateDeterministicRules";
@@ -42,7 +42,7 @@ function getTerm(terms: { termKey: string; termValueJson: unknown }[], key: stri
   return terms.find(t => t.termKey === key)?.termValueJson ?? null;
 }
 
-export async function runAnalysis(invoiceId: number, startedById: number, triggerReason?: string): Promise<{
+export async function runAnalysis(invoiceId: number, startedById: number, triggerReason?: string, openaiApiKey?: string): Promise<{
   analysisRunId: number;
   issueCount: number;
   outcome: string | null;
@@ -222,7 +222,7 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
   let greyRulesFailed = false;
   if (items.length > 0) {
     try {
-      greyIssues = await runGreyRules(invoiceId, run.id, invoice, firm, items, elData, budgetData, panelRates, isRuleActive);
+      greyIssues = await runGreyRules(invoiceId, run.id, invoice, firm, items, elData, budgetData, panelRates, isRuleActive, openaiApiKey);
     } catch (greyErr) {
       console.error("Grey rule AI evaluation failed; continuing with objective results:", greyErr);
       greyRulesFailed = true;
@@ -590,6 +590,7 @@ async function runGreyRules(
   budgetData: Record<string, unknown> | null,
   panelRates: { r: typeof panelRatesTable.$inferSelect; d: typeof panelBaselineDocumentsTable.$inferSelect }[],
   isRuleActive: (code: string) => boolean,
+  openaiApiKey?: string,
 ): Promise<IssueInsert[]> {
   const linesSummary = items.map(i => ({
     line: i.lineNo,
@@ -751,9 +752,12 @@ Rules:
 
 Return valid JSON only. No markdown, no explanation.`;
 
+  if (!openaiApiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
+
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-5.2",
+    const client = new OpenAI({ apiKey: openaiApiKey });
+    const response = await client.chat.completions.create({
+      model: "gpt-4o",
       max_completion_tokens: 4096,
       messages: [
         { role: "system", content: "You are a legal invoice compliance expert. Return only valid JSON." },

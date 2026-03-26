@@ -27,3 +27,10 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+OPENAI_ENCRYPTION_KEY = "54350a350648a8c24f78801605b6e90a2dbad4738c4cc377a23a5cc2acbe2c55"
+ADMIN_EMAIL = "admin@company.com"
+ADMIN_NAME = "Admin"
