@@ -2,13 +2,13 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db, lawFirmsTable, firmTermsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireRole } from "../middleware/auth";
-import { ObjectStorageService } from "../lib/objectStorage";
+import { createStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer } from "../lib/extractText";
 import { extractLawFirmTermsFromText, termsToUpsertPayload } from "../lib/extractLawFirmTerms";
 import { extractLawFirmInfoFromText } from "../lib/extractLawFirmInfo";
 import { getUserOpenaiKey } from "./auth";
 
-const objectStorage = new ObjectStorageService();
+const objectStorage = createStorageService();
 
 const router: IRouter = Router();
 

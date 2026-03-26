@@ -4,7 +4,7 @@ import { eq, and, ilike, or, sql, desc, count, asc } from "drizzle-orm";
 import { requireRole } from "../middleware/auth";
 import { checkCompleteness } from "../lib/completenessGate";
 import { extractInvoiceFromText, extractInvoiceFromImage } from "../lib/extractInvoice";
-import { ObjectStorageService } from "../lib/objectStorage";
+import { createStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer, imageBufferToBase64 } from "../lib/extractText";
 import { runAnalysis } from "../lib/runAnalysis";
 import { evaluateInvoiceState } from "../lib/stateTransition";
@@ -13,7 +13,7 @@ import OpenAI from "openai";
 import PDFDocument from "pdfkit";
 
 const router: IRouter = Router();
-const objectStorage = new ObjectStorageService();
+const objectStorage = createStorageService();
 
 async function generateInvoiceNumber(): Promise<string> {
   const result = await db.execute(sql`SELECT nextval('invoice_number_seq') AS n`);

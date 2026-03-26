@@ -59,7 +59,8 @@ Invoice Checker uses your own OpenAI API key. Nothing is routed through a shared
 - [pnpm 9+](https://pnpm.io) (`npm install -g pnpm`)
 - [PostgreSQL 16+](https://www.postgresql.org)
 - An [OpenAI API key](https://platform.openai.com/api-keys) (each user provides their own via the Settings page)
-- A [Google Cloud Storage](https://cloud.google.com/storage) bucket (for invoice file storage)
+
+> **No cloud storage needed for local use.** By default the app stores uploaded files on disk. Google Cloud Storage is only needed for production deployments.
 
 ---
 
@@ -132,7 +133,17 @@ Create a `.env` file at the project root (or set these in your hosting environme
 | `ADMIN_PASSWORD` | Password for the initial admin account (used on first run only) |
 | `ADMIN_NAME` | Display name for the initial admin account (used on first run only) |
 
-### For file storage (Google Cloud Storage)
+### File storage — local mode (default, no cloud account needed)
+
+By default the app stores files on disk. No additional variables are required.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `UPLOADS_PATH` | Directory where uploaded files are stored | `./uploads` next to the server |
+
+### File storage — Google Cloud Storage (optional, for production deployments)
+
+Set `DEFAULT_OBJECT_STORAGE_BUCKET_ID` to switch from local disk to GCS automatically.
 
 | Variable | Description |
 |----------|-------------|
