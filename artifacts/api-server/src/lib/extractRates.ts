@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { type AICompletionClient } from "./aiClient";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -45,20 +45,15 @@ Rules:
 Document text:
 ${text.slice(0, 40000)}`;
 
-export async function extractRatesFromText(text: string, apiKey?: string): Promise<ExtractedRateRow[]> {
-  if (!apiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
-  const client = new OpenAI({ apiKey });
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o",
+export async function extractRatesFromText(text: string, aiClient?: AICompletionClient): Promise<ExtractedRateRow[]> {
+  if (!aiClient) throw new Error("No AI provider configured. Please add an API key in Settings.");
+  const raw = await aiClient.complete({
+    tier: "smart",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: USER_PROMPT(text) },
     ],
-    max_completion_tokens: 4000,
-    response_format: { type: "json_object" },
   });
-
-  const raw = completion.choices[0]?.message?.content ?? "{}";
   try {
     const parsed = JSON.parse(raw) as { rates?: ExtractedRateRow[] };
     return (parsed.rates ?? []).filter(r => r.lawFirmName && r.jurisdiction && r.roleCode && r.maxRate);

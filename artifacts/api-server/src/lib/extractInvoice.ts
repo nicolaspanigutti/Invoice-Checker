@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { type AICompletionClient } from "./aiClient";
 import { createHash } from "crypto";
 import { db, invoiceDocumentsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
@@ -98,9 +98,6 @@ export function computeTextHash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 64);
 }
 
-function makeClient(apiKey: string): OpenAI {
-  return new OpenAI({ apiKey });
-}
 
 function parseExtractionResponse(content: string): { extracted: ExtractedInvoiceData; confidence: Record<string, number> } {
   let parsed: { confidence?: Record<string, number>; lineItems?: ExtractedLineItem[] } & Omit<ExtractedInvoiceData, "lineItems">;
@@ -143,7 +140,7 @@ function parseExtractionResponse(content: string): { extracted: ExtractedInvoice
   return { extracted, confidence };
 }
 
-export async function extractInvoiceFromText(rawText: string, documentId?: number, apiKey?: string): Promise<ExtractionOutput> {
+export async function extractInvoiceFromText(rawText: string, documentId?: number, aiClient?: AICompletionClient): Promise<ExtractionOutput> {
   const textHash = computeTextHash(rawText);
 
   if (documentId !== undefined) {
@@ -175,20 +172,16 @@ export async function extractInvoiceFromText(rawText: string, documentId?: numbe
     }
   }
 
-  if (!apiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
+  if (!aiClient) throw new Error("No AI provider configured. Please add an API key in Settings.");
 
   const truncatedText = rawText.slice(0, 12000);
-
-  const response = await makeClient(apiKey).chat.completions.create({
-    model: "gpt-4o-mini",
-    max_completion_tokens: 8192,
+  const content = await aiClient.complete({
+    tier: "fast",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: EXTRACTION_PROMPT + truncatedText },
     ],
   });
-
-  const content = response.choices[0]?.message?.content ?? "{}";
   const { extracted, confidence } = parseExtractionResponse(content);
 
   if (documentId !== undefined) {
@@ -205,7 +198,7 @@ export async function extractInvoiceFromText(rawText: string, documentId?: numbe
   return { extracted, confidence, textHash, promptVersion: EXTRACTION_PROMPT_VERSION, fromCache: false };
 }
 
-export async function extractInvoiceFromImage(base64DataUrl: string, mimeType: string, documentId?: number, apiKey?: string): Promise<ExtractionOutput> {
+export async function extractInvoiceFromImage(base64DataUrl: string, mimeType: string, documentId?: number, aiClient?: AICompletionClient): Promise<ExtractionOutput> {
   const imageHash = computeTextHash(base64DataUrl);
 
   if (documentId !== undefined) {
@@ -237,33 +230,18 @@ export async function extractInvoiceFromImage(base64DataUrl: string, mimeType: s
     }
   }
 
-  if (!apiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
+  if (!aiClient) throw new Error("No AI provider configured. Please add an API key in Settings.");
 
-  const response = await makeClient(apiKey).chat.completions.create({
-    model: "gpt-4o-mini",
-    max_completion_tokens: 8192,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: `${EXTRACTION_PROMPT}[See attached invoice image]`,
-          },
-          {
-            type: "image_url",
-            image_url: {
-              url: base64DataUrl,
-              detail: "high",
-            },
-          },
-        ],
-      },
-    ],
+  // Extract raw base64 from data URL if needed
+  const base64Data = base64DataUrl.includes(",") ? base64DataUrl.split(",")[1] : base64DataUrl;
+
+  const content = await aiClient.completeWithImage({
+    tier: "fast",
+    systemPrompt: SYSTEM_PROMPT,
+    textPrompt: `${EXTRACTION_PROMPT}[See attached invoice image]`,
+    base64Image: base64Data,
+    mimeType,
   });
-
-  const content = response.choices[0]?.message?.content ?? "{}";
   const { extracted, confidence } = parseExtractionResponse(content);
 
   if (documentId !== undefined) {

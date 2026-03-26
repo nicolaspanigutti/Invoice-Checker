@@ -6,7 +6,7 @@ import { createStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer } from "../lib/extractText";
 import { extractLawFirmTermsFromText, termsToUpsertPayload } from "../lib/extractLawFirmTerms";
 import { extractLawFirmInfoFromText } from "../lib/extractLawFirmInfo";
-import { getUserOpenaiKey } from "./auth";
+import { getUserAIClient } from "./auth";
 
 const objectStorage = createStorageService();
 
@@ -103,13 +103,13 @@ router.post("/law-firms/extract-info", requireRole("super_admin", "legal_ops"), 
     return;
   }
 
-  const infoApiKey = await getUserOpenaiKey(req.session.userId!);
-  if (!infoApiKey) {
-    res.status(422).json({ error: "OpenAI API key not configured. Please add your key in Settings." });
+  const infoClient = await getUserAIClient(req.session.userId!);
+  if (!infoClient) {
+    res.status(422).json({ error: "AI provider not configured. Please add an API key in Settings." });
     return;
   }
 
-  const extracted = await extractLawFirmInfoFromText(rawText, infoApiKey);
+  const extracted = await extractLawFirmInfoFromText(rawText, infoClient);
   res.json(extracted);
 });
 
@@ -273,13 +273,13 @@ router.post("/law-firms/:id/tc-extract", requireRole("super_admin", "legal_ops")
     return;
   }
 
-  const tcApiKey = await getUserOpenaiKey(req.session.userId!);
-  if (!tcApiKey) {
-    res.status(422).json({ error: "OpenAI API key not configured. Please add your key in Settings." });
+  const tcClient = await getUserAIClient(req.session.userId!);
+  if (!tcClient) {
+    res.status(422).json({ error: "AI provider not configured. Please add an API key in Settings." });
     return;
   }
 
-  const extracted = await extractLawFirmTermsFromText(rawText, tcApiKey);
+  const extracted = await extractLawFirmTermsFromText(rawText, tcClient);
   const upsertItems = termsToUpsertPayload(extracted);
 
   const results = [];

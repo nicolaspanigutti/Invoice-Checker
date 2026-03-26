@@ -8,8 +8,7 @@ import { createStorageService } from "../lib/objectStorage";
 import { extractTextFromBuffer, imageBufferToBase64 } from "../lib/extractText";
 import { runAnalysis } from "../lib/runAnalysis";
 import { evaluateInvoiceState } from "../lib/stateTransition";
-import { getUserOpenaiKey } from "./auth";
-import OpenAI from "openai";
+import { getUserAIClient } from "./auth";
 import PDFDocument from "pdfkit";
 
 const router: IRouter = Router();
@@ -406,9 +405,9 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
     }
   };
 
-  const userApiKey = await getUserOpenaiKey(actorId);
-  if (!userApiKey) {
-    res.status(422).json({ error: "OpenAI API key not configured. Please add your key in Settings before extracting invoices." });
+  const userAiClient = await getUserAIClient(actorId);
+  if (!userAiClient) {
+    res.status(422).json({ error: "AI provider not configured. Please add an API key in Settings before extracting invoices." });
     return;
   }
 
@@ -418,12 +417,12 @@ router.post("/invoices/:id/extract", requireRole("super_admin", "legal_ops"), as
     try {
       if (isImg) {
         const b64 = imageBufferToBase64(buf, mime);
-        return await extractInvoiceFromImage(b64, mime, doc.id, userApiKey);
+        return await extractInvoiceFromImage(b64, mime, doc.id, userAiClient);
       } else {
         const rawText = await extractTextFromBuffer(buf, mime);
         if (rawText.trim().length < 10) return null;
         await db.update(invoiceDocumentsTable).set({ rawText }).where(eq(invoiceDocumentsTable.id, doc.id));
-        return await extractInvoiceFromText(rawText, doc.id, userApiKey);
+        return await extractInvoiceFromText(rawText, doc.id, userAiClient);
       }
     } catch {
       await db.update(invoiceDocumentsTable).set({ extractionStatus: "failed" }).where(eq(invoiceDocumentsTable.id, doc.id));
@@ -539,9 +538,9 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
     return;
   }
 
-  const analyseApiKey = await getUserOpenaiKey(actorId);
-  if (!analyseApiKey) {
-    res.status(422).json({ error: "OpenAI API key not configured. Please add your key in Settings before running analysis." });
+  const analyseClient = await getUserAIClient(actorId);
+  if (!analyseClient) {
+    res.status(422).json({ error: "AI provider not configured. Please add an API key in Settings before running analysis." });
     return;
   }
 
@@ -555,7 +554,7 @@ router.post("/invoices/:id/analyse", requireRole("super_admin", "legal_ops"), as
   });
 
   try {
-    const result = await runAnalysis(id, actorId, undefined, analyseApiKey);
+    const result = await runAnalysis(id, actorId, undefined, analyseClient);
     if (result.status === "gate_failed") {
       await db.insert(auditEventsTable).values({
         entityType: "invoice",
@@ -618,9 +617,9 @@ router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), asyn
     return;
   }
 
-  const rerunApiKey = await getUserOpenaiKey(actorId);
-  if (!rerunApiKey) {
-    res.status(422).json({ error: "OpenAI API key not configured. Please add your key in Settings before running analysis." });
+  const rerunClient = await getUserAIClient(actorId);
+  if (!rerunClient) {
+    res.status(422).json({ error: "AI provider not configured. Please add an API key in Settings before running analysis." });
     return;
   }
 
@@ -646,7 +645,7 @@ router.post("/invoices/:id/rerun", requireRole("super_admin", "legal_ops"), asyn
   });
 
   try {
-    const result = await runAnalysis(id, actorId, reason, rerunApiKey);
+    const result = await runAnalysis(id, actorId, reason, rerunClient);
     if (result.status === "gate_failed") {
       await db.update(invoicesTable)
         .set({ invoiceStatus: oldStatus })
@@ -1384,20 +1383,18 @@ router.post("/invoices/:id/report", requireRole("super_admin", "legal_ops", "int
     rejectedItems: rejectedForAI,
   };
 
-  const reportApiKey = await getUserOpenaiKey(req.session.userId!);
+  const reportAiClient = await getUserAIClient(req.session.userId!);
   let executiveSummary = "";
   try {
-    if (!reportApiKey) throw new Error("no key");
-    const reportClient = new OpenAI({ apiKey: reportApiKey });
-    const aiResponse = await reportClient.chat.completions.create({
-      model: "gpt-4o",
-      max_completion_tokens: 300,
+    if (!reportAiClient) throw new Error("no client");
+    executiveSummary = await reportAiClient.complete({
+      tier: "smart",
       messages: [
         { role: "system", content: "You are a senior legal operations analyst. Write a concise 3-5 sentence executive summary for a law firm invoice review report. Use professional, plain English — no jargon, no internal metric names, no system codes. Output only the summary paragraph." },
         { role: "user", content: JSON.stringify(aiPayload) },
       ],
     });
-    executiveSummary = aiResponse.choices[0]?.message?.content?.trim() ?? "Executive summary unavailable.";
+    executiveSummary = executiveSummary.trim() || "Executive summary unavailable.";
   } catch {
     executiveSummary = `Review of invoice ${invoice.invoiceNumber} from ${lawFirmName ?? "the law firm"} identified ${allIssues.length} compliance issues requiring attention. ${rejectedIssues.length} issue(s) were rejected for further action.`;
   }
@@ -1498,14 +1495,12 @@ router.post("/invoices/:id/email-draft", requireRole("super_admin", "legal_ops",
 
   const fallbackBody = buildFallbackEmailBody({ contactName, invoiceNumber: invoice.invoiceNumber, matterName: invoice.matterName ?? null, rejectedCount: rejectedIssues.length, rejectedIssues, currency: invoice.currency ?? "EUR" });
 
-  const emailApiKey = await getUserOpenaiKey(req.session.userId!);
+  const emailAiClient = await getUserAIClient(req.session.userId!);
   let body = "";
   try {
-    if (!emailApiKey) throw new Error("no key");
-    const emailClient = new OpenAI({ apiKey: emailApiKey });
-    const aiResponse = await emailClient.chat.completions.create({
-      model: "gpt-4o",
-      max_completion_tokens: 900,
+    if (!emailAiClient) throw new Error("no client");
+    body = await emailAiClient.complete({
+      tier: "smart",
       messages: [
         {
           role: "system",
@@ -1514,7 +1509,7 @@ router.post("/invoices/:id/email-draft", requireRole("super_admin", "legal_ops",
         { role: "user", content: JSON.stringify(emailPayload) },
       ],
     });
-    body = aiResponse.choices[0]?.message?.content?.trim() ?? "";
+    body = body.trim();
   } catch {
     /* AI unavailable — use deterministic fallback */
   }
@@ -1594,20 +1589,18 @@ router.get("/invoices/:id/report/pdf", requireRole("super_admin", "legal_ops", "
     issueSummary: { total: allIssues.length, rejected: rejectedIssues.length, accepted: acceptedIssues.length, escalated: escalatedIssues.length, open: openIssues.length },
     rejectedItems: rejectedForAI,
   };
-  const pdfApiKey = await getUserOpenaiKey(req.session.userId!);
+  const pdfAiClient = await getUserAIClient(req.session.userId!);
   let executiveSummary = "";
   try {
-    if (!pdfApiKey) throw new Error("no key");
-    const pdfClient = new OpenAI({ apiKey: pdfApiKey });
-    const aiResp = await pdfClient.chat.completions.create({
-      model: "gpt-4o",
-      max_completion_tokens: 300,
+    if (!pdfAiClient) throw new Error("no client");
+    executiveSummary = await pdfAiClient.complete({
+      tier: "smart",
       messages: [
         { role: "system", content: "You are a senior legal operations analyst. Write a concise 3-5 sentence executive summary for a law firm invoice review report. Use professional, plain English — no jargon, no internal metric names, no system codes. Output only the summary paragraph." },
         { role: "user", content: JSON.stringify(pdfAiPayload) },
       ],
     });
-    executiveSummary = aiResp.choices[0]?.message?.content?.trim() ?? "";
+    executiveSummary = executiveSummary.trim();
   } catch {
     executiveSummary = `Review of invoice ${invoice.invoiceNumber} from ${lawFirmName ?? "the law firm"} identified ${allIssues.length} compliance issue(s). ${rejectedIssues.length} issue(s) were rejected for further action.`;
   }

@@ -14,7 +14,7 @@ import {
 } from "@workspace/db";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { createHash } from "crypto";
-import OpenAI from "openai";
+import { type AICompletionClient } from "./aiClient";
 import { normaliseRole, isUnauthorizedRole } from "./roleNormaliser";
 import { checkCompleteness } from "./completenessGate";
 import { evaluateDeterministicRules, type EvalContext } from "./evaluateDeterministicRules";
@@ -42,7 +42,7 @@ function getTerm(terms: { termKey: string; termValueJson: unknown }[], key: stri
   return terms.find(t => t.termKey === key)?.termValueJson ?? null;
 }
 
-export async function runAnalysis(invoiceId: number, startedById: number, triggerReason?: string, openaiApiKey?: string): Promise<{
+export async function runAnalysis(invoiceId: number, startedById: number, triggerReason?: string, aiClient?: AICompletionClient): Promise<{
   analysisRunId: number;
   issueCount: number;
   outcome: string | null;
@@ -222,7 +222,7 @@ export async function runAnalysis(invoiceId: number, startedById: number, trigge
   let greyRulesFailed = false;
   if (items.length > 0) {
     try {
-      greyIssues = await runGreyRules(invoiceId, run.id, invoice, firm, items, elData, budgetData, panelRates, isRuleActive, openaiApiKey);
+      greyIssues = await runGreyRules(invoiceId, run.id, invoice, firm, items, elData, budgetData, panelRates, isRuleActive, aiClient);
     } catch (greyErr) {
       console.error("Grey rule AI evaluation failed; continuing with objective results:", greyErr);
       greyRulesFailed = true;
@@ -590,7 +590,7 @@ async function runGreyRules(
   budgetData: Record<string, unknown> | null,
   panelRates: { r: typeof panelRatesTable.$inferSelect; d: typeof panelBaselineDocumentsTable.$inferSelect }[],
   isRuleActive: (code: string) => boolean,
-  openaiApiKey?: string,
+  aiClient?: AICompletionClient,
 ): Promise<IssueInsert[]> {
   const linesSummary = items.map(i => ({
     line: i.lineNo,
@@ -752,20 +752,16 @@ Rules:
 
 Return valid JSON only. No markdown, no explanation.`;
 
-  if (!openaiApiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
+  if (!aiClient) throw new Error("No AI provider configured. Please add an API key in Settings.");
 
   try {
-    const client = new OpenAI({ apiKey: openaiApiKey });
-    const response = await client.chat.completions.create({
-      model: "gpt-4o",
-      max_completion_tokens: 4096,
+    const raw = await aiClient.complete({
+      tier: "smart",
       messages: [
         { role: "system", content: "You are a legal invoice compliance expert. Return only valid JSON." },
         { role: "user", content: prompt },
       ],
     });
-
-    const raw = response.choices[0]?.message?.content ?? "{}";
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
     const parsed = JSON.parse(cleaned) as Record<string, unknown>;
 

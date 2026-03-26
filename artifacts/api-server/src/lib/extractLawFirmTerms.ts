@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { type AICompletionClient } from "./aiClient";
 
 export interface ExtractedFirmTerms {
   billing_type_default: string | null;
@@ -42,22 +42,16 @@ const EXTRACTION_PROMPT = `Extract all commercial terms from the following law f
 Document text:
 `;
 
-export async function extractLawFirmTermsFromText(text: string, apiKey?: string): Promise<ExtractedFirmTerms> {
-  if (!apiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
+export async function extractLawFirmTermsFromText(text: string, aiClient?: AICompletionClient): Promise<ExtractedFirmTerms> {
+  if (!aiClient) throw new Error("No AI provider configured. Please add an API key in Settings.");
   const truncated = text.slice(0, 40000);
-
-  const client = new OpenAI({ apiKey });
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o",
+  const raw = await aiClient.complete({
+    tier: "smart",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: EXTRACTION_PROMPT + truncated },
     ],
-    max_completion_tokens: 2000,
-    response_format: { type: "json_object" },
   });
-
-  const raw = completion.choices[0]?.message?.content ?? "{}";
   try {
     return JSON.parse(raw) as ExtractedFirmTerms;
   } catch {

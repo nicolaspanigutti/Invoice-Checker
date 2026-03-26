@@ -10,6 +10,9 @@ export const usersTable = pgTable("users", {
   role: text("role", { enum: ["super_admin", "legal_ops", "internal_lawyer"] }).notNull(),
   isActive: boolean("is_active").notNull().default(true),
   encryptedOpenaiKey: text("encrypted_openai_key"),
+  encryptedAnthropicKey: text("encrypted_anthropic_key"),
+  encryptedGeminiKey: text("encrypted_gemini_key"),
+  aiProvider: text("ai_provider", { enum: ["openai", "anthropic", "gemini"] }).notNull().default("openai"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

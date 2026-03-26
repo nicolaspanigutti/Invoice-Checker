@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { type AICompletionClient } from "./aiClient";
 
 export interface ExtractedLawFirmInfo {
   name: string | null;
@@ -65,20 +65,15 @@ Rules:
 Document text:
 ${text.slice(0, 40000)}`;
 
-export async function extractLawFirmInfoFromText(text: string, apiKey?: string): Promise<ExtractedLawFirmInfo> {
-  if (!apiKey) throw new Error("OpenAI API key not configured. Please add your key in Settings.");
-  const client = new OpenAI({ apiKey });
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o",
+export async function extractLawFirmInfoFromText(text: string, aiClient?: AICompletionClient): Promise<ExtractedLawFirmInfo> {
+  if (!aiClient) throw new Error("No AI provider configured. Please add an API key in Settings.");
+  const raw = await aiClient.complete({
+    tier: "smart",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: EXTRACTION_PROMPT(text) },
     ],
-    max_completion_tokens: 1200,
-    response_format: { type: "json_object" },
   });
-
-  const raw = completion.choices[0]?.message?.content ?? "{}";
   let parsed: Partial<ExtractedLawFirmInfo> = {};
   try { parsed = JSON.parse(raw); } catch { parsed = {}; }
 
