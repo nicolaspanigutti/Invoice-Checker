@@ -20,7 +20,15 @@ Legal teams routinely overpay law firms due to billing errors, rate overcharges,
 
 ### BYOT (Bring Your Own Token)
 
-Invoice Checker uses your own OpenAI API key. Nothing is routed through a shared backend — your invoices and your keys stay under your control.
+Invoice Checker uses your own AI API key — nothing is routed through a shared backend. Your invoices and your keys stay under your control. Supported providers:
+
+| Provider | Models used |
+|----------|-------------|
+| **OpenAI** | `gpt-4o` (smart) · `gpt-4o-mini` (fast) |
+| **Anthropic** | `claude-3-5-sonnet-20241022` (smart) · `claude-3-haiku-20240307` (fast) |
+| **Google Gemini** | `gemini-1.5-pro` (smart) · `gemini-1.5-flash` (fast) |
+
+Each user configures their own key(s) in Settings and selects their preferred provider. Keys are encrypted at rest using AES-256-GCM.
 
 ---
 
@@ -30,8 +38,8 @@ Invoice Checker uses your own OpenAI API key. Nothing is routed through a shared
 |---------|---------|
 | Auth | Email/password, server-side sessions |
 | Roles | `super_admin`, `legal_ops`, `internal_lawyer` |
-| Invoice upload | PDF, DOCX, image (stored in object storage) |
-| AI extraction | GPT-4o-mini parses invoice fields and line items |
+| Invoice upload | PDF, DOCX, image (stored locally or in GCS) |
+| AI extraction | Parses invoice fields and line items via your chosen AI provider |
 | Rule engine | Objective rules (rate variance, arithmetic, duplicates…) + AI grey rules (seniority overkill, scope creep…) |
 | Panel rates | Upload and manage agreed panel rate schedules |
 | Engagement letters | Upload T&C and engagement letters per firm for compliance checks |
@@ -46,8 +54,8 @@ Invoice Checker uses your own OpenAI API key. Nothing is routed through a shared
 - **Backend**: Node.js 24, Express 5, TypeScript
 - **Database**: PostgreSQL + Drizzle ORM
 - **Frontend**: React + Vite + Tailwind CSS (shadcn/ui)
-- **AI**: OpenAI API (user-provided key, gpt-4o / gpt-4o-mini)
-- **File storage**: Google Cloud Storage (presigned URLs)
+- **AI**: OpenAI / Anthropic / Gemini (user-provided key, BYOT)
+- **File storage**: Local filesystem (default) or Google Cloud Storage
 - **Auth**: bcryptjs + express-session + connect-pg-simple
 - **Monorepo**: pnpm workspaces
 
@@ -58,7 +66,10 @@ Invoice Checker uses your own OpenAI API key. Nothing is routed through a shared
 - [Node.js 24+](https://nodejs.org)
 - [pnpm 9+](https://pnpm.io) (`npm install -g pnpm`)
 - [PostgreSQL 16+](https://www.postgresql.org)
-- An [OpenAI API key](https://platform.openai.com/api-keys) (each user provides their own via the Settings page)
+- An API key from at least one supported AI provider (each user adds their own via Settings):
+  - [OpenAI](https://platform.openai.com/api-keys)
+  - [Anthropic](https://console.anthropic.com/settings/keys)
+  - [Google AI Studio (Gemini)](https://aistudio.google.com/app/apikey)
 
 > **No cloud storage needed for local use.** By default the app stores uploaded files on disk. Google Cloud Storage is only needed for production deployments.
 
@@ -69,8 +80,8 @@ Invoice Checker uses your own OpenAI API key. Nothing is routed through a shared
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/invoice-checker.git
-cd invoice-checker
+git clone https://github.com/nicolaspanigutti/Invoice-Checker.git
+cd Invoice-Checker
 ```
 
 ### 2. Install dependencies
@@ -113,9 +124,9 @@ pnpm --filter @workspace/invoice-checker run dev
 
 The app will be available at the URL shown by the frontend Vite server.
 
-### 7. Add your OpenAI key
+### 7. Add your AI key
 
-Log in with your admin credentials, go to **Settings** in the sidebar, and enter your OpenAI API key (`sk-...`). Each user on the platform adds their own key — it is encrypted at rest.
+Log in with your admin credentials, go to **Settings** in the sidebar, and add an API key for your preferred provider (OpenAI, Anthropic, or Gemini). Each user on the platform adds their own key — it is encrypted at rest and never shared.
 
 ---
 
@@ -128,7 +139,7 @@ Create a `.env` file at the project root (or set these in your hosting environme
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string, e.g. `postgresql://user:pass@localhost:5432/invoice_checker` |
-| `OPENAI_ENCRYPTION_KEY` | 32-byte key for encrypting user OpenAI keys at rest (64 hex chars). Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `OPENAI_ENCRYPTION_KEY` | 32-byte key used to encrypt all AI provider keys at rest (64 hex chars). Generate with: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `ADMIN_EMAIL` | Email address for the initial admin account (used on first run only) |
 | `ADMIN_PASSWORD` | Password for the initial admin account (used on first run only) |
 | `ADMIN_NAME` | Display name for the initial admin account (used on first run only) |
@@ -207,8 +218,8 @@ scripts/              # Utility scripts
 
 ## Security notes
 
-- OpenAI API keys are encrypted at rest using AES-256-GCM before being stored in the database
-- Keys are never returned in API responses — only a boolean `hasOpenaiKey` is exposed
+- AI provider keys (OpenAI, Anthropic, Gemini) are encrypted at rest using AES-256-GCM before being stored in the database
+- Keys are never returned in API responses — only boolean flags (`hasOpenaiKey`, `hasAnthropicKey`, `hasGeminiKey`) are exposed
 - Session cookies are `httpOnly` and `sameSite: strict`
 - All authenticated routes require a valid server-side session
 
